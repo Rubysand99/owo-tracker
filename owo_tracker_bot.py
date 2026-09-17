@@ -44,7 +44,7 @@ CORRELATION_WINDOW = 20  # giây — cửa sổ khớp lệnh owo với phản h
 
 intents = discord.Intents.default()
 intents.message_content = True
-bot = commands.Bot(command_prefix="ot!", intents=intents, help_command=None)
+bot = commands.Bot(command_prefix=",", intents=intents, help_command=None)
 
 mongo_client = AsyncIOMotorClient(MONGODB_URI) if MONGODB_URI else None
 mdb = mongo_client[MONGODB_DB_NAME] if mongo_client else None
@@ -89,7 +89,7 @@ async def next_note_id():
 # ----------------------------------------------------------------------
 # PARSE — hàm thuần (không đụng DB/Discord), test độc lập qua
 # test_parsers.py. Regex viết dựa theo ảnh chụp màn hình bạn từng gửi —
-# đã test khớp mẫu thật, nhưng vẫn nên tự kiểm chứng bằng ot!debugnext
+# đã test khớp mẫu thật, nhưng vẫn nên tự kiểm chứng bằng ,debugnext
 # trước khi tin tưởng hoàn toàn (xem README).
 # ----------------------------------------------------------------------
 def parse_owodex(text: str):
@@ -317,7 +317,7 @@ async def on_ready():
         print("[tracker] CẢNH BÁO: chưa có MONGODB_URI — bot sẽ lỗi khi cố lưu/đọc dữ liệu.")
         return
     tracked = await get_config("tracked_user_id")
-    print(f"[tracker] Đang theo dõi user ID: {tracked or '(chưa đặt — dùng ot!track)'}")
+    print(f"[tracker] Đang theo dõi user ID: {tracked or '(chưa đặt — dùng ,track)'}")
 
 
 @bot.event
@@ -406,7 +406,7 @@ def is_owner():
 @is_owner()
 async def track(ctx, user: discord.User = None):
     if not user:
-        await ctx.send("Dùng: `ot!track @user`")
+        await ctx.send("Dùng: `,track @user`")
         return
     await set_config("tracked_user_id", str(user.id))
     await ctx.send(f"Đã đặt theo dõi: **{user.name}** (`{user.id}`).")
@@ -419,7 +419,7 @@ async def status(ctx):
     last_hunt = await mdb[COL_HUNTBOT].find_one(sort=[("_id", -1)])
 
     embed = discord.Embed(title="Trạng thái theo dõi", color=0xD9A227)
-    embed.add_field(name="Đang theo dõi", value=f"<@{tracked}>" if tracked else "Chưa đặt — dùng `ot!track`", inline=False)
+    embed.add_field(name="Đang theo dõi", value=f"<@{tracked}>" if tracked else "Chưa đặt — dùng `,track`", inline=False)
     if last_battle:
         embed.add_field(name="Trận gần nhất",
                          value=f"{'Thắng' if last_battle['result']=='won' else 'Thua'} sau {last_battle['turns']} lượt · "
@@ -510,7 +510,7 @@ async def note_cmd(ctx, action: str = "list", *, text: str = ""):
         cursor = mdb[COL_NOTES].find().sort([("done", 1), ("_id", 1)])
         rows = await cursor.to_list(length=100)
         if not rows:
-            await ctx.send("Chưa có ghi chú nào. Dùng `ot!note add <nội dung>`.")
+            await ctx.send("Chưa có ghi chú nào. Dùng `,note add <nội dung>`.")
         else:
             lines = [f"{'✅' if r['done'] else '⬜'} `{r['_id']}` {r['text']}" for r in rows]
             await ctx.send("\n".join(lines))
@@ -522,12 +522,12 @@ async def note_cmd(ctx, action: str = "list", *, text: str = ""):
 @bot.command(name="pet")
 async def pet_cmd(ctx, *, name: str = ""):
     if not name:
-        await ctx.send("Dùng: `ot!pet <tên>`")
+        await ctx.send("Dùng: `,pet <tên>`")
         return
     doc = await mdb[COL_PET_SPECIES].find_one({"_id": name.lower()})
     if not doc:
         await ctx.send(f"Chưa có dữ liệu cho `{name}`. Tra `owo owodex {name}` trong kênh có bot để tự ghi nhận, "
-                        f"hoặc dùng `ot!petset` để nhập tay.")
+                        f"hoặc dùng `,petset` để nhập tay.")
         return
     embed = discord.Embed(title=doc["display_name"], color=0x9B6BC9)
     embed.add_field(name="Rank", value=doc.get("rank", "—"))
@@ -553,7 +553,7 @@ async def pets_cmd(ctx, *, search: str = ""):
 @bot.command(name="petset")
 async def petset_cmd(ctx, name: str, rank: str, hp: int, att: int, pr: int, wp: int, mag: int, mr: int):
     """Nhập tay 1 pet khi không có sẵn owodex — vd đọc từ nguồn khác.
-    Dùng: ot!petset <tên> <rank> <hp> <att> <pr> <wp> <mag> <mr>"""
+    Dùng: ,petset <tên> <rank> <hp> <att> <pr> <wp> <mag> <mr>"""
     key = name.lower()
     await mdb[COL_PET_SPECIES].update_one(
         {"_id": key},
@@ -572,7 +572,7 @@ async def petset_cmd(ctx, name: str, rank: str, hp: int, att: int, pr: int, wp: 
 @bot.command(name="weapontype")
 async def weapontype_cmd(ctx, *, name: str = ""):
     if not name:
-        await ctx.send("Dùng: `ot!weapontype <tên>`")
+        await ctx.send("Dùng: `,weapontype <tên>`")
         return
     doc = await mdb[COL_WEAPON_TYPES].find_one({"_id": name.lower()})
     if not doc:
@@ -599,7 +599,7 @@ async def weapontypes_cmd(ctx, *, search: str = ""):
 
 @bot.command(name="weapontypeset")
 async def weapontypeset_cmd(ctx, name: str, *, desc: str):
-    """Nhập/sửa tay mô tả 1 loại vũ khí. Dùng: ot!weapontypeset <tên> <mô tả>"""
+    """Nhập/sửa tay mô tả 1 loại vũ khí. Dùng: ,weapontypeset <tên> <mô tả>"""
     key = name.lower()
     await mdb[COL_WEAPON_TYPES].update_one(
         {"_id": key},
@@ -616,7 +616,7 @@ async def weapontypeset_cmd(ctx, name: str, *, desc: str):
 @bot.command(name="passive")
 async def passive_cmd(ctx, *, name: str = ""):
     if not name:
-        await ctx.send("Dùng: `ot!passive <tên>`")
+        await ctx.send("Dùng: `,passive <tên>`")
         return
     doc = await mdb[COL_PASSIVES].find_one({"_id": name.lower()})
     if not doc:
@@ -638,22 +638,54 @@ async def passives_cmd(ctx, *, search: str = ""):
 
 @bot.command(name="passiveset")
 async def passiveset_cmd(ctx, name: str, *, desc: str):
-    """Nhập/sửa tay 1 passive. Dùng: ot!passiveset <tên> <mô tả>"""
+    """Nhập/sửa tay 1 passive. Dùng: ,passiveset <tên> <mô tả>"""
     await save_passive(name, desc, str(ctx.author.id))
     await ctx.send(f"Đã lưu passive **{name}**.")
 
 
+@bot.command(name="ping")
+async def ping_cmd(ctx):
+    ms = round(bot.latency * 1000)
+    await ctx.send(f"🏓 Pong! `{ms}ms`")
+
+
 @bot.command(name="help")
 async def help_cmd(ctx):
-    await ctx.send(
-        "**Theo dõi cá nhân**\n"
-        "`ot!track @user` (owner) · `ot!status` · `ot!battlelog [n]` · `ot!huntbot` · "
-        "`ot!quests` · `ot!team` · `ot!myweapons [tìm]`\n\n"
-        "**Ghi chú**\n`ot!note add <text>` · `ot!note list` · `ot!note done <id>`\n\n"
-        "**Pet (loài)**\n`ot!pet <tên>` · `ot!pets [tìm]` · `ot!petset <tên> <rank> <hp> <att> <pr> <wp> <mag> <mr>`\n\n"
-        "**Loại vũ khí**\n`ot!weapontype <tên>` · `ot!weapontypes [tìm]` · `ot!weapontypeset <tên> <mô tả>`\n\n"
-        "**Passive**\n`ot!passive <tên>` · `ot!passives [tìm]` · `ot!passiveset <tên> <mô tả>`"
+    embed = discord.Embed(
+        title="OwO Tracker — danh sách lệnh",
+        description="Prefix: `,`",
+        color=0xD9A227,
     )
+    embed.add_field(
+        name="Theo dõi cá nhân",
+        value="`,track @user` (owner) · `,status` · `,battlelog [n]` · "
+              "`,huntbot` · `,quests` · `,team` · `,myweapons [tìm]`",
+        inline=False,
+    )
+    embed.add_field(
+        name="Ghi chú",
+        value="`,note add <text>` · `,note list` · `,note done <id>`",
+        inline=False,
+    )
+    embed.add_field(
+        name="Pet (loài)",
+        value="`,pet <tên>` · `,pets [tìm]` · "
+              "`,petset <tên> <rank> <hp> <att> <pr> <wp> <mag> <mr>`",
+        inline=False,
+    )
+    embed.add_field(
+        name="Loại vũ khí",
+        value="`,weapontype <tên>` · `,weapontypes [tìm]` · `,weapontypeset <tên> <mô tả>`",
+        inline=False,
+    )
+    embed.add_field(
+        name="Passive",
+        value="`,passive <tên>` · `,passives [tìm]` · `,passiveset <tên> <mô tả>`",
+        inline=False,
+    )
+    embed.add_field(name="Khác", value="`,ping` · `,help` · `,debugnext` (owner)", inline=False)
+    embed.set_footer(text="Bot chỉ thấy được server đã mời nó vào — không tự theo dõi ở nơi khác.")
+    await ctx.send(embed=embed)
 
 
 # ----------------------------------------------------------------------
@@ -684,5 +716,5 @@ if __name__ == "__main__":
     if not MONGODB_URI:
         raise SystemExit("Thiếu biến môi trường MONGODB_URI.")
     if not OWNER_ID:
-        print("[tracker] Cảnh báo: chưa đặt OWNER_ID — lệnh ot!track sẽ luôn bị từ chối.")
+        print("[tracker] Cảnh báo: chưa đặt OWNER_ID — lệnh ,track sẽ luôn bị từ chối.")
     bot.run(DISCORD_TOKEN)

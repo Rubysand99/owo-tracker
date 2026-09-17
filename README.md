@@ -41,31 +41,32 @@ server**, bot không thể tự "theo dõi mọi nơi" (xem phần Giới hạn)
 ## Dùng thử
 
 ```
-ot!track @Ruby            → đặt tài khoản cần theo dõi (chỉ owner)
-ot!status                 → tổng quan: đang theo dõi ai, trận gần nhất, huntbot
-ot!battlelog 10            → 10 trận gần nhất
-ot!huntbot                 → trạng thái HuntBot hiện tại
-ot!quests                  → trạng thái quest hôm nay
-ot!team                    → đội hình gần nhất ghi nhận được
-ot!myweapons scythe        → vũ khí BẠN đang sở hữu, tìm theo tên
+,track @Ruby            → đặt tài khoản cần theo dõi (chỉ owner)
+,status                 → tổng quan: đang theo dõi ai, trận gần nhất, huntbot
+,battlelog 10            → 10 trận gần nhất
+,huntbot                 → trạng thái HuntBot hiện tại
+,quests                  → trạng thái quest hôm nay
+,team                    → đội hình gần nhất ghi nhận được
+,myweapons scythe        → vũ khí BẠN đang sở hữu, tìm theo tên
+,ping                     → kiểm tra bot còn sống, độ trễ bao nhiêu ms
 
-ot!note add Bắt gowl       → thêm việc cần làm
-ot!note list / ot!note done 1
+,note add Bắt gowl       → thêm việc cần làm
+,note list / ,note done 1
 
-ot!pet gowl                 → tra thông tin 1 loài pet đã ghi nhận
-ot!pets legendary           → tìm pet theo tên/rank đã ghi nhận
-ot!petset gowl legendary 10 1 3 1 2 3   → nhập tay khi không có owodex
+,pet gowl                 → tra thông tin 1 loài pet đã ghi nhận
+,pets legendary           → tìm pet theo tên/rank đã ghi nhận
+,petset gowl legendary 10 1 3 1 2 3   → nhập tay khi không có owodex
 
-ot!weapontype "culling scythe"          → tra 1 loại vũ khí đã ghi nhận
-ot!weapontypes                          → liệt kê loại vũ khí đã biết
-ot!weapontypeset "poison dagger" "Gây sát thương + Poison DoT xuyên giáp"
+,weapontype "culling scythe"          → tra 1 loại vũ khí đã ghi nhận
+,weapontypes                          → liệt kê loại vũ khí đã biết
+,weapontypeset "poison dagger" "Gây sát thương + Poison DoT xuyên giáp"
 
-ot!passive sacrifice        → tra 1 passive đã ghi nhận
-ot!passives                 → liệt kê passive đã biết
-ot!passiveset enrage "Tăng sát thương khi HP thấp"
+,passive sacrifice        → tra 1 passive đã ghi nhận
+,passives                 → liệt kê passive đã biết
+,passiveset enrage "Tăng sát thương khi HP thấp"
 
-ot!debugnext                → in raw content/embed của tin OwO tiếp theo (owner)
-ot!help                     → xem lại toàn bộ lệnh
+,debugnext                → in raw content/embed của tin OwO tiếp theo (owner)
+,help                     → xem lại toàn bộ lệnh
 ```
 
 ## Cách dữ liệu được tích luỹ
@@ -96,7 +97,7 @@ chuyện trước đó (test trong `test_parsers.py`).
 Discord không cho bot biết trực tiếp "tin nhắn này trả lời cho ai".
 Cách bot suy luận:
 
-1. Thấy đúng Discord ID đang `ot!track` gõ tin nhắn bắt đầu bằng
+1. Thấy đúng Discord ID đang `,track` gõ tin nhắn bắt đầu bằng
    `owo` trong 1 kênh → ghi nhớ "đang chờ phản hồi ở kênh này".
 2. Tin nhắn tiếp theo từ OwO bot **trong đúng kênh đó**, trong vòng
    20 giây → coi là phản hồi cho bạn, đem đi parse.
@@ -122,6 +123,6 @@ pass, kể cả 3 lỗi từng phát hiện và sửa trong lúc phát triển:
 Nhưng toàn bộ test đều dùng **text tái tạo từ ảnh chụp màn hình**,
 không phải `message.content`/`embed` thật lấy trực tiếp từ Discord —
 khả năng cao khớp, nhưng chưa chắc 100% (khoảng trắng, ký tự ẩn, cách
-chia field có thể khác đôi chút). Dùng `ot!debugnext` để in ra console
+chia field có thể khác đôi chút). Dùng `,debugnext` để in ra console
 đúng raw content/embed thật, đối chiếu với các hàm `parse_*` nếu có gì
 không khớp.
