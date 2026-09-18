@@ -92,21 +92,86 @@ async def next_note_id():
 # đã test khớp mẫu thật, nhưng vẫn nên tự kiểm chứng bằng ,debugnext
 # trước khi tin tưởng hoàn toàn (xem README).
 # ----------------------------------------------------------------------
+RANK_VI = {
+    "common": "Phổ thông", "uncommon": "Không phổ biến", "rare": "Hiếm",
+    "epic": "Sử thi", "mythical": "Thần thoại", "legendary": "Huyền thoại",
+    "special": "Đặc biệt", "patreon": "Patreon", "gem": "Đá quý",
+    "fabled": "Huyền tích", "bot": "Robot", "distorted": "Dị biến", "hidden": "Ẩn giấu",
+}
+
+# Dịch theo mẫu câu cố định OwO hay dùng — KHÔNG dùng API dịch ngoài (tốn
+# phí, phụ thuộc mạng, có thể lỗi âm thầm). Nếu câu không khớp mẫu nào,
+# trả về None — nơi gọi hàm này sẽ giữ nguyên bản tiếng Anh thay vì đoán
+# bừa ra 1 câu dịch sai.
+_TRANSLATE_PATTERNS = [
+    (r"^Deals? ([\d.]+)% of your (STR|MAG) to an enemy and apply (\w+) for (\d+) turns?\.?$",
+     lambda m: f"Gây {m.group(1)}% {m.group(2)} lên 1 địch và áp {m.group(3)} trong {m.group(4)} lượt."),
+    (r"^Deals? ([\d.]+)% of your (STR|MAG) to all opponents\.?$",
+     lambda m: f"Gây {m.group(1)}% {m.group(2)} lên TẤT CẢ địch."),
+    (r"^Deals? ([\d.]+)% of your (STR|MAG) to (?:an enemy)\.?$",
+     lambda m: f"Gây {m.group(1)}% {m.group(2)} lên 1 địch."),
+    (r"^Deal ([\d.]+)% of your (STR|MAG) to ALL enemies and heal ALL allies by the damage dealt\.?$",
+     lambda m: f"Gây {m.group(1)}% {m.group(2)} lên TẤT CẢ địch, đồng thời hồi máu TẤT CẢ đồng minh "
+               f"bằng đúng lượng damage vừa gây ra."),
+    (r"^At the start of the turn, apply Taunt to your animal for (\d+) turns?\.?$",
+     lambda m: f"Đầu mỗi lượt, tự áp Taunt lên bản thân trong {m.group(1)} lượt."),
+    (r"^Increases? your (STR|MAG|PR|WP|MR|HP) by ([\d.]+)%\.?$",
+     lambda m: f"Tăng {m.group(1)} thêm {m.group(2)}%."),
+    (r"^Decreases? all healing for this animal by -([\d.]+)%\.?$",
+     lambda m: f"Giảm {m.group(1)}% hồi máu nhận vào."),
+    (r"^Deal \+?([\d.]+)% more damage to bosses\.?$",
+     lambda m: f"Gây thêm {m.group(1)}% sát thương khi đánh boss."),
+]
+
+
+def translate_effect_text(text):
+    """Dịch 1 câu mô tả hiệu ứng/passive sang tiếng Việt nếu khớp mẫu đã
+    biết. Trả về None nếu không khớp — nơi gọi giữ nguyên tiếng Anh."""
+    if not text:
+        return None
+    t = text.strip()
+    for pattern, fn in _TRANSLATE_PATTERNS:
+        m = re.match(pattern, t)
+        if m:
+            return fn(m)
+    return None
+
+
 def parse_owodex(text: str):
     count_m = re.search(r"\*\*Count:\*\*\s*(\S+)", text)
     rank_m = re.search(r"\*\*Rank:\*\*\s*([a-zA-Z ]+)", text)
     alias_m = re.search(r"\*\*Alias:\*\*\s*([^\n]+)", text)
+    rarity_m = re.search(r"\*\*Rarity:\*\*\s*([\d,]+)\s*total caught", text)
+    points_m = re.search(r"\*\*Points:\*\*\s*(\d+)", text)
+    sell_m = re.search(r"\*\*Sell:\*\*\s*(\d+)\s*Cowoncy\s*\|\s*(\d+)\s*sold", text)
+    sac_m = re.search(r"\*\*Sacrifice:\*\*\s*(\d+)\s*Essence\s*\|\s*(\d+)\s*killed", text)
+    # Flavor text: dòng in nghiêng (*...*) ở đầu tin nhắn, trước **Count:**
+    flavor_m = re.search(r"^\*([^*]+)\*", text.strip())
+
     nums = re.findall(r"`(\d+)`", text)
     if len(nums) < 6 or not alias_m:
         return None
-    name = alias_m.group(1).split(",")[0].strip()
+    aliases = [a.strip() for a in alias_m.group(1).split(",") if a.strip()]
+    name = aliases[0] if aliases else ""
     if not name:
         return None
+
+    rank_raw = rank_m.group(1).strip().lower() if rank_m else ""
     return {
         "name": name,
-        "rank": rank_m.group(1).strip().capitalize() if rank_m else "",
+        "aliases": aliases,
+        "rank": rank_raw.capitalize(),
+        "rank_vi": RANK_VI.get(rank_raw),
         "stats": [int(n) for n in nums[:6]],
         "count": count_m.group(1) if count_m else "",
+        "flavor_text": flavor_m.group(1).strip() if flavor_m else None,
+        "rarity_caught": rarity_m.group(1) if rarity_m else None,
+        "points": int(points_m.group(1)) if points_m else None,
+        # None khi pet không bán/hy sinh được (OwO hiện "???" thay vì số)
+        "sell_cowoncy": int(sell_m.group(1)) if sell_m else None,
+        "sell_sold_count": int(sell_m.group(2)) if sell_m else None,
+        "sacrifice_essence": int(sac_m.group(1)) if sac_m else None,
+        "sacrifice_killed_count": int(sac_m.group(2)) if sac_m else None,
     }
 
 
@@ -228,9 +293,15 @@ async def save_pet_species(p, source_id=None):
     await mdb[COL_PET_SPECIES].update_one(
         {"_id": key},
         {"$set": {
-            "display_name": p["name"], "rank": p["rank"],
+            "display_name": p["name"], "aliases": p.get("aliases", [p["name"]]),
+            "rank": p["rank"], "rank_vi": p.get("rank_vi"),
             "hp": hp, "att": att, "pr": pr, "wp": wp, "mag": mag, "mr": mr,
-            "count_seen": p["count"], "confirmed_at": datetime.utcnow().isoformat(),
+            "count_seen": p["count"], "flavor_text": p.get("flavor_text"),
+            "rarity_caught": p.get("rarity_caught"), "points": p.get("points"),
+            "sell_cowoncy": p.get("sell_cowoncy"), "sell_sold_count": p.get("sell_sold_count"),
+            "sacrifice_essence": p.get("sacrifice_essence"),
+            "sacrifice_killed_count": p.get("sacrifice_killed_count"),
+            "confirmed_at": datetime.utcnow().isoformat(),
             "confirmed_by": source_id, "source": "owodex",
         }},
         upsert=True,
@@ -246,19 +317,31 @@ async def save_weapon_type(w, source_id=None):
     }
     if w.get("main_desc"):
         update["main_desc"] = w["main_desc"]
+        vi = translate_effect_text(w["main_desc"])
+        if vi:
+            update["main_desc_vi"] = vi
     doc = {"$set": update}
     if w.get("inherent_effects"):
-        doc["$addToSet"] = {"inherent_effects": {"$each": w["inherent_effects"]}}
+        effects_with_vi = []
+        for eff in w["inherent_effects"]:
+            eff = dict(eff)
+            vi = translate_effect_text(eff.get("desc"))
+            if vi:
+                eff["desc_vi"] = vi
+            effects_with_vi.append(eff)
+        doc["$addToSet"] = {"inherent_effects": {"$each": effects_with_vi}}
     await mdb[COL_WEAPON_TYPES].update_one({"_id": key}, doc, upsert=True)
 
 
 async def save_weapon_instance(w, source_id=None):
     passive = w.get("passive") or {}
+    passive_desc_vi = translate_effect_text(passive.get("desc"))
     await mdb[COL_WEAPON_INSTANCES].update_one(
         {"_id": w["id"]},
         {"$set": {
             "type_name": w["type_name"], "quality": w["quality"],
             "passive_name": passive.get("name"), "passive_desc": passive.get("desc"),
+            "passive_desc_vi": passive_desc_vi,
             "owner_id": source_id, "updated_at": datetime.utcnow().isoformat(),
         }},
         upsert=True,
@@ -272,6 +355,7 @@ async def save_passive(name, desc, source_id=None):
     await mdb[COL_PASSIVES].update_one(
         {"_id": key},
         {"$set": {"display_name": name, "description": desc,
+                  "description_vi": translate_effect_text(desc),
                   "confirmed_at": datetime.utcnow().isoformat(), "confirmed_by": source_id}},
         upsert=True,
     )
@@ -519,20 +603,44 @@ async def note_cmd(ctx, action: str = "list", *, text: str = ""):
 # ----------------------------------------------------------------------
 # LỆNH: pet species — xem/tra cứu + nhập tay khi cần
 # ----------------------------------------------------------------------
-@bot.command(name="pet")
+@bot.command(name="pet", aliases=["dex"])
 async def pet_cmd(ctx, *, name: str = ""):
     if not name:
-        await ctx.send("Dùng: `,pet <tên>`")
+        await ctx.send("Dùng: `,pet <tên>` (hoặc `,dex <tên>`)")
         return
     doc = await mdb[COL_PET_SPECIES].find_one({"_id": name.lower()})
     if not doc:
         await ctx.send(f"Chưa có dữ liệu cho `{name}`. Tra `owo owodex {name}` trong kênh có bot để tự ghi nhận, "
                         f"hoặc dùng `,petset` để nhập tay.")
         return
-    embed = discord.Embed(title=doc["display_name"], color=0x9B6BC9)
-    embed.add_field(name="Rank", value=doc.get("rank", "—"))
-    embed.add_field(name="Stats", value=f"HP{doc['hp']} ATT{doc['att']} PR{doc['pr']} "
-                                         f"WP{doc['wp']} MAG{doc['mag']} MR{doc['mr']}", inline=False)
+
+    rank_display = doc.get("rank_vi") or doc.get("rank", "—")
+    embed = discord.Embed(
+        title=doc["display_name"],
+        description=doc.get("flavor_text"),
+        color=0x9B6BC9,
+    )
+    embed.add_field(name="Rank", value=rank_display, inline=True)
+    embed.add_field(name="Số đã bắt", value=doc.get("count_seen") or "—", inline=True)
+    if doc.get("rarity_caught"):
+        embed.add_field(name="Độ hiếm", value=f"{doc['rarity_caught']} đã từng bắt (toàn server)", inline=True)
+    embed.add_field(
+        name="Chỉ số",
+        value=f"HP{doc['hp']} ATT{doc['att']} PR{doc['pr']} WP{doc['wp']} MAG{doc['mag']} MR{doc['mr']}",
+        inline=False,
+    )
+    if doc.get("points") is not None:
+        embed.add_field(name="Zoo Points", value=str(doc["points"]), inline=True)
+    if doc.get("sell_cowoncy") is not None:
+        embed.add_field(name="Bán", value=f"{doc['sell_cowoncy']} Cowoncy ({doc['sell_sold_count']} đã bán)", inline=True)
+    else:
+        embed.add_field(name="Bán", value="Không bán được", inline=True)
+    if doc.get("sacrifice_essence") is not None:
+        embed.add_field(name="Hy sinh", value=f"{doc['sacrifice_essence']} Essence ({doc['sacrifice_killed_count']} đã hy sinh)", inline=True)
+    else:
+        embed.add_field(name="Hy sinh", value="Không hy sinh được", inline=True)
+    if doc.get("aliases"):
+        embed.add_field(name="Alias", value=", ".join(doc["aliases"]), inline=False)
     embed.set_footer(text=f"Nguồn: {doc.get('source','—')} · xác nhận lúc {doc.get('confirmed_at','?')[:16]}")
     await ctx.send(embed=embed)
 
@@ -578,10 +686,14 @@ async def weapontype_cmd(ctx, *, name: str = ""):
     if not doc:
         await ctx.send(f"Chưa có dữ liệu cho loại vũ khí `{name}`.")
         return
-    embed = discord.Embed(title=doc["display_name"], description=doc.get("main_desc", "—"), color=0x4C86D6)
+    desc = doc.get("main_desc_vi") or doc.get("main_desc", "—")
+    embed = discord.Embed(title=doc["display_name"], description=desc, color=0x4C86D6)
+    if doc.get("main_desc_vi") and doc.get("main_desc"):
+        embed.add_field(name="Nguyên văn (EN)", value=doc["main_desc"], inline=False)
     effects = doc.get("inherent_effects", [])
     if effects:
-        embed.add_field(name="Hiệu ứng cố định", value="\n".join(f"{e['name']}: {e['desc']}" for e in effects), inline=False)
+        lines = [f"**{e['name']}**: {e.get('desc_vi') or e['desc']}" for e in effects]
+        embed.add_field(name="Hiệu ứng cố định", value="\n".join(lines), inline=False)
     embed.set_footer(text=f"Xác nhận lúc {doc.get('confirmed_at','?')[:16]}")
     await ctx.send(embed=embed)
 
@@ -594,7 +706,9 @@ async def weapontypes_cmd(ctx, *, search: str = ""):
     if not rows:
         await ctx.send("Chưa ghi nhận loại vũ khí nào khớp.")
         return
-    await ctx.send("\n".join(f"**{r['display_name']}** — {r.get('main_desc','(chưa rõ mô tả)')}" for r in rows))
+    await ctx.send("\n".join(
+        f"**{r['display_name']}** — {r.get('main_desc_vi') or r.get('main_desc','(chưa rõ mô tả)')}" for r in rows
+    ))
 
 
 @bot.command(name="weapontypeset")
@@ -622,7 +736,10 @@ async def passive_cmd(ctx, *, name: str = ""):
     if not doc:
         await ctx.send(f"Chưa có dữ liệu cho passive `{name}`.")
         return
-    await ctx.send(f"**{doc['display_name']}**\n{doc['description']}")
+    if doc.get("description_vi"):
+        await ctx.send(f"**{doc['display_name']}**\n{doc['description_vi']}\n-# EN: {doc['description']}")
+    else:
+        await ctx.send(f"**{doc['display_name']}**\n{doc['description']}")
 
 
 @bot.command(name="passives")
@@ -633,7 +750,7 @@ async def passives_cmd(ctx, *, search: str = ""):
     if not rows:
         await ctx.send("Chưa ghi nhận passive nào khớp.")
         return
-    await ctx.send("\n".join(f"**{r['display_name']}** — {r['description']}" for r in rows))
+    await ctx.send("\n".join(f"**{r['display_name']}** — {r.get('description_vi') or r['description']}" for r in rows))
 
 
 @bot.command(name="passiveset")
@@ -669,7 +786,7 @@ async def help_cmd(ctx):
     )
     embed.add_field(
         name="Pet (loài)",
-        value="`,pet <tên>` · `,pets [tìm]` · "
+        value="`,pet <tên>` / `,dex <tên>` · `,pets [tìm]` · "
               "`,petset <tên> <rank> <hp> <att> <pr> <wp> <mag> <mr>`",
         inline=False,
     )

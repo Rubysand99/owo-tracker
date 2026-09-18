@@ -53,7 +53,7 @@ server**, bot không thể tự "theo dõi mọi nơi" (xem phần Giới hạn)
 ,note add Bắt gowl       → thêm việc cần làm
 ,note list / ,note done 1
 
-,pet gowl                 → tra thông tin 1 loài pet đã ghi nhận
+,pet gowl / ,dex gowl     → tra dex đầy đủ 1 loài (flavor, rank, rarity, sell, sacrifice, alias, chỉ số)
 ,pets legendary           → tìm pet theo tên/rank đã ghi nhận
 ,petset gowl legendary 10 1 3 1 2 3   → nhập tay khi không có owodex
 
@@ -81,6 +81,24 @@ server**, bot không thể tự "theo dõi mọi nơi" (xem phần Giới hạn)
   theo unique ID, quality/passive luôn là bản mới nhất.
 - **Passive** (`owot_passives`): tên + mô tả chính xác, lấy từ đúng
   dòng `__Tên__ - mô tả` trong tin nhắn OwO.
+
+### Về việc tự động dịch sang tiếng Việt
+
+Mọi mô tả vũ khí/passive lấy từ OwO đều là tiếng Anh gốc. Bot cố dịch
+sang tiếng Việt **theo mẫu câu cố định** (không gọi API dịch ngoài —
+tốn phí, phụ thuộc mạng, có thể lỗi âm thầm mà không biết). Hàm
+`translate_effect_text()` nhận diện ~8 mẫu câu OwO hay dùng (Deals
+X% STR..., Increases your X by Y%..., v.v.) và dịch chính xác theo
+mẫu. Câu nào không khớp mẫu nào đã biết thì **giữ nguyên tiếng Anh**
+thay vì đoán bừa ra bản dịch sai — bản gốc tiếng Anh luôn được lưu
+song song, không bao giờ mất.
+
+Rank pet (`common`, `legendary`...) dịch qua bảng tra cố định
+`RANK_VI`, luôn chính xác vì chỉ có đúng 14 giá trị rank trong game.
+
+Flavor text (câu in nghiêng mô tả pet, kiểu đùa/thơ) **không dịch** —
+văn phong sáng tạo dịch theo mẫu dễ sai nghĩa hơn là giữ nguyên tiếng
+Anh, nên bot chủ động không cố dịch phần này.
 
 ### Về việc tách hiệu ứng cố định khỏi passive ngẫu nhiên
 
