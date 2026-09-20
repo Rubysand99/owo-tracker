@@ -49,6 +49,9 @@ server**, bot không thể tự "theo dõi mọi nơi" (xem phần Giới hạn)
 ,team                    → đội hình gần nhất ghi nhận được
 ,myweapons scythe        → vũ khí BẠN đang sở hữu, tìm theo tên
 ,ping                     → kiểm tra bot còn sống, độ trễ bao nhiêu ms
+,zoo bee                  → xem zoo đã ghi nhận, lọc theo tên
+,inv gem                  → xem inventory đã ghi nhận, lọc theo tên
+,gems                      → tình trạng độ bền từng slot gem đang trang bị
 
 ,note add Bắt gowl       → thêm việc cần làm
 ,note list / ,note done 1
@@ -81,6 +84,40 @@ server**, bot không thể tự "theo dõi mọi nơi" (xem phần Giới hạn)
   theo unique ID, quality/passive luôn là bản mới nhất.
 - **Passive** (`owot_passives`): tên + mô tả chính xác, lấy từ đúng
   dòng `__Tên__ - mô tả` trong tin nhắn OwO.
+
+### Zoo, Inventory, và nhắc thay gem tự động
+
+Bot còn đọc thêm 3 loại tin nhắn:
+
+- **`owo zoo`** — lưu toàn bộ bảng đếm pet theo mọi tier + Zoo Points.
+  Xem lại bằng `,zoo [tìm]`.
+- **`owo inventory`** — lưu toàn bộ item (gem, crate, vé, vũ khí thô...).
+  Xem lại bằng `,inv [tìm]`.
+- **`owo hunt` / `owo autohunt`** — đọc dòng "hunt is empowered by..."
+  để biết đang trang bị gem nào, độ bền còn bao nhiêu.
+
+**Cơ chế nhắc thay gem:** OwO có 3 slot gem (1/3/4) + có thể có thêm
+loại chỉ dùng được trong sự kiện, mỗi slot nhiều tier (Common → Fabled).
+Gem nào **không trang bị sẽ không hiện** trong dòng "empowered by" —
+bot dùng chính đặc điểm này để phát hiện: so sánh slot đang thấy ở lần
+hunt mới nhất với lần trước đó, **slot nào biến mất là gem vừa hết độ
+bền**. Lúc đó bot tự nhắn vào đúng kênh, tag bạn, liệt kê mọi gem cùng
+slot còn tồn trong inventory kèm sẵn lệnh:
+```
+owo use 051
+```
+Không tự chọn hộ tier nào — liệt kê hết để bạn tự quyết định dùng viên
+nào trước.
+
+⚠️ **Về độ chắc chắn của cơ chế phát hiện:** Toàn bộ format 2 tin nhắn
+`owo zoo` và `owo inventory` được viết dựa theo đúng nguyên văn bạn
+từng gửi qua ảnh chụp màn hình — đã test khớp 100% với y hệt các mẫu
+đó (`test_parsers.py`). Riêng dòng "empowered by" trong tin nhắn hunt
+mình viết dựa trên trí nhớ về 1 ví dụ cũ hơn, **chưa có mẫu thật để
+đối chiếu trong lần này** — độ tin cậy thấp hơn 2 cái kia. Dùng
+`,debugnext` ngay trước khi hunt 1 lần để in raw content thật ra
+console, so với `parse_hunt_gem_status()` xem có khớp không trước khi
+tin tưởng hoàn toàn cơ chế nhắc.
 
 ### Về việc tự động dịch sang tiếng Việt
 

@@ -221,6 +221,74 @@ WP `1` MAG `2` MR `3`""")
 
 asyncio.run(run_db_tests())
 
+print("\n=== Zoo / Inventory / Gem (mới) ===")
+
+check("decode_superscript_number", [bot_mod.decode_superscript_number(s) for s in ["¹¹⁰", "⁰⁶⁸", "⁰⁰¹", "¹⁰⁴", "⁰⁰⁰"]],
+      [110, 68, 1, 104, 0])
+
+zoo_result = bot_mod.parse_zoo("""🌿 🌱 🌳 Ruby's zoo! 🌳 🌿 🌱
+<:common:416520037713838081>   :bee:¹¹⁰  :bug:¹¹³  :snail:¹³²  :beetle:¹¹³  :butterfly:¹¹⁹  
+<:patreon:449705754522419222>    <:pbird:449867323990343690>⁰⁰¹  <:pdolphin:449867323898068992>⁰⁰¹  
+<:special:427935192137859073>    <a:2024nov_diwaliOwO:1301754663892422746>⁰⁰⁰  
+<:blank:427371936482328596>    <a:2025may_sportsdayowo:1377197478868418570>⁰⁰⁰  
+**Zoo Points: __11,272,674__**
+\t**F-3, CP-1, B-1, G-60, L-322, P-164, M-696, S-82, E-6509, R-58287, U-173131, C-340666** """)
+check("parse_zoo: tổng số pet", len(zoo_result["pets"]), 9)
+check("parse_zoo: zoo_points", zoo_result["zoo_points"], 11272674)
+check("parse_zoo: dòng blank nối đúng về tier trước (special)",
+      [p for p in zoo_result["pets"] if p["name"] == "2025may_sportsdayowo"][0]["tier"], "special")
+check("parse_zoo: số lượng bee đúng", [p for p in zoo_result["pets"] if p["name"] == "bee"][0]["count"], 110)
+
+inv_text = """`051`<:cgem1:492572122120585240>¹⁰⁴    `052`<:ugem1:492572122514980864>⁰⁹⁷    `053`<:rgem1:492572122888011776>¹⁰³
+`100`<:crate:523771259302182922>⁰⁰⁵"""
+inv_result = bot_mod.parse_inventory("Ruby's Inventory\n" + inv_text)
+check("parse_inventory: tổng số item", len(inv_result["items"]), 4)
+gem_items = [i for i in inv_result["items"] if i["is_gem"]]
+check("parse_inventory: nhận diện đúng 3 gem (kể cả rgem1 — từng bị bỏ sót)", len(gem_items), 3)
+check("parse_inventory: rgem1 -> tier Rare, slot 1",
+      [i for i in inv_result["items"] if i["name"] == "rgem1"][0]["gem_tier"], "Rare")
+check("parse_inventory: item thường (crate) is_gem=False",
+      [i for i in inv_result["items"] if i["name"] == "crate"][0]["is_gem"], False)
+
+hunt_text = "Ruby, hunt is empowered by <:cgem1:492572122120585240>[47/75] <:rgem3:510366792653340674>[300/525] !"
+hunt_result = bot_mod.parse_hunt_gem_status(hunt_text)
+check("parse_hunt_gem_status: số gem đang trang bị", len(hunt_result["gems"]), 2)
+check("parse_hunt_gem_status: slot + độ bền đúng",
+      [(g["slot"], g["current"], g["max"]) for g in hunt_result["gems"]],
+      [("1", 47, 75), ("3", 300, 525)])
+
+
+async def run_gem_reminder_scenario():
+    """Mô phỏng đúng kịch bản thật: gem slot 1 đang [5/75] ở lần hunt
+    trước, lần hunt sau BIẾN MẤT (hết độ bền) — bot phải phát hiện và
+    tìm đúng lựa chọn thay thế trong inventory."""
+    fake_client = AsyncMongoMockClient()
+    bot_mod.mdb = fake_client["gem_test"]
+
+    inv = bot_mod.parse_inventory("Ruby's Inventory\n" + inv_text)
+    await bot_mod.save_inventory(inv, "u1")
+
+    gs1 = bot_mod.parse_hunt_gem_status(
+        "hunt is empowered by <:cgem1:492572122120585240>[5/75] <:rgem3:510366792653340674>[300/525] !"
+    )
+    vanished1 = await bot_mod.save_gem_status(gs1, "u1")
+    check("gem reminder: lần đầu quan sát, chưa có slot nào biến mất", vanished1, set())
+
+    gs2 = bot_mod.parse_hunt_gem_status(
+        "hunt is empowered by <:rgem3:510366792653340674>[295/525] !"
+    )
+    vanished2 = await bot_mod.save_gem_status(gs2, "u1")
+    check("gem reminder: phát hiện đúng slot 1 vừa biến mất", vanished2, {"1"})
+
+    options = await bot_mod.mdb[bot_mod.COL_INVENTORY].find(
+        {"is_gem": True, "gem_slot": "1", "count": {"$gt": 0}}
+    ).sort("gem_tier_rank", 1).to_list(length=10)
+    check("gem reminder: tìm đúng mã thay thế, ưu tiên tier thấp trước",
+          [o["_id"] for o in options], ["051", "052", "053"])
+
+
+asyncio.run(run_gem_reminder_scenario())
+
 print("\n" + ("=" * 40))
 if failures:
     print(f"{FAIL} {len(failures)} test thất bại: {failures}")

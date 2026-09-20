@@ -60,6 +60,9 @@ COL_BATTLES = "owot_battles"
 COL_HUNTBOT = "owot_huntbot_status"
 COL_QUEST = "owot_quest_status"
 COL_NOTES = "owot_notes"
+COL_ZOO = "owot_zoo_snapshot"
+COL_INVENTORY = "owot_inventory_items"
+COL_GEM_STATUS = "owot_gem_status"
 
 pending_commands = {}  # channel_id -> timestamp gần nhất có lệnh owo từ tracked user
 
@@ -283,10 +286,161 @@ def parse_quest_status(text: str):
     }
 
 
+# --- Zoo / Inventory / Gem — OwO dùng chữ số mũ Unicode (¹⁰⁴ = 104) cho
+# số lượng ở cả 2 loại tin nhắn này, khác hẳn owodex (dùng backtick số
+# thường). Cần giải mã riêng, không dùng chung logic với các parser trên.
+_SUPERSCRIPT_DIGITS = {"⁰": "0", "¹": "1", "²": "2", "³": "3", "⁴": "4",
+                        "⁵": "5", "⁶": "6", "⁷": "7", "⁸": "8", "⁹": "9"}
+
+
+def decode_superscript_number(s: str) -> int:
+    digits = "".join(_SUPERSCRIPT_DIGITS.get(c, "") for c in s)
+    return int(digits) if digits else 0
+
+
+def parse_zoo(text: str):
+    """owo zoo — bảng đếm pet theo từng tier. Mỗi dòng bắt đầu bằng 1 tier
+    tag, theo sau là danh sách pet dạng :tên: (icon thường) hoặc
+    <a?:tên:id> (custom emoji) + số lượng bằng chữ số mũ ngay sau. Dòng
+    "blank" là dòng nối tiếp của tier ngay phía trên (khi 1 tier có hơn
+    5 loại phải xuống dòng), không phải tier mới."""
+    if "'s zoo" not in text and "zoo!" not in text.lower():
+        return None
+
+    tier_tag_pattern = re.compile(r"^<a?:(\w+):\d+>")
+    entry_pattern = re.compile(r"(?:<a?:(\w+):\d+>|:(\w+):)([⁰¹²³⁴⁵⁶⁷⁸⁹]+)")
+
+    pets = []
+    current_tier = None
+    for line in text.split("\n"):
+        tier_m = tier_tag_pattern.match(line.strip())
+        if tier_m:
+            tag = tier_m.group(1)
+            if tag != "blank":
+                current_tier = tag
+        if current_tier is None:
+            continue
+        for m in entry_pattern.finditer(line):
+            name = m.group(1) or m.group(2)
+            pets.append({"tier": current_tier, "name": name, "count": decode_superscript_number(m.group(3))})
+
+    points_m = re.search(r"Zoo Points:\s*__([\d,]+)__", text)
+    breakdown_m = re.search(r"\*\*(F-[\d\-A-Za-z, ]+C-[\d,]+)\*\*", text)
+    if not pets and not points_m:
+        return None
+    return {
+        "pets": pets,
+        "zoo_points": int(points_m.group(1).replace(",", "")) if points_m else None,
+        "breakdown_raw": breakdown_m.group(1) if breakdown_m else None,
+    }
+
+
+_GEM_TIER_PREFIX = {"c": "Common", "u": "Uncommon", "r": "Rare", "e": "Epic",
+                     "m": "Mythical", "l": "Legendary", "f": "Fabled"}
+_GEM_TIER_RANK = {"Common": 1, "Uncommon": 2, "Rare": 3, "Epic": 4,
+                   "Mythical": 5, "Legendary": 6, "Fabled": 7}
+
+
+def parse_gem_name(emoji_name: str):
+    """'cgem1' -> {'tier':'Common','slot':'1'}. None nếu không phải gem."""
+    m = re.match(r"^([curelmf])gem(\d+)$", emoji_name)
+    if not m:
+        return None
+    return {"tier": _GEM_TIER_PREFIX.get(m.group(1)), "slot": m.group(2)}
+
+
+def parse_inventory(text: str):
+    """owo inventory — danh sách item, mỗi item có mã 3 số (backtick),
+    emoji tên item, và số lượng bằng chữ số mũ ngay sau (không có dấu
+    cách). Trả về cả item thường lẫn gem — gem được đánh dấu is_gem."""
+    if "Inventory" not in text:
+        return None
+    pattern = re.compile(r"`(\d{3})`<a?:([a-zA-Z0-9_]+):(\d+)>([⁰¹²³⁴⁵⁶⁷⁸⁹]+)")
+    items = []
+    for code, name, emoji_id, sup in pattern.findall(text):
+        gem_info = parse_gem_name(name)
+        items.append({
+            "code": code, "name": name, "count": decode_superscript_number(sup),
+            "is_gem": gem_info is not None,
+            "gem_tier": gem_info["tier"] if gem_info else None,
+            "gem_slot": gem_info["slot"] if gem_info else None,
+            "gem_tier_rank": _GEM_TIER_RANK.get(gem_info["tier"]) if gem_info else None,
+        })
+    if not items:
+        return None
+    return {"items": items}
+
+
+def parse_hunt_gem_status(text: str):
+    """Dòng 'hunt is empowered by <gem>[hiện/tối đa] ...' trong tin nhắn
+    owo hunt/autohunt. Gem nào KHÔNG trang bị sẽ không xuất hiện ở đây —
+    đúng đặc điểm bạn mô tả."""
+    if "empowered by" not in text:
+        return None
+    pattern = re.compile(r"<a?:([a-zA-Z0-9_]+):\d+>\[(\d+)/(\d+)\]")
+    gems = []
+    for name, cur, mx in pattern.findall(text):
+        gem_info = parse_gem_name(name)
+        if not gem_info:
+            continue
+        gems.append({"slot": gem_info["slot"], "tier": gem_info["tier"],
+                     "emoji_name": name, "current": int(cur), "max": int(mx)})
+    if not gems:
+        return None
+    return {"gems": gems}
+
+
 # ----------------------------------------------------------------------
 # LƯU — tất cả upsert theo key tự nhiên (tên pet, tên loại vũ khí, tên
 # passive, ID vũ khí) nên gọi lại nhiều lần không tạo bản trùng.
 # ----------------------------------------------------------------------
+async def save_zoo(z, source_id=None):
+    """Zoo là 1 bản chụp toàn cảnh — ghi đè bản cũ mỗi lần quan sát mới,
+    không cộng dồn (số lượng pet là tuyệt đối, không phải log sự kiện)."""
+    await mdb[COL_ZOO].update_one(
+        {"_id": "latest"},
+        {"$set": {"pets": z["pets"], "zoo_points": z.get("zoo_points"),
+                  "breakdown_raw": z.get("breakdown_raw"),
+                  "updated_at": datetime.utcnow().isoformat(), "updated_by": source_id}},
+        upsert=True,
+    )
+
+
+async def save_inventory(inv, source_id=None):
+    """Mỗi item lưu riêng 1 document (khoá theo mã 3 số) — để dễ tra cứu
+    từng item và để lệnh ,gems tìm đúng mã cho `owo use`."""
+    for item in inv["items"]:
+        await mdb[COL_INVENTORY].update_one(
+            {"_id": item["code"]},
+            {"$set": {**item, "updated_at": datetime.utcnow().isoformat(), "updated_by": source_id}},
+            upsert=True,
+        )
+
+
+async def save_gem_status(gs, source_id=None):
+    """Lưu tình trạng gem NGAY LÚC HUNT — khoá theo slot (1/3/4), ghi đè
+    bản cũ. Trả về danh sách slot đã BIẾN MẤT so với lần trước (từng
+    trang bị, giờ không còn hiện trong tin nhắn) — dấu hiệu gem vừa hết
+    hoặc bị tháo, dùng để quyết định có cần nhắc hay không."""
+    seen_slots = {g["slot"] for g in gs["gems"]}
+    prev_cursor = mdb[COL_GEM_STATUS].find({})
+    prev_docs = await prev_cursor.to_list(length=10)
+    prev_slots = {d["_id"] for d in prev_docs}
+    vanished_slots = prev_slots - seen_slots
+
+    for g in gs["gems"]:
+        await mdb[COL_GEM_STATUS].update_one(
+            {"_id": g["slot"]},
+            {"$set": {"tier": g["tier"], "emoji_name": g["emoji_name"],
+                      "current": g["current"], "max": g["max"],
+                      "updated_at": datetime.utcnow().isoformat(), "updated_by": source_id}},
+            upsert=True,
+        )
+    for slot in vanished_slots:
+        await mdb[COL_GEM_STATUS].delete_one({"_id": slot})
+    return vanished_slots
+
+
 async def save_pet_species(p, source_id=None):
     key = p["name"].lower()
     hp, att, pr, wp, mag, mr = p["stats"]
@@ -476,6 +630,43 @@ async def handle_owo_response(message: discord.Message, source_id):
     if quest:
         await save_quest(quest)
 
+    zoo = parse_zoo(text)
+    if zoo:
+        await save_zoo(zoo, source_id)
+
+    inv = parse_inventory(text)
+    if inv:
+        await save_inventory(inv, source_id)
+
+    gem_status = parse_hunt_gem_status(text)
+    if gem_status:
+        vanished_slots = await save_gem_status(gem_status, source_id)
+        for slot in vanished_slots:
+            await remind_gem_replacement(message, slot, source_id)
+
+
+async def remind_gem_replacement(message: discord.Message, slot: str, source_id):
+    """Gem ở 1 slot vừa biến mất khỏi tin nhắn hunt (hết độ bền hoặc bị
+    tháo) — tra inventory tìm các lựa chọn còn lại cùng slot, gợi ý đúng
+    mã lệnh owo use. Không tự chọn hộ tier nào — liệt kê hết, để người
+    dùng tự quyết."""
+    cursor = mdb[COL_INVENTORY].find(
+        {"is_gem": True, "gem_slot": slot, "count": {"$gt": 0}}
+    ).sort("gem_tier_rank", 1)
+    options = await cursor.to_list(length=10)
+
+    if not options:
+        await message.channel.send(
+            f"<@{source_id}> ⚠️ Gem slot {slot} vừa hết, và trong kho không còn viên nào cùng slot để thay. "
+            f"Cần farm/mua thêm."
+        )
+        return
+
+    lines = [f"`owo use {o['_id']}` — {o['gem_tier']} (còn {o['count']})" for o in options]
+    await message.channel.send(
+        f"<@{source_id}> ⚠️ Gem slot {slot} vừa hết độ bền! Chọn 1 trong các lựa chọn còn lại:\n" + "\n".join(lines)
+    )
+
 
 # ----------------------------------------------------------------------
 # LỆNH: theo dõi & trạng thái cá nhân
@@ -575,6 +766,63 @@ async def myweapons_cmd(ctx, *, search: str = ""):
     lines = [f"`{r['_id']}` **{r['type_name']}** {r['quality']}% — {r.get('passive_name') or 'chưa rõ passive'}"
              for r in rows]
     await ctx.send("\n".join(lines))
+
+
+@bot.command(name="zoo")
+async def zoo_cmd(ctx, *, search: str = ""):
+    doc = await mdb[COL_ZOO].find_one({"_id": "latest"})
+    if not doc:
+        await ctx.send("Chưa có dữ liệu zoo. Gõ `owo zoo` trong kênh có bot để bot tự ghi nhận.")
+        return
+    pets = doc["pets"]
+    if search:
+        pets = [p for p in pets if search.lower() in p["name"].lower()]
+    if not pets:
+        await ctx.send("Không có pet nào khớp tìm kiếm trong zoo đã lưu.")
+        return
+    by_tier = {}
+    for p in pets:
+        by_tier.setdefault(p["tier"], []).append(p)
+    chunks = []
+    for tier, plist in by_tier.items():
+        line = f"**{tier}**: " + ", ".join(f"{p['name']} ×{p['count']}" for p in plist)
+        chunks.append(line)
+    header = f"Zoo Points: **{doc.get('zoo_points','?')}**"
+    if doc.get("breakdown_raw"):
+        header += f" ({doc['breakdown_raw']})"
+    text = header + "\n" + "\n".join(chunks)
+    for i in range(0, len(text), 1900):
+        await ctx.send(text[i:i + 1900])
+
+
+@bot.command(name="inv")
+async def inv_cmd(ctx, *, search: str = ""):
+    q = {"name": {"$regex": search, "$options": "i"}} if search else {}
+    cursor = mdb[COL_INVENTORY].find(q).sort("code", 1)
+    rows = await cursor.to_list(length=100)
+    if not rows:
+        await ctx.send("Chưa có dữ liệu inventory. Gõ `owo inventory` trong kênh có bot để bot tự ghi nhận.")
+        return
+    lines = [f"`{r['_id']}` **{r['name']}** ×{r['count']}" for r in rows]
+    text = "\n".join(lines)
+    for i in range(0, len(text), 1900):
+        await ctx.send(text[i:i + 1900])
+
+
+@bot.command(name="gems")
+async def gems_cmd(ctx):
+    cursor = mdb[COL_GEM_STATUS].find().sort("_id", 1)
+    rows = await cursor.to_list(length=10)
+    if not rows:
+        await ctx.send("Chưa ghi nhận tình trạng gem nào — bot cần thấy ít nhất 1 lần hunt để bắt đầu theo dõi.")
+        return
+    embed = discord.Embed(title="Tình trạng gem đang trang bị", color=0x2BC9C0)
+    for r in rows:
+        pct = round(r["current"] / r["max"] * 100) if r["max"] else 0
+        embed.add_field(name=f"Slot {r['_id']} — {r['tier']}",
+                         value=f"{r['current']}/{r['max']} ({pct}%)", inline=True)
+    embed.set_footer(text="Slot biến mất khỏi tin hunt = hết độ bền, bot sẽ tự nhắc owo use.")
+    await ctx.send(embed=embed)
 
 
 # ----------------------------------------------------------------------
@@ -776,7 +1024,8 @@ async def help_cmd(ctx):
     embed.add_field(
         name="Theo dõi cá nhân",
         value="`,track @user` (owner) · `,status` · `,battlelog [n]` · "
-              "`,huntbot` · `,quests` · `,team` · `,myweapons [tìm]`",
+              "`,huntbot` · `,quests` · `,team` · `,myweapons [tìm]` · "
+              "`,zoo [tìm]` · `,inv [tìm]` · `,gems`",
         inline=False,
     )
     embed.add_field(
