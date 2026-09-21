@@ -558,6 +558,19 @@ async def on_ready():
     print(f"[tracker] Đang theo dõi user ID: {tracked or '(chưa đặt — dùng ,track)'}")
 
 
+DEFAULT_OWO_PREFIXES = ["owo"]
+
+
+async def get_owo_prefixes():
+    """Danh sách prefix OwO chấp nhận cho tracked user — OwO cho phép
+    người chơi tự đặt prefix riêng (vd "o"), nên không thể hardcode 1
+    giá trị duy nhất. Mặc định ["owo"], chỉnh qua ,setprefixes."""
+    raw = await get_config("owo_prefixes")
+    if not raw:
+        return DEFAULT_OWO_PREFIXES
+    return [p.strip().lower() for p in raw.split(",") if p.strip()]
+
+
 @bot.event
 async def on_message(message: discord.Message):
     if mdb is None:
@@ -565,9 +578,11 @@ async def on_message(message: discord.Message):
         return
 
     tracked_id = await get_config("tracked_user_id")
+    prefixes = await get_owo_prefixes()
+    content_lower = message.content.lower()
 
     if tracked_id and str(message.author.id) == str(tracked_id) \
-            and message.content.lower().startswith("owo"):
+            and any(content_lower.startswith(p) for p in prefixes):
         pending_commands[message.channel.id] = time.time()
         await bot.process_commands(message)
         return
@@ -685,6 +700,22 @@ async def track(ctx, user: discord.User = None):
         return
     await set_config("tracked_user_id", str(user.id))
     await ctx.send(f"Đã đặt theo dõi: **{user.name}** (`{user.id}`).")
+
+
+@bot.command(name="setprefixes")
+@is_owner()
+async def setprefixes_cmd(ctx, *, prefixes: str = ""):
+    """OwO cho phép đặt prefix riêng (vd 'o' thay vì 'owo') — bot cần
+    biết chính xác bạn đang dùng prefix nào để nhận ra lệnh của bạn.
+    Dùng: ,setprefixes owo,o"""
+    if not prefixes:
+        current = await get_owo_prefixes()
+        await ctx.send(f"Đang nhận diện các prefix: {', '.join(f'`{p}`' for p in current)}\n"
+                        f"Đổi bằng: `,setprefixes owo,o` (cách nhau bằng dấu phẩy)")
+        return
+    await set_config("owo_prefixes", prefixes)
+    new_list = await get_owo_prefixes()
+    await ctx.send(f"Đã cập nhật, giờ nhận diện: {', '.join(f'`{p}`' for p in new_list)}")
 
 
 @bot.command(name="status")
@@ -1023,7 +1054,7 @@ async def help_cmd(ctx):
     )
     embed.add_field(
         name="Theo dõi cá nhân",
-        value="`,track @user` (owner) · `,status` · `,battlelog [n]` · "
+        value="`,track @user` (owner) · `,setprefixes owo,o` (owner) · `,status` · `,battlelog [n]` · "
               "`,huntbot` · `,quests` · `,team` · `,myweapons [tìm]` · "
               "`,zoo [tìm]` · `,inv [tìm]` · `,gems`",
         inline=False,

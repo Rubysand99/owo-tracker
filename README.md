@@ -38,6 +38,18 @@ collection của bot này đều có tiền tố `owot_` để tránh trùng tê
 Mời bot vào (các) server bạn chơi OwO — **phải mời thủ công vào từng
 server**, bot không thể tự "theo dõi mọi nơi" (xem phần Giới hạn).
 
+### Prefix OwO của bạn — BẮT BUỘC kiểm tra nếu bạn dùng prefix rút gọn
+
+OwO cho phép mỗi người tự đặt prefix riêng (vd `o` thay vì `owo`). Bot
+mặc định chỉ nhận diện `owo` — nếu bạn gõ tắt kiểu `Oh` (=`o`+`h`) mà
+chưa cấu hình, bot **sẽ không thấy được**, `,gems`/`,zoo`/... sẽ luôn
+báo rỗng dù bạn chơi bình thường. Kiểm tra và sửa:
+
+```
+,setprefixes          → xem đang nhận diện prefix nào
+,setprefixes owo,o    → thêm "o" vào danh sách (chỉ owner dùng được)
+```
+
 ## Dùng thử
 
 ```
