@@ -31,6 +31,7 @@ from datetime import datetime
 import discord
 from discord.ext import commands
 from motor.motor_asyncio import AsyncIOMotorClient
+from aiohttp import web
 
 # ----------------------------------------------------------------------
 # CẤU HÌNH
@@ -41,6 +42,13 @@ OWNER_ID = os.environ.get("OWNER_ID")
 MONGODB_URI = os.environ.get("MONGODB_URI")
 MONGODB_DB_NAME = os.environ.get("MONGODB_DB_NAME", "owo_tracker")
 CORRELATION_WINDOW = 20  # giây — cửa sổ khớp lệnh owo với phản hồi của OwO bot
+
+# --- API nhỏ cho AutoMacro (app Android) doc lenh can lam ---
+# Khong dat AUTOMACRO_API_TOKEN thi API se KHONG chay (an toan mac dinh,
+# tranh mo cong ma khong ai bao ve).
+AUTOMACRO_API_TOKEN = os.environ.get("AUTOMACRO_API_TOKEN")
+AUTOMACRO_API_PORT = int(os.environ.get("PORT", os.environ.get("AUTOMACRO_API_PORT", "8080")))
+COL_AUTOMACRO_COMMANDS = "owot_automacro_commands"
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -65,6 +73,7 @@ COL_INVENTORY = "owot_inventory_items"
 COL_GEM_STATUS = "owot_gem_status"
 
 pending_commands = {}  # channel_id -> timestamp gần nhất có lệnh owo từ tracked user
+_automacro_api_started = False
 
 
 # ----------------------------------------------------------------------
@@ -441,6 +450,75 @@ async def save_gem_status(gs, source_id=None):
     return vanished_slots
 
 
+# ----------------------------------------------------------------------
+# HANG DOI LENH cho AutoMacro (app Android tu dong hoa) + API nho de
+# app do doc lenh va bao lai ket qua. Khong dung chung MONGODB_URI/token
+# voi dien thoai — chi lo token API (thu hoi duoc), URI that chi nam o
+# server nay.
+# ----------------------------------------------------------------------
+async def queue_automacro_command(action: str, params: dict):
+    """Ghi 1 lenh moi, trang thai 'pending'. AutoMacro se doc qua API,
+    thuc thi, roi bao lai qua /commands/<id>/ack."""
+    if mdb is None:
+        return
+    doc_id = await next_note_id()  # dung chung bo dem voi ,note, chi can duy nhat
+    await mdb[COL_AUTOMACRO_COMMANDS].insert_one({
+        "_id": doc_id,
+        "action": action,
+        "params": params,
+        "status": "pending",
+        "created_at": datetime.utcnow().isoformat(),
+        "completed_at": None,
+    })
+    return doc_id
+
+
+def _check_api_token(request: web.Request) -> bool:
+    if not AUTOMACRO_API_TOKEN:
+        return False
+    return request.headers.get("Authorization", "") == f"Bearer {AUTOMACRO_API_TOKEN}"
+
+
+async def handle_get_pending_commands(request: web.Request):
+    if not _check_api_token(request):
+        return web.json_response({"error": "unauthorized"}, status=401)
+    cursor = mdb[COL_AUTOMACRO_COMMANDS].find({"status": "pending"}).sort("_id", 1)
+    docs = await cursor.to_list(length=20)
+    for d in docs:
+        d["id"] = d.pop("_id")
+    return web.json_response({"commands": docs})
+
+
+async def handle_ack_command(request: web.Request):
+    if not _check_api_token(request):
+        return web.json_response({"error": "unauthorized"}, status=401)
+    try:
+        cmd_id = int(request.match_info["id"])
+    except (KeyError, ValueError):
+        return web.json_response({"error": "invalid id"}, status=400)
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    status = body.get("status", "done")  # "done" hoac "failed"
+    await mdb[COL_AUTOMACRO_COMMANDS].update_one(
+        {"_id": cmd_id},
+        {"$set": {"status": status, "completed_at": datetime.utcnow().isoformat()}},
+    )
+    return web.json_response({"ok": True})
+
+
+async def start_automacro_api_server():
+    app = web.Application()
+    app.router.add_get("/commands/pending", handle_get_pending_commands)
+    app.router.add_post("/commands/{id}/ack", handle_ack_command)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, "0.0.0.0", AUTOMACRO_API_PORT)
+    await site.start()
+    print(f"[tracker] API cho AutoMacro dang chay o cong {AUTOMACRO_API_PORT}")
+
+
 async def save_pet_species(p, source_id=None):
     key = p["name"].lower()
     hp, att, pr, wp, mag, mr = p["stats"]
@@ -556,6 +634,14 @@ async def on_ready():
         return
     tracked = await get_config("tracked_user_id")
     print(f"[tracker] Đang theo dõi user ID: {tracked or '(chưa đặt — dùng ,track)'}")
+
+    global _automacro_api_started
+    if AUTOMACRO_API_TOKEN:
+        if not _automacro_api_started:
+            _automacro_api_started = True
+            asyncio.create_task(start_automacro_api_server())
+    else:
+        print("[tracker] Chưa đặt AUTOMACRO_API_TOKEN — API cho AutoMacro KHÔNG chạy (an toàn mặc định).")
 
 
 DEFAULT_OWO_PREFIXES = ["owo"]
@@ -681,6 +767,18 @@ async def remind_gem_replacement(message: discord.Message, slot: str, source_id)
     await message.channel.send(
         f"<@{source_id}> ⚠️ Gem slot {slot} vừa hết độ bền! Chọn 1 trong các lựa chọn còn lại:\n" + "\n".join(lines)
     )
+
+    # Ghi 1 lenh cho AutoMacro tu dong thay - MAC DINH chon vien TIER THAP
+    # NHAT con lai (options da sap xep tang dan, dung tier thap truoc de
+    # danh tier cao cho luc can). Doi "options[0]" thanh "options[-1]"
+    # neu muon uu tien dung tier CAO nhat khi thay tu dong.
+    chosen = options[0]
+    await queue_automacro_command("swap_gem", {
+        "slot": slot,
+        "item_code": chosen["_id"],
+        "gem_tier": chosen["gem_tier"],
+        "command_text": f"owo use {chosen['_id']}",
+    })
 
 
 # ----------------------------------------------------------------------
@@ -854,6 +952,32 @@ async def gems_cmd(ctx):
                          value=f"{r['current']}/{r['max']} ({pct}%)", inline=True)
     embed.set_footer(text="Slot biến mất khỏi tin hunt = hết độ bền, bot sẽ tự nhắc owo use.")
     await ctx.send(embed=embed)
+
+
+@bot.command(name="automacro")
+@is_owner()
+async def automacro_cmd(ctx):
+    """Xem cac lenh dang cho AutoMacro xu ly / da xu ly gan day - de kiem
+    tra luong ket noi hoat dong dung khong."""
+    pending = await mdb[COL_AUTOMACRO_COMMANDS].find({"status": "pending"}).sort("_id", 1).to_list(length=10)
+    recent_done = await mdb[COL_AUTOMACRO_COMMANDS].find(
+        {"status": {"$ne": "pending"}}
+    ).sort("_id", -1).to_list(length=5)
+
+    lines = [f"API cho AutoMacro: {'BẬT' if AUTOMACRO_API_TOKEN else 'TẮT (chưa đặt AUTOMACRO_API_TOKEN)'}"]
+    lines.append(f"\n**Đang chờ ({len(pending)}):**")
+    if pending:
+        lines += [f"#{d['_id']} `{d['action']}` — {d['params'].get('command_text', d['params'])}" for d in pending]
+    else:
+        lines.append("(không có)")
+
+    lines.append(f"\n**Vừa xử lý gần đây:**")
+    if recent_done:
+        lines += [f"#{d['_id']} `{d['action']}` — {d['status']}" for d in recent_done]
+    else:
+        lines.append("(chưa có)")
+
+    await ctx.send("\n".join(lines))
 
 
 # ----------------------------------------------------------------------
@@ -1080,7 +1204,7 @@ async def help_cmd(ctx):
         value="`,passive <tên>` · `,passives [tìm]` · `,passiveset <tên> <mô tả>`",
         inline=False,
     )
-    embed.add_field(name="Khác", value="`,ping` · `,help` · `,debugnext` (owner)", inline=False)
+    embed.add_field(name="Khác", value="`,ping` · `,help` · `,debugnext` (owner) · `,automacro` (owner)", inline=False)
     embed.set_footer(text="Bot chỉ thấy được server đã mời nó vào — không tự theo dõi ở nơi khác.")
     await ctx.send(embed=embed)
 

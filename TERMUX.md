@@ -104,6 +104,7 @@ pip install discord.py motor
 export DISCORD_TOKEN="token_bot_cua_ban"
 export OWNER_ID="discord_id_cua_ban"
 export MONGODB_URI="mongodb+srv://..."
+# export AUTOMACRO_API_TOKEN="..."   # tuỳ chọn — chỉ cần nếu muốn AutoMacro đọc lệnh
 
 python owo_tracker_bot.py
 ```

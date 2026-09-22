@@ -50,6 +50,37 @@ báo rỗng dù bạn chơi bình thường. Kiểm tra và sửa:
 ,setprefixes owo,o    → thêm "o" vào danh sách (chỉ owner dùng được)
 ```
 
+## Kết nối với AutoMacro (tự động thay gem)
+
+Bot có thể ghi "lệnh cần làm" vào MongoDB để app Android **AutoMacro**
+đọc và tự thực hiện trên điện thoại — bắt đầu với case thay gem: khi
+phát hiện 1 gem hết độ bền (như trước giờ vẫn nhắc qua Discord), bot
+**đồng thời** ghi 1 lệnh `swap_gem` vào hàng đợi, tự chọn viên tier
+thấp nhất còn lại trong kho.
+
+**Bật tính năng này:** đặt thêm biến môi trường
+
+```bash
+export AUTOMACRO_API_TOKEN="1-chuoi-bi-mat-tu-dat-cang-dai-cang-tot"
+export AUTOMACRO_API_PORT="8080"   # tuỳ chọn, Railway tự đặt PORT nên thường không cần
+```
+
+**Không đặt `AUTOMACRO_API_TOKEN` thì API này KHÔNG chạy** — mặc định
+an toàn, không mở cổng ra ngoài nếu chưa cấu hình. Token này KHÁC với
+`MONGODB_URI` — điện thoại chỉ cần biết token (thu hồi được bất cứ lúc
+nào bằng cách đổi biến môi trường), không bao giờ cầm chuỗi kết nối
+MongoDB thật.
+
+Xem lệnh đang chờ / đã xử lý ngay trong Discord: `,automacro` (owner).
+
+### API cho AutoMacro (kỹ thuật, tham khảo khi cấu hình app)
+
+- `GET /commands/pending` — trả về danh sách lệnh đang chờ, dạng JSON.
+- `POST /commands/{id}/ack` — báo đã xử lý xong, body `{"status": "done"}`
+  hoặc `{"status": "failed"}`.
+- Cả 2 đều cần header `Authorization: Bearer <AUTOMACRO_API_TOKEN>`,
+  thiếu/sai token trả về lỗi 401.
+
 ## Dùng thử
 
 ```
