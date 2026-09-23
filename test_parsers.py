@@ -289,6 +289,111 @@ async def run_gem_reminder_scenario():
 
 asyncio.run(run_gem_reminder_scenario())
 
+
+# ========================================================================
+# 3. HUB — tong hop du lieu cho man hinh Hub trong app AutoMacro
+# ========================================================================
+print("\n=== Hub (API cho app AutoMacro) ===")
+
+import json
+from datetime import datetime, timedelta
+from aiohttp.test_utils import make_mocked_request
+
+check("duration_to_seconds: 1H 23M", bot_mod.duration_to_seconds("1H 23M"), 4980)
+check("duration_to_seconds: 23H 5M 10S", bot_mod.duration_to_seconds("23H 5M 10S"), 83110)
+check("duration_to_seconds: chuoi rong / None / khong doc duoc",
+      (bot_mod.duration_to_seconds(""), bot_mod.duration_to_seconds(None), bot_mod.duration_to_seconds("abc")),
+      (None, None, None))
+
+
+async def run_hub_tests():
+    now = datetime(2026, 9, 24, 12, 0, 0)
+    ago = lambda minutes: (now - timedelta(minutes=minutes)).isoformat()
+
+    # --- DB rong: moi muc phai la null, khong loi ---
+    bot_mod.mdb = AsyncMongoMockClient()["hub_empty"]
+    empty = await bot_mod.build_hub(now)
+    check("hub: DB rong -> moi muc = null",
+          [empty[k] for k in ("gems", "huntbot", "quest", "team", "battles", "zoo", "inventory", "weapons")],
+          [None] * 8)
+
+    # --- DB co du lieu ---
+    db = AsyncMongoMockClient()["hub_full"]
+    bot_mod.mdb = db
+
+    inv = bot_mod.parse_inventory("Ruby's Inventory\n" + inv_text)
+    await bot_mod.save_inventory(inv, "u1")
+    await db[bot_mod.COL_GEM_STATUS].insert_one({
+        "_id": "1", "tier": "Common", "emoji_name": "cgem1", "current": 47, "max": 75,
+        "updated_at": ago(10)})
+    await db[bot_mod.COL_HUNTBOT].insert_one({
+        "hunting": True, "progress_pct": 40.0, "animals_captured": 120, "essence": 500,
+        "time_remaining": "1H 30M", "created_at": ago(30)})
+    await db[bot_mod.COL_QUEST].insert_one({
+        "seals": 3, "all_done": False, "next_quest": "Hunt 5 animals", "created_at": ago(60)})
+    await bot_mod.save_team([{"pos": 1, "name": "gowl", "level": 10, "weaponId": "ABC123",
+                              "quality": 88.5, "hp": 100, "wp": 20, "att": 30, "mag": 5, "pr": 1, "mr": 2}])
+    for res, streak in (("won", 1), ("lost", 0), ("won", 1)):
+        await db[bot_mod.COL_BATTLES].insert_one({"result": res, "turns": 4, "xp": 100,
+                                                  "streak": streak, "created_at": ago(5)})
+    await bot_mod.save_zoo({"pets": [
+        {"tier": "common", "name": "bee", "count": 110}, {"tier": "common", "name": "bug", "count": 113},
+        {"tier": "special", "name": "x", "count": 0}], "zoo_points": 1000, "breakdown_raw": "F-1"}, "u1")
+    await db[bot_mod.COL_WEAPON_INSTANCES].insert_one({
+        "_id": "FJJ8N2", "type_name": "Culling Scythe", "quality": 90.0, "passive_name": "Giant Slayer",
+        "passive_desc": "Deals more damage to bosses.", "passive_desc_vi": "Gay them sat thuong khi danh boss.",
+        "updated_at": ago(2)})
+
+    hub = await bot_mod.build_hub(now)
+    check("hub: gem dang trang bi + phan tram", (hub["gems"]["equipped"][0]["slot"], hub["gems"]["equipped"][0]["percent"]),
+          ("1", 63))
+    check("hub: gem du phong lay tu inventory (3 vien, xep theo tier)",
+          [g["code"] for g in hub["gems"]["spare"]], ["051", "052", "053"])
+    check("hub: gem age_seconds = 600", hub["gems"]["equipped"][0]["age_seconds"], 600)
+    check("hub: huntbot tinh dung gio xong (con 3600s)", (hub["huntbot"]["seconds_left"], hub["huntbot"]["ready_at"]),
+          (3600, "2026-09-24T13:00:00Z"))
+    check("hub: huntbot age_seconds = 1800", hub["huntbot"]["age_seconds"], 1800)
+    check("hub: quest", (hub["quest"]["seals"], hub["quest"]["next_quest"]), (3, "Hunt 5 animals"))
+    check("hub: team", (hub["team"]["members"][0]["name"], hub["team"]["members"][0]["weaponId"]), ("gowl", "ABC123"))
+    check("hub: battles thang/thua + streak moi nhat", (hub["battles"]["wins"], hub["battles"]["losses"],
+                                                         hub["battles"]["current_streak"]), (2, 1, 1))
+    check("hub: zoo tong pet + bo qua pet count=0",
+          (hub["zoo"]["total_pets"], len(hub["zoo"]["pets"]), hub["zoo"]["by_tier"]["common"]["species"]),
+          (223, 2, 2))
+    check("hub: inventory dem dung", (hub["inventory"]["kinds"], hub["inventory"]["total_items"]), (4, 104 + 97 + 103 + 5))
+    check("hub: weapons dung uu tien ban dich tieng Viet", hub["weapons"]["weapons"][0]["passive_desc"],
+          "Gay them sat thuong khi danh boss.")
+    check("hub: toan bo ket qua chuyen duoc sang JSON", isinstance(json.dumps(hub), str), True)
+
+    # --- huntbot khong hunt -> khong co gio xong ---
+    await db[bot_mod.COL_HUNTBOT].insert_one({
+        "hunting": False, "progress_pct": None, "animals_captured": None, "essence": 500,
+        "time_remaining": None, "created_at": ago(1)})
+    hub2 = await bot_mod.build_hub(now)
+    check("hub: huntbot khong hunt -> ready_at/seconds_left = None",
+          (hub2["huntbot"]["hunting"], hub2["huntbot"]["ready_at"], hub2["huntbot"]["seconds_left"]),
+          (False, None, None))
+
+    # --- xac thuc token + handler that ---
+    bot_mod.AUTOMACRO_API_TOKEN = "token-thu"
+    r_bad = await bot_mod.handle_get_hub(make_mocked_request("GET", "/hub"))
+    check("hub API: khong co token -> 401", r_bad.status, 401)
+    r_wrong = await bot_mod.handle_get_hub(
+        make_mocked_request("GET", "/hub", headers={"Authorization": "Bearer sai"}))
+    check("hub API: sai token -> 401", r_wrong.status, 401)
+    r_ok = await bot_mod.handle_get_hub(
+        make_mocked_request("GET", "/hub", headers={"Authorization": "Bearer token-thu"}))
+    body = json.loads(r_ok.body)
+    check("hub API: dung token -> 200 + co du lieu", (r_ok.status, body["hub_version"], body["zoo"]["zoo_points"]),
+          (200, 1, 1000))
+    bot_mod.AUTOMACRO_API_TOKEN = None
+    r_off = await bot_mod.handle_get_hub(
+        make_mocked_request("GET", "/hub", headers={"Authorization": "Bearer "}))
+    check("hub API: chua dat token tren server -> luon 401", r_off.status, 401)
+
+
+asyncio.run(run_hub_tests())
+
 print("\n" + ("=" * 40))
 if failures:
     print(f"{FAIL} {len(failures)} test thất bại: {failures}")

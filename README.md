@@ -78,8 +78,18 @@ Xem lệnh đang chờ / đã xử lý ngay trong Discord: `,automacro` (owner).
 - `GET /commands/pending` — trả về danh sách lệnh đang chờ, dạng JSON.
 - `POST /commands/{id}/ack` — báo đã xử lý xong, body `{"status": "done"}`
   hoặc `{"status": "failed"}`.
-- Cả 2 đều cần header `Authorization: Bearer <AUTOMACRO_API_TOKEN>`,
+- `GET /hub` — trả về **toàn bộ dữ liệu mới nhất bot đã đọc được** để
+  app AutoMacro hiện thành màn hình Hub: `gems` (đang trang bị + gem dự
+  phòng trong kho), `huntbot` (kèm `ready_at`/`seconds_left` — giờ xong
+  tính từ lúc bot thấy tin nhắn), `quest`, `team`, `battles`, `zoo`,
+  `inventory`, `weapons`. Mục nào bot chưa thấy lần nào thì là `null`.
+  Mỗi mục có `updated_at` + `age_seconds` để biết dữ liệu cũ hay mới.
+- Cả 3 đều cần header `Authorization: Bearer <AUTOMACRO_API_TOKEN>`,
   thiếu/sai token trả về lỗi 401.
+
+**Hub chỉ biết những gì OwO đã in ra khi bạn gõ lệnh.** Ví dụ muốn có
+danh sách pet mới thì gõ `owo zoo`; muốn kho mới thì gõ `owo inventory`;
+vũ khí chỉ có những cây bạn từng xem bằng `owo weapon <ID>`.
 
 ## Dùng thử
 

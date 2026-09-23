@@ -25,8 +25,9 @@ Chạy:
 import os
 import re
 import time
+import hmac
 import asyncio
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import discord
 from discord.ext import commands
@@ -476,7 +477,9 @@ async def queue_automacro_command(action: str, params: dict):
 def _check_api_token(request: web.Request) -> bool:
     if not AUTOMACRO_API_TOKEN:
         return False
-    return request.headers.get("Authorization", "") == f"Bearer {AUTOMACRO_API_TOKEN}"
+    got = request.headers.get("Authorization", "").encode("utf-8")
+    want = f"Bearer {AUTOMACRO_API_TOKEN}".encode("utf-8")
+    return hmac.compare_digest(got, want)
 
 
 async def handle_get_pending_commands(request: web.Request):
@@ -508,10 +511,207 @@ async def handle_ack_command(request: web.Request):
     return web.json_response({"ok": True})
 
 
+# ----------------------------------------------------------------------
+# HUB — tong hop du lieu moi nhat bot da doc duoc tu tin nhan OwO, tra ve
+# 1 cuc JSON de app AutoMacro hien thanh man hinh "Hub". Chi DOC, khong
+# ghi gi vao DB. Moi muc kem `updated_at` + `age_seconds` de app bao
+# "cap nhat X phut truoc" — vi bot chi biet nhung gi OwO da in ra khi
+# ban go lenh, muc nao lau chua go lenh thi du lieu se cu.
+# ----------------------------------------------------------------------
+def _iso_z(value):
+    """Chuoi ISO gio UTC 'khong mui gio' cua bot -> them 'Z' cho app biet la UTC."""
+    if not value:
+        return None
+    return value if value.endswith("Z") else value + "Z"
+
+
+def _parse_utc(value):
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value.rstrip("Z"))
+    except ValueError:
+        return None
+
+
+def _age_seconds(value, now):
+    t = _parse_utc(value)
+    if t is None:
+        return None
+    return max(0, int((now - t).total_seconds()))
+
+
+def duration_to_seconds(text):
+    """'1H 23M' -> 4980. Doc duoc D/H/M/S. Tra None neu khong doc duoc gi."""
+    if not text:
+        return None
+    upper = text.upper()
+    total, found = 0, False
+    for unit, mult in (("D", 86400), ("H", 3600), ("M", 60), ("S", 1)):
+        m = re.search(rf"(\d+)\s*{unit}", upper)
+        if m:
+            total += int(m.group(1)) * mult
+            found = True
+    return total if found else None
+
+
+def _with_age(d, updated_at, now):
+    d["updated_at"] = _iso_z(updated_at)
+    d["age_seconds"] = _age_seconds(updated_at, now)
+    return d
+
+
+async def _hub_gems(now):
+    rows = await mdb[COL_GEM_STATUS].find().sort("_id", 1).to_list(length=10)
+    spare_rows = await mdb[COL_INVENTORY].find(
+        {"is_gem": True, "count": {"$gt": 0}}
+    ).to_list(length=200)
+    if not rows and not spare_rows:
+        return None
+    equipped = []
+    for r in rows:
+        mx = r.get("max") or 0
+        pct = round(r["current"] / mx * 100) if mx else 0
+        equipped.append(_with_age({
+            "slot": r["_id"], "tier": r.get("tier"),
+            "current": r.get("current"), "max": mx, "percent": pct,
+        }, r.get("updated_at"), now))
+    spare = sorted(
+        ({"code": r["_id"], "slot": r.get("gem_slot"), "tier": r.get("gem_tier"),
+          "count": r.get("count"), "tier_rank": r.get("gem_tier_rank") or 0}
+         for r in spare_rows),
+        key=lambda x: (x["slot"] or "", x["tier_rank"]),
+    )
+    return {"equipped": equipped, "spare": spare}
+
+
+async def _hub_huntbot(now):
+    row = await mdb[COL_HUNTBOT].find_one(sort=[("_id", -1)])
+    if not row:
+        return None
+    observed = _parse_utc(row.get("created_at"))
+    secs = duration_to_seconds(row.get("time_remaining")) if row.get("hunting") else None
+    ready_at, seconds_left = None, None
+    if secs is not None and observed is not None:
+        ready = observed + timedelta(seconds=secs)
+        ready_at = ready.isoformat() + "Z"
+        seconds_left = max(0, int((ready - now).total_seconds()))
+    return _with_age({
+        "hunting": bool(row.get("hunting")),
+        "progress_pct": row.get("progress_pct"),
+        "animals_captured": row.get("animals_captured"),
+        "essence": row.get("essence"),
+        "time_remaining_text": row.get("time_remaining"),
+        "ready_at": ready_at,
+        "seconds_left": seconds_left,
+    }, row.get("created_at"), now)
+
+
+async def _hub_quest(now):
+    row = await mdb[COL_QUEST].find_one(sort=[("_id", -1)])
+    if not row:
+        return None
+    return _with_age({
+        "seals": row.get("seals"), "all_done": bool(row.get("all_done")),
+        "next_quest": row.get("next_quest"),
+    }, row.get("created_at"), now)
+
+
+async def _hub_team(now):
+    rows = await mdb[COL_TEAM].find().sort("_id", 1).to_list(length=10)
+    if not rows:
+        return None
+    members = [{k: r.get(k) for k in ("pos", "name", "level", "hp", "wp", "att", "mag", "pr", "mr",
+                                       "weaponId", "quality")} for r in rows]
+    return _with_age({"members": members}, rows[0].get("updated_at"), now)
+
+
+async def _hub_battles(now):
+    rows = await mdb[COL_BATTLES].find().sort("_id", -1).to_list(length=20)
+    if not rows:
+        return None
+    wins = sum(1 for r in rows if r.get("result") == "won")
+    recent = [{"result": r.get("result"), "turns": r.get("turns"), "xp": r.get("xp"),
+               "streak": r.get("streak"), "at": _iso_z(r.get("created_at"))} for r in rows[:5]]
+    return _with_age({
+        "sample_size": len(rows), "wins": wins, "losses": len(rows) - wins,
+        "current_streak": rows[0].get("streak"), "recent": recent,
+    }, rows[0].get("created_at"), now)
+
+
+async def _hub_zoo(now):
+    doc = await mdb[COL_ZOO].find_one({"_id": "latest"})
+    if not doc:
+        return None
+    by_tier = {}
+    for p in doc.get("pets", []):
+        t = by_tier.setdefault(p["tier"], {"species": 0, "total": 0})
+        t["total"] += p.get("count", 0)
+        if p.get("count", 0) > 0:
+            t["species"] += 1
+    pets = [p for p in doc.get("pets", []) if p.get("count", 0) > 0]
+    return _with_age({
+        "zoo_points": doc.get("zoo_points"), "breakdown_raw": doc.get("breakdown_raw"),
+        "total_pets": sum(t["total"] for t in by_tier.values()),
+        "by_tier": by_tier, "pets": pets,
+    }, doc.get("updated_at"), now)
+
+
+async def _hub_inventory(now):
+    rows = await mdb[COL_INVENTORY].find().sort("_id", 1).to_list(length=1000)
+    rows = [r for r in rows if r.get("count", 0) > 0]
+    if not rows:
+        return None
+    items = [{"code": r["_id"], "name": r.get("name"), "count": r.get("count"),
+              "is_gem": bool(r.get("is_gem"))} for r in rows]
+    latest = max((r.get("updated_at") or "" for r in rows), default=None) or None
+    return _with_age({"kinds": len(items), "total_items": sum(i["count"] for i in items),
+                      "items": items}, latest, now)
+
+
+async def _hub_weapons(now):
+    rows = await mdb[COL_WEAPON_INSTANCES].find().sort("updated_at", -1).to_list(length=100)
+    if not rows:
+        return None
+    weapons = [{"id": r["_id"], "type_name": r.get("type_name"), "quality": r.get("quality"),
+                "passive_name": r.get("passive_name"),
+                "passive_desc": r.get("passive_desc_vi") or r.get("passive_desc")} for r in rows]
+    return _with_age({"count": len(weapons), "weapons": weapons}, rows[0].get("updated_at"), now)
+
+
+async def build_hub(now=None):
+    """Gom du lieu cho man hinh Hub. Muc nao bot chua tung thay thi = null."""
+    now = now or datetime.utcnow()
+    return {
+        "hub_version": 1,
+        "server_time": now.isoformat() + "Z",
+        "gems": await _hub_gems(now),
+        "huntbot": await _hub_huntbot(now),
+        "quest": await _hub_quest(now),
+        "team": await _hub_team(now),
+        "battles": await _hub_battles(now),
+        "zoo": await _hub_zoo(now),
+        "inventory": await _hub_inventory(now),
+        "weapons": await _hub_weapons(now),
+    }
+
+
+async def handle_get_hub(request: web.Request):
+    if not _check_api_token(request):
+        return web.json_response({"error": "unauthorized"}, status=401)
+    try:
+        data = await build_hub()
+    except Exception as e:  # khong de app nhan trang loi kho hieu
+        print(f"[tracker] Loi khi dung hub: {e!r}")
+        return web.json_response({"error": "hub_failed"}, status=500)
+    return web.json_response(data)
+
+
 async def start_automacro_api_server():
     app = web.Application()
     app.router.add_get("/commands/pending", handle_get_pending_commands)
     app.router.add_post("/commands/{id}/ack", handle_ack_command)
+    app.router.add_get("/hub", handle_get_hub)
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, "0.0.0.0", AUTOMACRO_API_PORT)
