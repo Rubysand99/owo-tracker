@@ -587,6 +587,21 @@ async def run_quest_items_hub_test():
 
 asyncio.run(run_quest_items_hub_test())
 
+
+# ========================================================================
+# 6. HuntBot: essence khong duoc doc nham ID emoji
+# ========================================================================
+print("\n=== HuntBot essence ===")
+HB_TAIL = "\nHUNTBOT is currently hunting!\nBEEP BOOP. I AM STILL HUNTING. I WILL BE BACK IN 9H 41M\n55.58% DONE | 2580 ANIMALS CAPTURED"
+for label, head, want in (
+    ("emoji dung truoc chu", "BEEP. BOOP. I AM HUNTBOT.\n<:essence:1508740094125932614> Animal Essence - 1,234", 1234),
+    ("emoji nam SAU chu (truoc day doc nham ID)", "BEEP. BOOP. I AM HUNTBOT.\nAnimal Essence <:essence:1508740094125932614> - 0", 0),
+    ("in dam", "BEEP. BOOP. I AM HUNTBOT.\n**Animal Essence** - 5000", 5000),
+    ("mau cu", "BEEP. BOOP. I AM HUNTBOT.\nAnimal Essence - 0", 0),
+):
+    check("huntbot essence: " + label, bot_mod.parse_huntbot_status(head + HB_TAIL)["essence"], want)
+check("huntbot: khong co dong essence -> None", bot_mod.parse_huntbot_status("BEEP. BOOP. I AM HUNTBOT." + HB_TAIL)["essence"], None)
+
 print("\n" + ("=" * 40))
 if failures:
     print(f"{FAIL} {len(failures)} test thất bại: {failures}")

@@ -272,13 +272,17 @@ def parse_battle_result(text: str):
 def parse_huntbot_status(text: str):
     if "HUNTBOT" not in text.upper():
         return None
-    essence_m = re.search(r"Animal Essence.*?[-–]?\s*(\d+)", text)
+    # Bo emoji tuy chinh (<:ten:ID>) truoc khi tim so: ID emoji la 1 day so dai
+    # ~19 chu so, neu de lot vao se bi doc nham thanh so essence.
+    essence_line = next((ln for ln in text.split("\n") if "Animal Essence" in ln), "")
+    essence_line = re.sub(r"<a?:\w+:\d+>", "", essence_line)
+    essence_m = re.search(r"Animal Essence\D*?(\d[\d,]*)", essence_line)
     hunting = "STILL HUNTING" in text.upper() or "currently hunting" in text.lower()
     progress_m = re.search(r"([\d.]+)%\s*DONE", text.upper())
     animals_m = re.search(r"([\d,]+)\s*ANIMALS CAPTURED", text.upper())
     time_m = re.search(r"BACK IN\s*([0-9HMhm ]+)", text.upper())
     return {
-        "essence": int(essence_m.group(1)) if essence_m else None,
+        "essence": int(essence_m.group(1).replace(",", "")) if essence_m else None,
         "hunting": hunting,
         "progress_pct": float(progress_m.group(1)) if progress_m else None,
         "animals_captured": int(animals_m.group(1).replace(",", "")) if animals_m else None,
