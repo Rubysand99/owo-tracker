@@ -681,7 +681,13 @@ async def run_zoo_split_tests():
     z = hub["zoo"]
     check("hub: zoo co du tier moi + diem", (z["zoo_points"], "cpatreon" in z["by_tier"], "gem" in z["by_tier"]),
           (13559875, True, True))
-    check("hub: tong pet dang co = 1718 (966+550+175+15+11+1)", z["total_pets"], 1718)
+    check("hub: tong pet lay tu DONG CUOI (748,012), khong phai cong cac so nho",
+          (z["total_pets"], z["total_source"], z["list_total"]), (748012, "breakdown", 1718))
+    check("hub: tung tier theo dong cuoi (common 439,810; epic 7,448; fabled 3)",
+          (z["by_tier"]["common"]["total"], z["by_tier"]["epic"]["total"], z["by_tier"]["fabled"]["total"]),
+          (439810, 7448, 3))
+    check("hub: so loai (species) van dem tu bang (common 5 loai, mythic 1 loai)",
+          (z["by_tier"]["common"]["species"], z["by_tier"]["mythic"]["species"]), (5, 1))
     check("hub: chi liet ke pet co so luong > 0", len(z["pets"]), 26)
     check("hub: JSON hop le", isinstance(json.dumps(hub), str), True)
 
@@ -705,6 +711,15 @@ async def run_zoo_split_tests():
 
 
 asyncio.run(run_zoo_split_tests())
+
+check("parse_zoo_breakdown: dong that", bot_mod.parse_zoo_breakdown(
+    "F-3, CP-9, B-1, G-77, L-371, P-730, M-810, S-82, E-7448, R-74914, U-223757, C-439810"),
+    {"fabled": 3, "cpatreon": 9, "botrank": 1, "gem": 77, "legendary": 371, "patreon": 730, "mythic": 810,
+     "special": 82, "epic": 7448, "rare": 74914, "uncommon": 223757, "common": 439810})
+check("parse_zoo_breakdown: tong 12 tier = 748,012", sum(bot_mod.parse_zoo_breakdown(
+    "F-3, CP-9, B-1, G-77, L-371, P-730, M-810, S-82, E-7448, R-74914, U-223757, C-439810").values()), 748012)
+check("parse_zoo_breakdown: rong / None / ma la", (bot_mod.parse_zoo_breakdown(""), bot_mod.parse_zoo_breakdown(None),
+      bot_mod.parse_zoo_breakdown("ZZ-5, C-10")), ({}, {}, {"common": 10}))
 
 print("\n" + ("=" * 40))
 if failures:

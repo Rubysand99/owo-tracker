@@ -149,6 +149,11 @@ Bot còn đọc thêm 3 loại tin nhắn:
   Zoo Points. Bot tự ghép các tin liên tiếp trong vòng 60 giây (cùng kênh)
   thành 1 bảng (`handle_zoo_text`). Gõ lại `owo zoo` thì bắt đầu bảng mới,
   không cộng dồn.
+  Trong hub, **tổng pet** và số pet từng tier lấy từ **dòng cuối** của bảng
+  (`F-3, CP-9, ..., C-439810` → tổng 748,012), vì đó là số liệu đầy đủ. Các
+  số nhỏ cạnh từng loài (bee ¹⁹⁰...) vẫn được lưu riêng và có thể không
+  khớp với dòng cuối. Nếu dòng cuối thiếu tier nào thì hub quay về cách
+  cộng các số nhỏ (`total_source` = `list`).
   Xem lại bằng `,zoo [tìm]`.
 - **`owo inventory`** — lưu toàn bộ item (gem, crate, vé, vũ khí thô...).
   Xem lại bằng `,inv [tìm]`.

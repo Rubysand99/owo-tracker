@@ -827,6 +827,26 @@ async def _hub_battles(now):
     }, rows[0].get("created_at"), now)
 
 
+# Dong cuoi cua bang zoo: "F-3, CP-9, B-1, G-77, L-371, P-730, M-810, S-82, E-7448,
+# R-74914, U-223757, C-439810" — so pet theo tung tier. Ma chu cai -> ten tier.
+ZOO_TIER_CODES = {
+    "C": "common", "U": "uncommon", "R": "rare", "E": "epic", "M": "mythic",
+    "L": "legendary", "G": "gem", "P": "patreon", "CP": "cpatreon",
+    "S": "special", "B": "botrank", "F": "fabled",
+}
+
+
+def parse_zoo_breakdown(raw):
+    """"F-3, CP-9, ..., C-439810" -> {"fabled": 3, "cpatreon": 9, ..., "common": 439810}.
+    Ma la nao khong nhan ra thi bo qua."""
+    out = {}
+    for code, num in re.findall(r"\b([A-Z]{1,2})-(\d[\d,]*)", raw or ""):
+        tier = ZOO_TIER_CODES.get(code)
+        if tier:
+            out[tier] = int(num.replace(",", ""))
+    return out
+
+
 async def _hub_zoo(now):
     doc = await mdb[COL_ZOO].find_one({"_id": "latest"})
     if not doc:
@@ -838,9 +858,20 @@ async def _hub_zoo(now):
         if p.get("count", 0) > 0:
             t["species"] += 1
     pets = [p for p in doc.get("pets", []) if p.get("count", 0) > 0]
+    list_total = sum(t["total"] for t in by_tier.values())
+
+    # Tong pet lay tu DONG CUOI cua bang zoo (so lieu day du) khi dong do phu du
+    # moi tier; thieu tier nao thi quay ve cach cong cac so nho trong bang.
+    breakdown = parse_zoo_breakdown(doc.get("breakdown_raw"))
+    use_breakdown = bool(breakdown) and all(tier in breakdown for tier in by_tier)
+    if use_breakdown:
+        for tier, t in by_tier.items():
+            t["total"] = breakdown[tier]
     return _with_age({
         "zoo_points": doc.get("zoo_points"), "breakdown_raw": doc.get("breakdown_raw"),
-        "total_pets": sum(t["total"] for t in by_tier.values()),
+        "total_pets": sum(breakdown.values()) if use_breakdown else list_total,
+        "total_source": "breakdown" if use_breakdown else "list",
+        "list_total": list_total,
         "by_tier": by_tier, "pets": pets,
     }, doc.get("updated_at"), now)
 
