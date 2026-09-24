@@ -34,10 +34,6 @@ def check(label, actual, expected):
 # ========================================================================
 print("\n=== Parser thuần ===")
 
-check("parse_battle_result", bot_mod.parse_battle_result(
-    "You won in 4 turns! | +2,200 xp | Streak: 5"
-), {"result": "won", "turns": 4, "xp": 2200, "streak": 5})
-
 check("parse_huntbot_status", bot_mod.parse_huntbot_status("""BEEP. BOOP. I AM HUNTBOT.
 Animal Essence - 0
 HUNTBOT is currently hunting!
@@ -206,14 +202,6 @@ WP `1` MAG `2` MR `3`""")
     check("pet species lưu rank_vi", pet_doc["rank_vi"], "Huyền thoại")
     check("pet species lưu đủ alias (không chỉ tên đầu)", pet_doc["aliases"], ["gowl", "owl"])
 
-    battle = bot_mod.parse_battle_result("You won in 4 turns! | +2,200 xp | Streak: 5")
-    await bot_mod.save_battle(battle)
-    battle2 = bot_mod.parse_battle_result("You won in 6 turns! | +2,200 xp | Streak: 4")
-    await bot_mod.save_battle(battle2)
-    cursor = bot_mod.mdb[bot_mod.COL_BATTLES].find().sort("_id", -1)
-    rows = await cursor.to_list(length=10)
-    check("battle log lưu đúng thứ tự (mới nhất trước)", [r["turns"] for r in rows], [6, 4])
-
     nid1 = await bot_mod.next_note_id()
     nid2 = await bot_mod.next_note_id()
     check("note counter tự tăng", (nid1, nid2), (1, 2))
@@ -314,8 +302,9 @@ async def run_hub_tests():
     bot_mod.mdb = AsyncMongoMockClient()["hub_empty"]
     empty = await bot_mod.build_hub(now)
     check("hub: DB rong -> moi muc = null",
-          [empty[k] for k in ("gems", "huntbot", "quest", "team", "battles", "zoo", "inventory", "weapons")],
-          [None] * 8)
+          [empty[k] for k in ("gems", "huntbot", "quest", "team", "zoo", "inventory", "weapons")],
+          [None] * 7)
+    check("hub: khong con muc battles", "battles" in empty, False)
 
     # --- DB co du lieu ---
     db = AsyncMongoMockClient()["hub_full"]
@@ -333,9 +322,6 @@ async def run_hub_tests():
         "seals": 3, "all_done": False, "next_quest": "Hunt 5 animals", "created_at": ago(60)})
     await bot_mod.save_team([{"pos": 1, "name": "gowl", "level": 10, "weaponId": "ABC123",
                               "quality": 88.5, "hp": 100, "wp": 20, "att": 30, "mag": 5, "pr": 1, "mr": 2}])
-    for res, streak in (("won", 1), ("lost", 0), ("won", 1)):
-        await db[bot_mod.COL_BATTLES].insert_one({"result": res, "turns": 4, "xp": 100,
-                                                  "streak": streak, "created_at": ago(5)})
     await bot_mod.save_zoo({"pets": [
         {"tier": "common", "name": "bee", "count": 110}, {"tier": "common", "name": "bug", "count": 113},
         {"tier": "special", "name": "x", "count": 0}], "zoo_points": 1000, "breakdown_raw": "F-1"}, "u1")
@@ -355,8 +341,6 @@ async def run_hub_tests():
     check("hub: huntbot age_seconds = 1800", hub["huntbot"]["age_seconds"], 1800)
     check("hub: quest", (hub["quest"]["seals"], hub["quest"]["next_quest"]), (3, "Hunt 5 animals"))
     check("hub: team", (hub["team"]["members"][0]["name"], hub["team"]["members"][0]["weaponId"]), ("gowl", "ABC123"))
-    check("hub: battles thang/thua + streak moi nhat", (hub["battles"]["wins"], hub["battles"]["losses"],
-                                                         hub["battles"]["current_streak"]), (2, 1, 1))
     check("hub: zoo tong pet + bo qua pet count=0",
           (hub["zoo"]["total_pets"], len(hub["zoo"]["pets"]), hub["zoo"]["by_tier"]["common"]["species"]),
           (223, 2, 2))
@@ -720,6 +704,136 @@ check("parse_zoo_breakdown: tong 12 tier = 748,012", sum(bot_mod.parse_zoo_break
     "F-3, CP-9, B-1, G-77, L-371, P-730, M-810, S-82, E-7448, R-74914, U-223757, C-439810").values()), 748012)
 check("parse_zoo_breakdown: rong / None / ma la", (bot_mod.parse_zoo_breakdown(""), bot_mod.parse_zoo_breakdown(None),
       bot_mod.parse_zoo_breakdown("ZZ-5, C-10")), ({}, {}, {"common": 10}))
+
+
+# ========================================================================
+# 8. Ten emoji, team doc nham ID emoji, chu vu khi
+# ========================================================================
+print("\n=== Ten emoji / Team / Chu vu khi ===")
+
+check("emoji_to_name: emoji dong <a:slothbot:ID>", bot_mod.emoji_to_name("<a:slothbot:711772997320441897>"), "slothbot")
+check("emoji_to_name: emoji tinh <:gowl:ID>", bot_mod.emoji_to_name("<:gowl:418284974593277954>"), "gowl")
+check("emoji_to_name: dang :dragon:", bot_mod.emoji_to_name(":dragon:"), "dragon")
+check("emoji_to_name: chu thuong giu nguyen", bot_mod.emoji_to_name("slothbot"), "slothbot")
+check("emoji_to_name: None/rong", (bot_mod.emoji_to_name(None), bot_mod.emoji_to_name("")), ("", ""))
+
+# Tin nhan team THAT: pet hien bang emoji -> chuoi <a:slothbot:ID>, ID la day so ~18 chu so
+team_raw = bot_mod.parse_team("""[1] <a:slothbot:711772997320441897>
+Lvl 26 [181,880/457,976]
+968 916
+100 100
+45% 45%
+`C2PRPT` 82.7%
+[2] <:gowl:418284974593277954>
+Lvl 10 [1,000/2,000]
+120 80
+30 40
+5% 6%
+`ABC123` 90.0%""")
+check("team emoji: ten lay dung tu emoji", [m["name"] for m in team_raw], ["slothbot", "gowl"])
+check("team emoji: HP/WP/ATT/MAG/PR/MR KHONG bi lech boi ID emoji",
+      {k: team_raw[0][k] for k in ("hp", "wp", "att", "mag", "pr", "mr")},
+      {"hp": 968, "wp": 916, "att": 100, "mag": 100, "pr": 45, "mr": 45})
+check("team emoji: pet thu 2 cung dung", {k: team_raw[1][k] for k in ("hp", "wp", "att", "mag", "pr", "mr")},
+      {"hp": 120, "wp": 80, "att": 30, "mag": 40, "pr": 5, "mr": 6})
+check("team emoji: level + vu khi van dung", (team_raw[0]["level"], team_raw[0]["weaponId"], team_raw[0]["quality"]),
+      (26, "C2PRPT", 82.7))
+
+
+async def run_emoji_owner_tests():
+    db = AsyncMongoMockClient()["emoji_owner"]
+    bot_mod.mdb = db
+
+    # Du lieu team CU da luu sai (ten emoji tho + HP la ID emoji) -> hub tu lam sach
+    await db[bot_mod.COL_TEAM].insert_one({"_id": 1, "pos": 1, "name": "<a:slothbot:711772997320441897>",
+        "level": 26, "hp": 711772997320441897, "wp": 968, "att": 916, "mag": 100, "pr": 100, "mr": 45,
+        "weaponId": "C2PRPT", "quality": 82.7, "updated_at": datetime.utcnow().isoformat()})
+    hub = await bot_mod.build_hub(datetime.utcnow())
+    m0 = hub["team"]["members"][0]
+    check("hub team: du lieu cu -> ten sach, so ID emoji bi bo (None)", (m0["name"], m0["hp"], m0["wp"]), ("slothbot", None, 968))
+
+    # --- Chu vu khi ---
+    ME = SimpleNamespace(id=555, display_name="Ruby", global_name="Ruby", nick=None, name="ruby_dev")
+    bot_mod.tracked_names.clear()
+    bot_mod.tracked_names["555"] = {"Ruby", "ruby_dev"}
+
+    def weapon_text(owner, wid="FJJ8N2"):
+        return f"""## {owner}'s Culling Scythe [2]
+**Name:** Culling Scythe
+**ID:** `{wid}`
+**Quality:** 95.2%
+
+**__Giant Slayer__** - Deal +23.95% more damage to bosses.
+Reroll Changes: 0"""
+
+    check("parse_weapon_detail: doc chu so huu", bot_mod.parse_weapon_detail(weapon_text("Ruby"))["owner"], "Ruby")
+    check("parse_weapon_detail: chu co emoji dung truoc ten",
+          bot_mod.parse_weapon_detail(weapon_text("<:owo:123456789012345678> Ruby"))["owner"], "Ruby")
+    check("weapon_owner_matches: khop / khong phan biet hoa thuong / bo ky hieu",
+          (bot_mod.weapon_owner_matches("Ruby", {"Ruby"}), bot_mod.weapon_owner_matches("ruby", {"Ruby"}),
+           bot_mod.weapon_owner_matches("Ruby✨", {"Ruby"}), bot_mod.weapon_owner_matches("Rubi", {"Ruby"}),
+           bot_mod.weapon_owner_matches("Ru", {"Ruby"}), bot_mod.weapon_owner_matches("", {"Ruby"}),
+           bot_mod.weapon_owner_matches("Ruby", set())), (True, True, True, False, False, False, False))
+
+    def owo_msg(text):
+        return SimpleNamespace(content=text, embeds=[], components=[], channel=SimpleNamespace(id=9))
+
+    bot_mod.last_owo_command[9] = "owo weapon FJJ8N2"
+    await bot_mod.handle_owo_response(owo_msg(weapon_text("Ruby", "FJJ8N2")), "555")
+    check("chu dung -> ghi vu khi", await db[bot_mod.COL_WEAPON_INSTANCES].count_documents({"_id": "FJJ8N2"}), 1)
+    check("chu dung -> ghi ca loai vu khi + passive",
+          (await db[bot_mod.COL_WEAPON_TYPES].count_documents({}) > 0, await db[bot_mod.COL_PASSIVES].count_documents({}) > 0),
+          (True, True))
+
+    await bot_mod.handle_owo_response(owo_msg(weapon_text("Nguoi Khac", "ZZZZZ9")), "555")
+    check("chu SAI -> KHONG ghi vu khi", await db[bot_mod.COL_WEAPON_INSTANCES].count_documents({"_id": "ZZZZZ9"}), 0)
+    check("chu SAI -> nho lai de lenh ,weaponowner bao", (bot_mod.skipped_weapon["owner"], bot_mod.skipped_weapon["id"]),
+          ("Nguoi Khac", "ZZZZZ9"))
+    types_before = await db[bot_mod.COL_WEAPON_TYPES].count_documents({})
+    await bot_mod.handle_owo_response(owo_msg(weapon_text("Nguoi Khac", "ZZZZZ8")), "555")
+    check("chu SAI -> khong them gi vao loai vu khi/passive", await db[bot_mod.COL_WEAPON_TYPES].count_documents({}), types_before)
+
+    # Ten them tay (alias) qua ,weaponowner
+    await bot_mod.set_config("weapon_owner_aliases", "Rubynek, Ruby Nek")
+    await bot_mod.handle_owo_response(owo_msg(weapon_text("Rubynek", "ALIAS1")), "555")
+    check("ten them tay (alias) -> duoc chap nhan", await db[bot_mod.COL_WEAPON_INSTANCES].count_documents({"_id": "ALIAS1"}), 1)
+
+    # Chua biet ten nguoi theo doi -> khong the xac minh -> khong ghi
+    bot_mod.tracked_names.clear()
+    await bot_mod.set_config("weapon_owner_aliases", "")
+    await bot_mod.handle_owo_response(owo_msg(weapon_text("Ruby", "NONAME1")), "555")
+    check("chua biet ten nguoi theo doi -> khong ghi (khong the xac minh)",
+          await db[bot_mod.COL_WEAPON_INSTANCES].count_documents({"_id": "NONAME1"}), 0)
+
+
+asyncio.run(run_emoji_owner_tests())
+
+
+async def run_on_message_names_test():
+    db = AsyncMongoMockClient()["on_message_names"]
+    bot_mod.mdb = db
+    bot_mod.tracked_names.clear()
+    await bot_mod.set_config("tracked_user_id", "555")
+
+    async def _noop(msg):
+        return None
+    original = bot_mod.bot.process_commands
+    bot_mod.bot.process_commands = _noop
+    try:
+        me = SimpleNamespace(id=555, display_name="Ruby", global_name="Ruby Dev", nick=None, name="ruby_dev")
+        msg = SimpleNamespace(content="Owo weapon FJJ8N2", author=me, channel=SimpleNamespace(id=31))
+        await bot_mod.on_message(msg)
+        check("on_message: ghi lai cac ten Discord cua nguoi theo doi",
+              bot_mod.tracked_names.get("555"), {"Ruby", "Ruby Dev", "ruby_dev"})
+        # Nguoi khac go lenh owo -> khong ghi ten
+        other = SimpleNamespace(id=999, display_name="Khach", global_name=None, nick=None, name="khach")
+        await bot_mod.on_message(SimpleNamespace(content="owo daily", author=other, channel=SimpleNamespace(id=31)))
+        check("on_message: nguoi khac go lenh -> khong ghi ten", "999" in bot_mod.tracked_names, False)
+    finally:
+        bot_mod.bot.process_commands = original
+
+
+asyncio.run(run_on_message_names_test())
 
 print("\n" + ("=" * 40))
 if failures:

@@ -65,7 +65,6 @@ COL_WEAPON_TYPES = "owot_weapon_types"
 COL_WEAPON_INSTANCES = "owot_weapon_instances"
 COL_PASSIVES = "owot_passives"
 COL_TEAM = "owot_team_slots"
-COL_BATTLES = "owot_battles"
 COL_HUNTBOT = "owot_huntbot_status"
 COL_QUEST = "owot_quest_status"
 COL_NOTES = "owot_notes"
@@ -76,6 +75,8 @@ COL_DAILY = "owot_daily_status"
 COL_COWONCY = "owot_cowoncy"
 
 pending_commands = {}  # channel_id -> timestamp gần nhất có lệnh owo từ tracked user
+tracked_names = {}  # user_id (chuỗi) -> các tên Discord của người đó (ghi lại mỗi khi họ gõ lệnh owo)
+skipped_weapon = {"owner": None, "id": None}  # vũ khí gần nhất bị bỏ qua vì sai chủ (để lệnh ,weaponowner báo)
 last_owo_command = {}  # channel_id -> nội dung lệnh owo gần nhất (chữ thường), để biết tin OwO đang trả lời lệnh nào
 _automacro_api_started = False
 
@@ -191,6 +192,22 @@ def parse_owodex(text: str):
     }
 
 
+def clean_owner_name(raw):
+    """Bo emoji (<:x:123>, :x:) khoi ten chu vu khi, chi giu ten nguoi choi."""
+    cleaned = re.sub(r"<a?:\w+:\d+>|:\w+:", "", raw or "")
+    return cleaned.strip()
+
+
+def _name_key(name):
+    """So sanh ten khong phan biet hoa/thuong va bo qua dau cach, ky hieu."""
+    return re.sub(r"[\W_]+", "", (name or "").casefold())
+
+
+def weapon_owner_matches(owner, names):
+    key = _name_key(owner)
+    return bool(key) and any(_name_key(n) == key for n in names if n)
+
+
 def parse_weapon_detail(text: str):
     """Trả về dict gồm: loại vũ khí, ID, quality, mô tả chính, các hiệu
     ứng cố định thuộc về loại vũ khí (vd Mortality/Taunt), và passive
@@ -203,6 +220,7 @@ def parse_weapon_detail(text: str):
     khối CUỐI CÙNG xuất hiện trong tin nhắn — các khối trước đó thuộc
     về chính loại vũ khí, không phải passive ngẫu nhiên."""
     name_m = re.search(r"##.*?'s\s+(.+)", text)
+    owner_m = re.search(r"##\s*(.*?)'s\s+", text)
     id_m = re.search(r"\*\*ID:\*\*\s*`([A-Z0-9]+)`", text)
     quality_m = re.search(r"\*\*Quality:\*\*.*?(\d+(?:\.\d+)?)%", text)
     main_desc_m = re.search(r"((?:Deals?\s+[\d.]+%|At the start of the turn,)[^\n]+)", text)
@@ -224,12 +242,27 @@ def parse_weapon_detail(text: str):
 
     return {
         "type_name": type_name,
+        # Chu so huu ghi o tieu de ("## Ruby's Culling Scythe") — bo emoji/ky hieu, chi lay ten
+        "owner": clean_owner_name(owner_m.group(1)) if owner_m else None,
         "id": id_m.group(1).strip(),
         "quality": float(quality_m.group(1)) if quality_m else None,
         "main_desc": main_desc_m.group(1).strip() if main_desc_m else None,
         "inherent_effects": inherent_effects,
         "passive": roll_passive,
     }
+
+
+def emoji_to_name(raw):
+    """Chuoi emoji cua Discord -> ten that. "<a:slothbot:711772997320441897>" -> "slothbot";
+    ":dragon:" -> "dragon". Khong co emoji thi giu nguyen chu."""
+    raw = (raw or "").strip()
+    m = re.search(r"<a?:([A-Za-z0-9_]+):\d+>", raw)
+    if m:
+        return m.group(1)
+    m = re.search(r":([A-Za-z0-9_]+):", raw)
+    if m:
+        return m.group(1)
+    return raw
 
 
 def parse_team(text: str):
@@ -245,11 +278,14 @@ def parse_team(text: str):
         # Cô lập vùng chứa 6 số liệu — bỏ dòng Lvl+thanh XP ở đầu, bỏ
         # mọi thứ từ weapon ID trở đi ở cuối (tránh nhầm số trong ID
         # hoặc decimal của % quality với HP/WP/ATT/MAG/PR/MR).
-        stat_zone = re.sub(r"Lvl\s*\d+\s*\[[\d,/]+\]", "", block)
+        # BỎ CẢ emoji tuỳ chỉnh (<a:slothbot:711772997320441897>): ID emoji là
+        # dãy số ~18 chữ số, nếu để lọt vào sẽ bị đọc nhầm thành HP.
+        stat_zone = re.sub(r"<a?:\w+:\d+>", "", block)
+        stat_zone = re.sub(r"Lvl\s*\d+\s*\[[\d,/]+\]", "", stat_zone)
         stat_zone = re.sub(r"`[A-Z0-9]{6}`.*", "", stat_zone, flags=re.S)
         nums = re.findall(r"(\d+)%?", stat_zone)
         entry = {
-            "pos": i, "name": name_m.group(1).strip(),
+            "pos": i, "name": emoji_to_name(name_m.group(1)),
             "level": int(lvl_m.group(1)) if lvl_m else None,
             "weaponId": weapon_m.group(1) if weapon_m else None,
             "quality": float(quality_m.group(1)) if quality_m else None,
@@ -259,14 +295,6 @@ def parse_team(text: str):
                           "mag": int(nums[3]), "pr": int(nums[4]), "mr": int(nums[5])})
         result.append(entry)
     return result
-
-
-def parse_battle_result(text: str):
-    m = re.search(r"You (won|lost) in (\d+) turns?!\s*\|\s*\+?([\d,]+)\s*xp\s*\|\s*Streak:\s*(\d+)", text)
-    if not m:
-        return None
-    return {"result": m.group(1), "turns": int(m.group(2)),
-            "xp": int(m.group(3).replace(",", "")), "streak": int(m.group(4))}
 
 
 def parse_huntbot_status(text: str):
@@ -809,22 +837,17 @@ async def _hub_team(now):
     rows = await mdb[COL_TEAM].find().sort("_id", 1).to_list(length=10)
     if not rows:
         return None
-    members = [{k: r.get(k) for k in ("pos", "name", "level", "hp", "wp", "att", "mag", "pr", "mr",
-                                       "weaponId", "quality")} for r in rows]
+    members = []
+    for r in rows:
+        m = {k: r.get(k) for k in ("pos", "name", "level", "hp", "wp", "att", "mag", "pr", "mr",
+                                   "weaponId", "quality")}
+        m["name"] = emoji_to_name(m["name"])
+        # Ban ghi cu tung doc nham ID emoji thanh so lieu (so ~18 chu so) -> bo, cho lan owo team ke tiep ghi de.
+        for stat in ("hp", "wp", "att", "mag", "pr", "mr"):
+            if isinstance(m[stat], int) and m[stat] >= 10 ** 9:
+                m[stat] = None
+        members.append(m)
     return _with_age({"members": members}, rows[0].get("updated_at"), now)
-
-
-async def _hub_battles(now):
-    rows = await mdb[COL_BATTLES].find().sort("_id", -1).to_list(length=20)
-    if not rows:
-        return None
-    wins = sum(1 for r in rows if r.get("result") == "won")
-    recent = [{"result": r.get("result"), "turns": r.get("turns"), "xp": r.get("xp"),
-               "streak": r.get("streak"), "at": _iso_z(r.get("created_at"))} for r in rows[:5]]
-    return _with_age({
-        "sample_size": len(rows), "wins": wins, "losses": len(rows) - wins,
-        "current_streak": rows[0].get("streak"), "recent": recent,
-    }, rows[0].get("created_at"), now)
 
 
 # Dong cuoi cua bang zoo: "F-3, CP-9, B-1, G-77, L-371, P-730, M-810, S-82, E-7448,
@@ -910,7 +933,6 @@ async def build_hub(now=None):
         "huntbot": await _hub_huntbot(now),
         "quest": await _hub_quest(now),
         "team": await _hub_team(now),
-        "battles": await _hub_battles(now),
         "zoo": await _hub_zoo(now),
         "inventory": await _hub_inventory(now),
         "weapons": await _hub_weapons(now),
@@ -1026,12 +1048,6 @@ async def save_team(team):
         await mdb[COL_TEAM].insert_many(docs)
 
 
-async def save_battle(b):
-    b = dict(b)
-    b["created_at"] = datetime.utcnow().isoformat()
-    await mdb[COL_BATTLES].insert_one(b)
-
-
 async def save_huntbot(h):
     h = dict(h)
     h["created_at"] = datetime.utcnow().isoformat()
@@ -1115,6 +1131,11 @@ async def on_message(message: discord.Message):
             and any(content_lower.startswith(p) for p in prefixes):
         pending_commands[message.channel.id] = time.time()
         last_owo_command[message.channel.id] = content_lower
+        author = message.author
+        tracked_names[str(author.id)] = {
+            n for n in (getattr(author, "display_name", None), getattr(author, "global_name", None),
+                        getattr(author, "nick", None), getattr(author, "name", None)) if n
+        }
         await bot.process_commands(message)
         return
 
@@ -1172,21 +1193,27 @@ async def handle_owo_response(message: discord.Message, source_id):
 
     weapon = parse_weapon_detail(text)
     if weapon:
-        await save_weapon_type(weapon, source_id)
-        await save_weapon_instance(weapon, source_id)
-        if weapon.get("passive"):
-            await save_passive(weapon["passive"]["name"], weapon["passive"]["desc"], source_id)
-        for eff in weapon.get("inherent_effects", []):
-            await save_passive(eff["name"], eff["desc"], source_id)
+        # Chỉ ghi vũ khí của CHÍNH người đang theo dõi: owo weapon <ID> xem được cả
+        # vũ khí của người khác (tiêu đề ghi tên chủ) — không được lẫn vào dữ liệu của bạn.
+        names = set(tracked_names.get(str(source_id), set()))
+        aliases = await get_config("weapon_owner_aliases", "") or ""
+        names |= {a.strip() for a in aliases.split(",") if a.strip()}
+        if weapon_owner_matches(weapon.get("owner"), names):
+            await save_weapon_type(weapon, source_id)
+            await save_weapon_instance(weapon, source_id)
+            if weapon.get("passive"):
+                await save_passive(weapon["passive"]["name"], weapon["passive"]["desc"], source_id)
+            for eff in weapon.get("inherent_effects", []):
+                await save_passive(eff["name"], eff["desc"], source_id)
+        else:
+            skipped_weapon["owner"], skipped_weapon["id"] = weapon.get("owner"), weapon["id"]
+            print(f"[tracker] Bỏ qua vũ khí {weapon['id']}: chủ là '{weapon.get('owner')}', "
+                  f"không khớp tên đang theo dõi {sorted(names)}")
 
     if "Lvl" in text and re.search(r"\[\d+\]", text):
         team = parse_team(text)
         if team:
             await save_team(team)
-
-    battle = parse_battle_result(text)
-    if battle:
-        await save_battle(battle)
 
     hunt = parse_huntbot_status(text)
     if hunt:
@@ -1287,35 +1314,40 @@ async def setprefixes_cmd(ctx, *, prefixes: str = ""):
     await ctx.send(f"Đã cập nhật, giờ nhận diện: {', '.join(f'`{p}`' for p in new_list)}")
 
 
+@bot.command(name="weaponowner")
+@is_owner()
+async def weaponowner_cmd(ctx, *, aliases: str = ""):
+    """Bot chỉ ghi vũ khí có tên chủ khớp tên Discord của bạn (tự nhận từ mỗi lần bạn
+    gõ lệnh owo). Nếu OwO ghi chủ bằng tên khác, thêm ở đây: ,weaponowner Tên1, Tên2
+    Xoá hết tên thêm: ,weaponowner xoa"""
+    if aliases.strip().lower() in ("xoa", "xóa", "clear"):
+        await set_config("weapon_owner_aliases", "")
+        await ctx.send("Đã xoá các tên chủ vũ khí thêm tay.")
+        return
+    if aliases.strip():
+        await set_config("weapon_owner_aliases", aliases.strip())
+    tracked = await get_config("tracked_user_id")
+    auto = sorted(tracked_names.get(str(tracked), set()))
+    extra = await get_config("weapon_owner_aliases", "") or ""
+    lines = [f"Tên tự nhận từ Discord: {', '.join(f'`{n}`' for n in auto) or '(chưa có — hãy gõ 1 lệnh owo)'}",
+             f"Tên thêm tay: {extra or '(không có)'}"]
+    if skipped_weapon["owner"] is not None:
+        lines.append(f"Vũ khí gần nhất bị bỏ qua: `{skipped_weapon['id']}` — chủ ghi là **{skipped_weapon['owner']}**")
+    await ctx.send("\n".join(lines))
+
+
 @bot.command(name="status")
 async def status(ctx):
     tracked = await get_config("tracked_user_id")
-    last_battle = await mdb[COL_BATTLES].find_one(sort=[("_id", -1)])
     last_hunt = await mdb[COL_HUNTBOT].find_one(sort=[("_id", -1)])
 
     embed = discord.Embed(title="Trạng thái theo dõi", color=0xD9A227)
     embed.add_field(name="Đang theo dõi", value=f"<@{tracked}>" if tracked else "Chưa đặt — dùng `,track`", inline=False)
-    if last_battle:
-        embed.add_field(name="Trận gần nhất",
-                         value=f"{'Thắng' if last_battle['result']=='won' else 'Thua'} sau {last_battle['turns']} lượt · "
-                               f"+{last_battle['xp']} xp · Streak {last_battle['streak']}", inline=False)
     if last_hunt:
         state = f"{last_hunt['progress_pct']}% · {last_hunt['animals_captured']} pet · còn {last_hunt['time_remaining']}" \
             if last_hunt["hunting"] else "Không đang hunt"
         embed.add_field(name="HuntBot", value=state, inline=False)
     await ctx.send(embed=embed)
-
-
-@bot.command(name="battlelog")
-async def battlelog(ctx, n: int = 5):
-    cursor = mdb[COL_BATTLES].find().sort("_id", -1).limit(min(n, 20))
-    rows = await cursor.to_list(length=20)
-    if not rows:
-        await ctx.send("Chưa có trận nào được ghi nhận.")
-        return
-    lines = [f"{'✅' if r['result']=='won' else '❌'} {r['turns']} lượt · +{r['xp']} xp · Streak {r['streak']} "
-             f"· {r['created_at'][:16].replace('T',' ')}" for r in rows]
-    await ctx.send("**Nhật ký trận đấu gần đây:**\n" + "\n".join(lines))
 
 
 @bot.command(name="huntbot")
@@ -1350,7 +1382,7 @@ async def team_cmd(ctx):
     if not rows:
         await ctx.send("Chưa có dữ liệu đội hình.")
         return
-    lines = [f"[{r['pos']}] **{r['name']}** Lvl{r['level']} — HP{r['hp']} WP{r['wp']} "
+    lines = [f"[{r['pos']}] **{emoji_to_name(r['name'])}** Lvl{r['level']} — HP{r['hp']} WP{r['wp']} "
              f"ATT{r['att']} MAG{r['mag']} · `{r['weaponId']}` {r['quality']}%" for r in rows]
     await ctx.send("\n".join(lines))
 
@@ -1649,7 +1681,7 @@ async def help_cmd(ctx):
     )
     embed.add_field(
         name="Theo dõi cá nhân",
-        value="`,track @user` (owner) · `,setprefixes owo,o` (owner) · `,status` · `,battlelog [n]` · "
+        value="`,track @user` (owner) · `,setprefixes owo,o` (owner) · `,status` · `,weaponowner` (owner) · "
               "`,huntbot` · `,quests` · `,team` · `,myweapons [tìm]` · "
               "`,zoo [tìm]` · `,inv [tìm]` · `,gems`",
         inline=False,

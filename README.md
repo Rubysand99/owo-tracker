@@ -82,7 +82,7 @@ Xem lệnh đang chờ / đã xử lý ngay trong Discord: `,automacro` (owner).
   app AutoMacro hiện thành màn hình Hub: `daily` (giờ nhận kế tiếp, streak),
   `cowoncy`, `gems` (đang trang bị + gem dự
   phòng trong kho), `huntbot` (kèm `ready_at`/`seconds_left` — giờ xong
-  tính từ lúc bot thấy tin nhắn), `quest`, `team`, `battles`, `zoo`,
+  tính từ lúc bot thấy tin nhắn), `quest`, `team`, `zoo`,
   `inventory`, `weapons`. Mục nào bot chưa thấy lần nào thì là `null`.
   Mỗi mục có `updated_at` + `age_seconds` để biết dữ liệu cũ hay mới.
 - Cả 3 đều cần header `Authorization: Bearer <AUTOMACRO_API_TOKEN>`,
@@ -96,8 +96,8 @@ vũ khí chỉ có những cây bạn từng xem bằng `owo weapon <ID>`.
 
 ```
 ,track @Ruby            → đặt tài khoản cần theo dõi (chỉ owner)
-,status                 → tổng quan: đang theo dõi ai, trận gần nhất, huntbot
-,battlelog 10            → 10 trận gần nhất
+,status                 → tổng quan: đang theo dõi ai, huntbot
+,weaponowner            → xem/đặt tên chủ vũ khí được chấp nhận (chỉ owner)
 ,huntbot                 → trạng thái HuntBot hiện tại
 ,quests                  → trạng thái quest hôm nay
 ,team                    → đội hình gần nhất ghi nhận được
@@ -136,6 +136,20 @@ vũ khí chỉ có những cây bạn từng xem bằng `owo weapon <ID>`.
   của Culling Scythe) vào danh sách — không ghi đè, chỉ bổ sung.
 - **Vũ khí bạn sở hữu** (`owot_weapon_instances`): từng cây cụ thể
   theo unique ID, quality/passive luôn là bản mới nhất.
+- **Kiểm tra chủ vũ khí:** `owo weapon <ID>` xem được cả vũ khí của người
+  khác — tiêu đề tin nhắn ghi tên chủ (`## Ruby's Culling Scythe`). Bot chỉ
+  ghi (cả cây vũ khí, loại vũ khí lẫn passive) khi tên chủ **khớp tên Discord
+  của bạn**. Tên Discord bot tự học mỗi lần bạn gõ lệnh owo (tên hiển thị,
+  tên toàn cục, biệt danh trong server, tên đăng nhập; so sánh không phân
+  biệt hoa/thường và bỏ qua ký hiệu). Vũ khí sai chủ bị bỏ qua và in 1 dòng
+  vào Logs. Nếu OwO ghi chủ bằng một tên khác, thêm bằng
+  `,weaponowner Tên1, Tên2`; gõ `,weaponowner` để xem bot đang chấp nhận
+  những tên nào và cây vũ khí gần nhất bị bỏ qua; `,weaponowner xoa` để xoá
+  các tên thêm tay.
+- **Tên pet từ emoji:** OwO hiển thị pet bằng emoji, bot đọc ra dạng
+  `<a:slothbot:711772997320441897>` — hàm `emoji_to_name` lấy đúng tên
+  (`slothbot`). Đội hình cũng bỏ ID emoji (dãy số ~18 chữ số) trước khi
+  đọc HP/WP/ATT/MAG/PR/MR.
 - **Passive** (`owot_passives`): tên + mô tả chính xác, lấy từ đúng
   dòng `__Tên__ - mô tả` trong tin nhắn OwO.
 
