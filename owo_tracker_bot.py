@@ -428,13 +428,14 @@ def decode_superscript_number(s: str) -> int:
     return int(digits) if digits else 0
 
 
-def parse_zoo(text: str):
+def parse_zoo(text: str, continuation: bool = False, start_tier=None):
     """owo zoo — bảng đếm pet theo từng tier. Mỗi dòng bắt đầu bằng 1 tier
     tag, theo sau là danh sách pet dạng :tên: (icon thường) hoặc
     <a?:tên:id> (custom emoji) + số lượng bằng chữ số mũ ngay sau. Dòng
     "blank" là dòng nối tiếp của tier ngay phía trên (khi 1 tier có hơn
     5 loại phải xuống dòng), không phải tier mới."""
-    if "'s zoo" not in text and "zoo!" not in text.lower():
+    has_header = "'s zoo" in text or "zoo!" in text.lower()
+    if not has_header and not continuation:
         return None
 
     tier_tag_pattern = re.compile(r"^<a?:(\w+):\d+>")
@@ -442,6 +443,13 @@ def parse_zoo(text: str):
 
     pets = []
     current_tier = None
+    # Zoo dai nen OwO chia thanh nhieu tin nhan. Tin tiep noi khong co tieu de
+    # "'s zoo"; neu no bat dau bang 1 tier tag (ke ca "blank" = tiep tuc tier
+    # truoc do) thi tier dang do duoc ke thua tu tin truoc (start_tier).
+    if continuation and not has_header:
+        first_line = next((ln.strip() for ln in text.split("\n") if ln.strip()), "")
+        if tier_tag_pattern.match(first_line):
+            current_tier = start_tier
     for line in text.split("\n"):
         tier_m = tier_tag_pattern.match(line.strip())
         if tier_m:
@@ -524,6 +532,39 @@ def parse_hunt_gem_status(text: str):
 # LƯU — tất cả upsert theo key tự nhiên (tên pet, tên loại vũ khí, tên
 # passive, ID vũ khí) nên gọi lại nhiều lần không tạo bản trùng.
 # ----------------------------------------------------------------------
+ZOO_PART_WINDOW = 60  # giay: tin tiep noi cua zoo phai toi trong khoang nay sau tin truoc
+zoo_session = {}  # channel_id -> {"ts": thoi diem tin zoo gan nhat, "data": zoo da ghep}
+
+
+def merge_zoo_parts(first, part):
+    """Ghep 2 phan cua cung 1 bang zoo: cong danh sach pet; Zoo Points / breakdown
+    lay tu phan nao co (thuong nam o tin cuoi cung)."""
+    return {
+        "pets": first["pets"] + part["pets"],
+        "zoo_points": part["zoo_points"] if part.get("zoo_points") is not None else first.get("zoo_points"),
+        "breakdown_raw": part.get("breakdown_raw") or first.get("breakdown_raw"),
+    }
+
+
+async def handle_zoo_text(channel_id, text, source_id=None):
+    """Xu ly 1 tin nhan co the thuoc bang zoo. Tin co tieu de -> bat dau bang zoo
+    moi. Tin khong tieu de nhung toi ngay sau tin zoo (cung kenh, trong vong
+    ZOO_PART_WINDOW giay) -> ghep vao bang dang doc."""
+    is_header = "'s zoo" in text or "zoo!" in text.lower()
+    session = zoo_session.get(channel_id)
+    merged = None
+    if is_header:
+        merged = parse_zoo(text)
+    elif session and time.time() - session["ts"] < ZOO_PART_WINDOW:
+        pets_so_far = session["data"]["pets"]
+        part = parse_zoo(text, continuation=True, start_tier=pets_so_far[-1]["tier"] if pets_so_far else None)
+        if part:
+            merged = merge_zoo_parts(session["data"], part)
+    if merged:
+        zoo_session[channel_id] = {"ts": time.time(), "data": merged}
+        await save_zoo(merged, source_id)
+
+
 async def save_zoo(z, source_id=None):
     """Zoo là 1 bản chụp toàn cảnh — ghi đè bản cũ mỗi lần quan sát mới,
     không cộng dồn (số lượng pet là tuyệt đối, không phải log sự kiện)."""
@@ -1132,9 +1173,7 @@ async def handle_owo_response(message: discord.Message, source_id):
     if cash:
         await save_cowoncy(cash, source_id)
 
-    zoo = parse_zoo(text)
-    if zoo:
-        await save_zoo(zoo, source_id)
+    await handle_zoo_text(message.channel.id, text, source_id)
 
     inv = parse_inventory(text)
     if inv:

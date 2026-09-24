@@ -602,6 +602,110 @@ for label, head, want in (
     check("huntbot essence: " + label, bot_mod.parse_huntbot_status(head + HB_TAIL)["essence"], want)
 check("huntbot: khong co dong essence -> None", bot_mod.parse_huntbot_status("BEEP. BOOP. I AM HUNTBOT." + HB_TAIL)["essence"], None)
 
+
+# ========================================================================
+# 7. ZOO bi OwO chia thanh 2 tin nhan (mau THAT bot gui ngay 24/09/2026)
+# ========================================================================
+print("\n=== Zoo nhieu tin nhan ===")
+
+ZOO_MSG1 = """🌿 🌱 🌳** Ruby's zoo! **🌳 🌿 🌱
+<:common:416520037713838081>   :bee:¹⁹⁰  :bug:²⁰²  :snail:¹⁹²  :beetle:¹⁹⁷  :butterfly:¹⁸⁵  
+<:uncommon:416520056269176842>   :baby_chick:¹¹⁶  :mouse2:¹⁰⁷  :rooster:¹¹³  :rabbit2:¹⁰⁸  :chipmunk:¹⁰⁶  
+<:rare:416520066629107712>   :sheep:⁰⁴⁰  :pig2:⁰⁴²  :cow2:⁰²⁹  :dog2:⁰³⁰  :cat2:⁰³⁴  
+<:epic:416520722987614208>   :crocodile:⁰⁰³  :tiger2:⁰⁰³  :penguin:⁰⁰⁴  :elephant:⁰⁰²  :whale:⁰⁰³  
+<:patreon:449705754522419222>    <:pbird:449867323990343690>⁰⁰⁴  <:pdolphin:449867323898068992>⁰⁰³  <:pogre:449705625681788958>⁰⁰¹  <:pscorpion:449704671721029632>⁰⁰¹  <:ptiger:449703897980993545>⁰⁰²  
+<:special:427935192137859073>    <a:2024nov_diwaliOwO:1301754663892422746>⁰⁰⁰  <a:2024nov_tiago:1301754667633606657>⁰⁰⁰  <a:2025aug_clowncat:1409782335620120587>⁰⁰⁰  <a:2025aug_cuba:1409486185813901332>⁰⁰⁰  <a:2025aug_worldwideweb:1409486209914376192>⁰⁰⁰  
+<:blank:427371936482328596>    <a:2025may_mothersDayOwO:1377197500414427146>⁰⁰⁰  <a:2025may_sportsdayowo:1377197478868418570>⁰⁰⁰  <a:2026april_aprilfools:1488087565251772428>⁰⁰⁰  <a:2026april_easter:1488087538563551368>⁰⁰⁰  <a:2026aug_cattodoggo:1533255278047399988>⁰⁰⁰  
+<:blank:427371936482328596>    <a:2026aug_HungryGhost:1533255252646695065>⁰⁰⁰  <a:2026feb_huba:1467699766321217538>⁰⁰⁰  <a:2026feb_SnowSlug:1467699778048757771>⁰⁰⁰  <a:2026july_mothweek:1521417260273766521>⁰⁰⁰  <a:2026july_pecan:1521417280397905941>⁰⁰⁰  
+<:blank:427371936482328596>    <a:2026may_beeday:1498231408169058304>⁰⁰⁰  <a:2026may_frank:1498231420949233665>⁰⁰⁰  <a:2026may_graduates:1498232154344263782>⁰⁰⁰  <a:2026sept_midautumn:1544270989716627538>⁰⁰⁰  <a:2026sept_september:1544270975929942026>⁰⁰⁰  
+<:blank:427371936482328596>    <a:2026sept_WHDViva:1544271003075477504>⁰⁰⁰  <a:4m_jellyfish:1455800572975386717>⁰⁰⁰  <a:4m_owo:1461956620698259634>⁰⁰⁰  
+<:mythic:416520808501084162>   :dragon:⁰⁰⁰  :unicorn:⁰⁰¹  :snowman2:⁰⁰⁰  :ghost:⁰⁰⁰  :dove:⁰⁰⁰"""
+ZOO_MSG2 = """<a:gem:510023576489951232>    <a:gcamel:510023576573837322>⁰⁰⁰  <a:gfish:510023576892473364>⁰⁰⁰  <a:gpanda:510023577320292353>⁰⁰⁰  <a:gshrimp:510023577295388672>⁰⁰⁰  <a:gspider:510023576775032844>⁰⁰⁰  
+<a:legendary:417955061801680909>    <a:gdeer:418290217989046274>⁰⁰⁰  <a:gfox:418291892376305664>⁰⁰⁰  <a:glion:418289164736528404>⁰⁰⁰  <a:gowl:418284974593277954>⁰⁰⁰  <a:gsquid:417968419984375808>⁰⁰⁰  
+<a:botrank:716545289497870407>    <a:slothbot:711772997320441897>⁰⁰⁰  
+<a:cpatreon:483053960337293321>    <:azula:820592681340108822>⁰⁰⁰  <:i_heart_pizza:842340973333708810>⁰⁰⁰  <:Kawaii_unicorn:1351430048951042151>⁰⁰⁰  <:Peepolax:885437252363239484>⁰⁰⁰  <:priestessmeden:808621201634492466>⁰⁰⁰  
+<:blank:427371936482328596>    <:Riyo_Reaper:1547675941424201858>⁰⁰⁰  <a:highfive:1394681900970279077>⁰⁰⁰  <a:kavusamadik:1213065151742476339>⁰⁰⁰  <a:lisapie:768383943643758612>⁰⁰⁰  
+<a:fabled:438857004493307907>    <a:dfrog:435592209883070474>⁰⁰⁰  <a:dgorilla:438842240865927180>⁰⁰⁰  <a:dwolf:435592220758769684>⁰⁰⁰
+**Zoo Points: __13,559,875__**
+	**F-3, CP-9, B-1, G-77, L-371, P-730, M-810, S-82, E-7448, R-74914, U-223757, C-439810**"""
+
+
+def zoo_msg(text, ch=77):
+    return SimpleNamespace(content=text, embeds=[], components=[], channel=SimpleNamespace(id=ch))
+
+
+# --- parse_zoo don le ---
+first = bot_mod.parse_zoo(ZOO_MSG1)
+check("zoo tin 1: 53 pet, CHUA co Zoo Points (nam o tin sau)", (len(first["pets"]), first["zoo_points"]), (53, None))
+check("zoo tin 2: khong tieu de -> bo qua neu khong bao 'tiep noi'", bot_mod.parse_zoo(ZOO_MSG2), None)
+second = bot_mod.parse_zoo(ZOO_MSG2, continuation=True)
+check("zoo tin 2 (tiep noi): 23 pet + Zoo Points + breakdown",
+      (len(second["pets"]), second["zoo_points"], second["breakdown_raw"]),
+      (23, 13559875, "F-3, CP-9, B-1, G-77, L-371, P-730, M-810, S-82, E-7448, R-74914, U-223757, C-439810"))
+check("zoo tin 2: cac tier moi (gem/legendary/botrank/cpatreon/fabled)",
+      sorted({p["tier"] for p in second["pets"]}), ["botrank", "cpatreon", "fabled", "gem", "legendary"])
+check("zoo tin 2: dong 'blank' noi tiep tier cpatreon (5+4 = 9 con)",
+      sum(1 for p in second["pets"] if p["tier"] == "cpatreon"), 9)
+midtier = bot_mod.parse_zoo("""<:blank:427371936482328596>    <a:y:2>⁰⁰²
+**Zoo Points: __5__**""", continuation=True, start_tier="special")
+check("zoo tin tiep noi bat dau bang 'blank' -> ke thua tier truoc",
+      midtier["pets"], [{"tier": "special", "name": "y", "count": 2}])
+check("zoo tin tiep noi KHONG bat dau bang tier tag -> khong nhan pet nham",
+      bot_mod.parse_zoo("`051`<:cgem1:1>¹⁰⁴\n**Zoo Points: __7__**", continuation=True, start_tier="rare")["pets"], [])
+
+
+async def run_zoo_split_tests():
+    db = AsyncMongoMockClient()["zoo_split"]
+    bot_mod.mdb = db
+    bot_mod.zoo_session.clear()
+
+    # Tin 2 toi 1 minh (chua co tin 1) -> bo qua
+    await bot_mod.handle_owo_response(zoo_msg(ZOO_MSG2), "u1")
+    check("luong that: tin 2 toi 1 minh -> khong luu gi", await db[bot_mod.COL_ZOO].find_one({"_id": "latest"}), None)
+
+    # Tin 1 -> luu tam (chua co diem)
+    await bot_mod.handle_owo_response(zoo_msg(ZOO_MSG1), "u1")
+    doc = await db[bot_mod.COL_ZOO].find_one({"_id": "latest"})
+    check("luong that: sau tin 1 -> 53 pet, chua co diem", (len(doc["pets"]), doc["zoo_points"]), (53, None))
+
+    # Tin khong lien quan trong luc cho -> khong lam hong
+    await bot_mod.handle_owo_response(zoo_msg("Ruby, you currently have 5 cowoncy!"), "u1")
+    check("luong that: tin khac chen giua khong anh huong",
+          len((await db[bot_mod.COL_ZOO].find_one({"_id": "latest"}))["pets"]), 53)
+
+    # Tin 2 -> ghep du
+    await bot_mod.handle_owo_response(zoo_msg(ZOO_MSG2), "u1")
+    doc = await db[bot_mod.COL_ZOO].find_one({"_id": "latest"})
+    check("luong that: sau tin 2 -> du 76 pet + Zoo Points", (len(doc["pets"]), doc["zoo_points"]), (76, 13559875))
+    hub = await bot_mod.build_hub(datetime.utcnow())
+    z = hub["zoo"]
+    check("hub: zoo co du tier moi + diem", (z["zoo_points"], "cpatreon" in z["by_tier"], "gem" in z["by_tier"]),
+          (13559875, True, True))
+    check("hub: tong pet dang co = 1718 (966+550+175+15+11+1)", z["total_pets"], 1718)
+    check("hub: chi liet ke pet co so luong > 0", len(z["pets"]), 26)
+    check("hub: JSON hop le", isinstance(json.dumps(hub), str), True)
+
+    # Go lai owo zoo -> tin co tieu de bat dau lai tu dau (khong cong don)
+    await bot_mod.handle_owo_response(zoo_msg(ZOO_MSG1), "u1")
+    doc = await db[bot_mod.COL_ZOO].find_one({"_id": "latest"})
+    check("luong that: go lai owo zoo -> bat dau ban moi, khong cong don", (len(doc["pets"]), doc["zoo_points"]), (53, None))
+
+    # Tin 2 toi qua muon (qua cua so) -> bo qua
+    bot_mod.zoo_session[77]["ts"] -= bot_mod.ZOO_PART_WINDOW + 5
+    await bot_mod.handle_owo_response(zoo_msg(ZOO_MSG2), "u1")
+    doc = await db[bot_mod.COL_ZOO].find_one({"_id": "latest"})
+    check("luong that: tin 2 toi qua muon -> khong ghep", len(doc["pets"]), 53)
+
+    # Zoo ngan (vua 1 tin) van chay nhu cu
+    bot_mod.zoo_session.clear()
+    await bot_mod.handle_owo_response(zoo_msg(
+        "🌿 🌱 🌳** Ruby's zoo! **🌳 🌿 🌱\n<:common:416520037713838081>   :bee:¹⁹⁰\n**Zoo Points: __50__**\n\t**F-0, C-190**"), "u1")
+    doc = await db[bot_mod.COL_ZOO].find_one({"_id": "latest"})
+    check("luong that: zoo vua 1 tin van dung", (len(doc["pets"]), doc["zoo_points"]), (1, 50))
+
+
+asyncio.run(run_zoo_split_tests())
+
 print("\n" + ("=" * 40))
 if failures:
     print(f"{FAIL} {len(failures)} test thất bại: {failures}")

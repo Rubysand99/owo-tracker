@@ -144,6 +144,11 @@ vũ khí chỉ có những cây bạn từng xem bằng `owo weapon <ID>`.
 Bot còn đọc thêm 3 loại tin nhắn:
 
 - **`owo zoo`** — lưu toàn bộ bảng đếm pet theo mọi tier + Zoo Points.
+  Zoo dài nên OwO chia thành **2 tin nhắn** (hoặc nhiều hơn): tin đầu có
+  tiêu đề `'s zoo`, tin sau không có tiêu đề và chứa các tier còn lại +
+  Zoo Points. Bot tự ghép các tin liên tiếp trong vòng 60 giây (cùng kênh)
+  thành 1 bảng (`handle_zoo_text`). Gõ lại `owo zoo` thì bắt đầu bảng mới,
+  không cộng dồn.
   Xem lại bằng `,zoo [tìm]`.
 - **`owo inventory`** — lưu toàn bộ item (gem, crate, vé, vũ khí thô...).
   Xem lại bằng `,inv [tìm]`.
