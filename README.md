@@ -79,7 +79,8 @@ Xem lệnh đang chờ / đã xử lý ngay trong Discord: `,automacro` (owner).
 - `POST /commands/{id}/ack` — báo đã xử lý xong, body `{"status": "done"}`
   hoặc `{"status": "failed"}`.
 - `GET /hub` — trả về **toàn bộ dữ liệu mới nhất bot đã đọc được** để
-  app AutoMacro hiện thành màn hình Hub: `gems` (đang trang bị + gem dự
+  app AutoMacro hiện thành màn hình Hub: `daily` (giờ nhận kế tiếp, streak),
+  `cowoncy`, `gems` (đang trang bị + gem dự
   phòng trong kho), `huntbot` (kèm `ready_at`/`seconds_left` — giờ xong
   tính từ lúc bot thấy tin nhắn), `quest`, `team`, `battles`, `zoo`,
   `inventory`, `weapons`. Mục nào bot chưa thấy lần nào thì là `null`.
@@ -171,6 +172,23 @@ mình viết dựa trên trí nhớ về 1 ví dụ cũ hơn, **chưa có mẫu 
 `,debugnext` ngay trước khi hunt 1 lần để in raw content thật ra
 console, so với `parse_hunt_gem_status()` xem có khớp không trước khi
 tin tưởng hoàn toàn cơ chế nhắc.
+
+### Daily, Cowoncy, Quest
+
+- **`owo daily`** — đọc cả 2 dạng tin nhắn: "chưa tới giờ" (`You need to
+  wait 3H 11M 28S`) và "đã nhận" (thưởng, streak, giờ nhận kế tiếp).
+  Dạng "chưa tới giờ" không có chữ "daily" trong tin nhắn nên bot chỉ nhận
+  khi lệnh bạn vừa gõ là lệnh daily. Streak/thưởng chỉ có ở tin "đã nhận",
+  nên nếu bạn nhận daily lúc bot tắt thì streak trong hub sẽ cũ.
+- **`owo money` / `owo cash`** — lưu số cowoncy hiện có.
+- **`owo quest`** — bảng Quest Log là loại tin nhắn kiểu mới của Discord
+  (Components V2: có các tab Daily/Weekly/Quests), chữ không nằm trong
+  `content` hay embed mà nằm trong các thành phần lồng nhau. Bot đã biết
+  đọc loại này (`flatten_message`) và lấy được Seals + mốc quest kế tiếp.
+  Chi tiết từng quest (tiến độ 0/3...) **chưa đọc** — cần mẫu chữ thật
+  từ `,debugnext`.
+- **`owo profile`** — là **ảnh** (thẻ hồ sơ), không có chữ nào để đọc nên
+  bot không lấy được dữ liệu từ đây.
 
 ### Về việc tự động dịch sang tiếng Việt
 

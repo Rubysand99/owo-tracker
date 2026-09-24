@@ -72,8 +72,11 @@ COL_NOTES = "owot_notes"
 COL_ZOO = "owot_zoo_snapshot"
 COL_INVENTORY = "owot_inventory_items"
 COL_GEM_STATUS = "owot_gem_status"
+COL_DAILY = "owot_daily_status"
+COL_COWONCY = "owot_cowoncy"
 
 pending_commands = {}  # channel_id -> timestamp gần nhất có lệnh owo từ tracked user
+last_owo_command = {}  # channel_id -> nội dung lệnh owo gần nhất (chữ thường), để biết tin OwO đang trả lời lệnh nào
 _automacro_api_started = False
 
 
@@ -286,14 +289,66 @@ def parse_huntbot_status(text: str):
 def parse_quest_status(text: str):
     if "Quest Log" not in text and "Quest Seals" not in text:
         return None
-    seals_m = re.search(r"Balance:\s*(\d+)", text)
+    seals_m = re.search(r"Balance:\s*\**\s*(\d+)", text)
     all_done = "finished all" in text.lower() or "come back tomorrow" in text.lower()
     next_m = re.search(r"Next quest:\s*([^\n]+)", text)
-    return {
+    result = {
         "seals": int(seals_m.group(1)) if seals_m else None,
         "all_done": all_done,
         "next_quest": next_m.group(1).strip() if next_m else None,
     }
+    # Discord hien "3 gio toi" la do CLIENT doi moc thoi gian <t:1234567890:R>
+    # thanh chu — tin nhan that ma bot doc duoc chua moc do, khong phai chu.
+    ts_m = re.search(r"<t:(\d+)(?::[A-Za-z])?>", next_m.group(1)) if next_m else None
+    if ts_m:
+        result["next_quest_epoch"] = int(ts_m.group(1))
+    return result
+
+
+# --- Daily + Cowoncy ------------------------------------------------------
+# Tin nhan OwO hay in dam (**) va gach chan (__) — bo het truoc khi so khop.
+def _plain(text: str) -> str:
+    return text.replace("*", "").replace("_", "")
+
+
+# "3H 11M 28S" — chi cho phep dau cach/tab GIUA cac cum, khong cho xuong dong,
+# de khong an nham so o dong ke tiep.
+_DURATION_PATTERN = r"((?:\d+[ \t]*[DHMS][ \t]*)+)"
+
+
+def parse_daily(text: str, command: str = ""):
+    """owo daily — 2 dang tin nhan:
+      1. Da nhan: "Here is your daily <emoji> 5000 Cowoncy!", "You're on a 337
+         daily streak!", "Your next daily is in: 23H 29M 17S".
+      2. Chua toi gio: "Nu! Ruby! You need to wait 3H 11M 28S" — dang nay KHONG
+         co chu "daily", nen chi nhan khi lenh ban vua go la lenh daily.
+    """
+    plain = _plain(text)
+    if re.search(r"here is your daily", plain, re.I):
+        reward_m = re.search(r"here is your daily.*?([\d,]+)\s*cowoncy", plain, re.I)
+        streak_m = re.search(r"([\d,]+)\s*daily streak", plain, re.I)
+        next_m = re.search(r"next daily is in:?\s*" + _DURATION_PATTERN, plain, re.I)
+        return {
+            "state": "claimed",
+            "reward": int(reward_m.group(1).replace(",", "")) if reward_m else None,
+            "streak": int(streak_m.group(1).replace(",", "")) if streak_m else None,
+            "seconds_until_next": duration_to_seconds(next_m.group(1)) if next_m else None,
+        }
+    wait_m = re.search(r"need to wait\s*" + _DURATION_PATTERN, plain, re.I)
+    if wait_m and "daily" in (command or "").lower():
+        return {
+            "state": "waiting", "reward": None, "streak": None,
+            "seconds_until_next": duration_to_seconds(wait_m.group(1)),
+        }
+    return None
+
+
+def parse_cowoncy(text: str):
+    """owo money / owo cash — "Ruby, you currently have 2,061,145 cowoncy!" """
+    m = re.search(r"you currently have\s*([\d,]+)\s*cowoncy", _plain(text), re.I)
+    if not m:
+        return None
+    return {"amount": int(m.group(1).replace(",", ""))}
 
 
 # --- Zoo / Inventory / Gem — OwO dùng chữ số mũ Unicode (¹⁰⁴ = 104) cho
@@ -611,10 +666,36 @@ async def _hub_quest(now):
     row = await mdb[COL_QUEST].find_one(sort=[("_id", -1)])
     if not row:
         return None
+    next_text = row.get("next_quest")
+    epoch = row.get("next_quest_epoch")
+    next_seconds = None
+    if epoch is not None:
+        next_seconds = max(0, int(epoch - (now - datetime(1970, 1, 1)).total_seconds()))
+        next_text = None  # chi la moc <t:...>, khong phai chu doc duoc
     return _with_age({
         "seals": row.get("seals"), "all_done": bool(row.get("all_done")),
-        "next_quest": row.get("next_quest"),
+        "next_quest": next_text, "next_quest_seconds": next_seconds,
     }, row.get("created_at"), now)
+
+
+async def _hub_daily(now):
+    doc = await mdb[COL_DAILY].find_one({"_id": "latest"})
+    if not doc:
+        return None
+    ready = _parse_utc(doc.get("ready_at"))
+    seconds_left = max(0, int((ready - now).total_seconds())) if ready else None
+    return _with_age({
+        "state": doc.get("state"), "streak": doc.get("streak"),
+        "last_reward": doc.get("last_reward"),
+        "ready_at": _iso_z(doc.get("ready_at")), "seconds_left": seconds_left,
+    }, doc.get("updated_at"), now)
+
+
+async def _hub_cowoncy(now):
+    doc = await mdb[COL_COWONCY].find_one({"_id": "latest"})
+    if not doc:
+        return None
+    return _with_age({"amount": doc.get("amount")}, doc.get("updated_at"), now)
 
 
 async def _hub_team(now):
@@ -685,6 +766,8 @@ async def build_hub(now=None):
     return {
         "hub_version": 1,
         "server_time": now.isoformat() + "Z",
+        "daily": await _hub_daily(now),
+        "cowoncy": await _hub_cowoncy(now),
         "gems": await _hub_gems(now),
         "huntbot": await _hub_huntbot(now),
         "quest": await _hub_quest(now),
@@ -823,12 +906,35 @@ async def save_quest(q):
     await mdb[COL_QUEST].insert_one(q)
 
 
+async def save_daily(d):
+    """Daily la 1 ban chup duy nhat, ghi de. Streak/phan thuong chi co trong tin
+    "da nhan" — lan sau thay tin "chua toi gio" thi giu nguyen, khong xoa."""
+    now = datetime.utcnow()
+    fields = {"state": d["state"], "updated_at": now.isoformat()}
+    if d.get("seconds_until_next") is not None:
+        fields["ready_at"] = (now + timedelta(seconds=d["seconds_until_next"])).isoformat()
+    if d.get("streak") is not None:
+        fields["streak"] = d["streak"]
+    if d.get("reward") is not None:
+        fields["last_reward"] = d["reward"]
+    await mdb[COL_DAILY].update_one({"_id": "latest"}, {"$set": fields}, upsert=True)
+
+
+async def save_cowoncy(c, source_id=None):
+    await mdb[COL_COWONCY].update_one(
+        {"_id": "latest"},
+        {"$set": {"amount": c["amount"], "updated_at": datetime.utcnow().isoformat(),
+                  "updated_by": source_id}},
+        upsert=True,
+    )
+
+
 # ----------------------------------------------------------------------
 # LẮNG NGHE
 # ----------------------------------------------------------------------
 @bot.event
 async def on_ready():
-    print(f"[tracker] Đăng nhập: {bot.user}")
+    print(f"[tracker] Đăng nhập: {bot.user} (discord.py {discord.__version__})")
     if mdb is None:
         print("[tracker] CẢNH BÁO: chưa có MONGODB_URI — bot sẽ lỗi khi cố lưu/đọc dữ liệu.")
         return
@@ -870,6 +976,7 @@ async def on_message(message: discord.Message):
     if tracked_id and str(message.author.id) == str(tracked_id) \
             and any(content_lower.startswith(p) for p in prefixes):
         pending_commands[message.channel.id] = time.time()
+        last_owo_command[message.channel.id] = content_lower
         await bot.process_commands(message)
         return
 
@@ -880,6 +987,21 @@ async def on_message(message: discord.Message):
             await handle_owo_response(message, tracked_id)
 
     await bot.process_commands(message)
+
+
+def _collect_component_text(comp, out):
+    """Tin nhan kieu moi cua Discord (Components V2 — vd bang Quest Log co cac
+    tab Daily/Weekly/Quests) khong nam trong content hay embed ma nam trong
+    cac thanh phan long nhau (Container/Section/TextDisplay). Di het cay, lay
+    moi doan chu."""
+    content = getattr(comp, "content", None)
+    if isinstance(content, str) and content:
+        out.append(content)
+    for child in (getattr(comp, "children", None) or []):
+        _collect_component_text(child, out)
+    accessory = getattr(comp, "accessory", None)
+    if accessory is not None:
+        _collect_component_text(accessory, out)
 
 
 def flatten_message(message: discord.Message) -> str:
@@ -893,6 +1015,11 @@ def flatten_message(message: discord.Message) -> str:
             text += f"\n**{f.name}:** {f.value}"
         if embed.footer and embed.footer.text:
             text += "\n" + embed.footer.text
+    parts = []
+    for comp in (getattr(message, "components", None) or []):
+        _collect_component_text(comp, parts)
+    if parts:
+        text += "\n" + "\n".join(parts)
     return text
 
 
@@ -930,6 +1057,14 @@ async def handle_owo_response(message: discord.Message, source_id):
     quest = parse_quest_status(text)
     if quest:
         await save_quest(quest)
+
+    daily = parse_daily(text, last_owo_command.get(message.channel.id, ""))
+    if daily:
+        await save_daily(daily)
+
+    cash = parse_cowoncy(text)
+    if cash:
+        await save_cowoncy(cash, source_id)
 
     zoo = parse_zoo(text)
     if zoo:
@@ -1426,6 +1561,13 @@ async def debugnext(ctx):
         print("content:", repr(msg.content))
         for e in msg.embeds:
             print("embed:", e.to_dict())
+        # Tin nhan kieu moi (vd Quest Log): chu nam trong components, khong phai content/embed
+        for c in msg.components:
+            try:
+                print("component:", c.to_dict())
+            except Exception as err:
+                print("component (không in được):", repr(c), err)
+        print("flatten_message (đúng chuỗi bot sẽ đem đi parse):", repr(flatten_message(msg)))
         await ctx.send("Đã in ra console.")
     except asyncio.TimeoutError:
         await ctx.send("Không thấy tin nhắn OwO nào trong 30 giây.")

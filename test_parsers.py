@@ -394,6 +394,133 @@ async def run_hub_tests():
 
 asyncio.run(run_hub_tests())
 
+
+# ========================================================================
+# 4. DAILY / COWONCY / QUEST (tin nhan that tu anh chup man hinh)
+# ========================================================================
+print("\n=== Daily / Cowoncy / Quest / tin nhan kieu moi ===")
+
+from types import SimpleNamespace
+
+DAILY_WAIT = "⏱ | **Nu!** **Ruby**! You need to wait **3H 11M 28S**"
+DAILY_CLAIMED = """💰 | **Ruby**, Here is your daily <:cowoncy:416043450337853441> **5000 Cowoncy**!
+<:blank:427371936482328596> | You're on a **337** daily streak!
+📦 | You received a **lootbox**!
+⏱ | Your next daily is in: 23H 29M 17S
+
+📮 | **Ruby**, you have **3** unread mail!"""
+
+check("parse_daily: chua toi gio (co lenh daily)", bot_mod.parse_daily(DAILY_WAIT, "odaily"),
+      {"state": "waiting", "reward": None, "streak": None, "seconds_until_next": 3 * 3600 + 11 * 60 + 28})
+check("parse_daily: 'need to wait' nhung lenh KHONG phai daily -> bo qua",
+      bot_mod.parse_daily(DAILY_WAIT, "owo cookie"), None)
+check("parse_daily: khong biet lenh nao -> bo qua (tranh nham)", bot_mod.parse_daily(DAILY_WAIT, ""), None)
+check("parse_daily: viet 'Owo daily' co dau cach", bot_mod.parse_daily(DAILY_WAIT, "owo daily")["seconds_until_next"], 11488)
+check("parse_daily: da nhan (thuong, streak, gio ke tiep)", bot_mod.parse_daily(DAILY_CLAIMED, "owo daily"),
+      {"state": "claimed", "reward": 5000, "streak": 337, "seconds_until_next": 23 * 3600 + 29 * 60 + 17})
+check("parse_daily: da nhan — khong an nham dong 'unread mail' o cuoi",
+      bot_mod.parse_daily(DAILY_CLAIMED, "")["seconds_until_next"], 84557)
+check("parse_daily: tin nhan khong lien quan", bot_mod.parse_daily("Ruby, you currently have 5 cowoncy", "odaily"), None)
+
+check("parse_cowoncy: co in dam + gach chan", bot_mod.parse_cowoncy(
+    "<:cash:416043450337853441> | **Ruby**, you currently have **__2,061,145__ cowoncy**!"), {"amount": 2061145})
+check("parse_cowoncy: dang tron", bot_mod.parse_cowoncy("Ruby, you currently have 2,061,145 cowoncy!"), {"amount": 2061145})
+check("parse_cowoncy: tin khac", bot_mod.parse_cowoncy("Nu! You need to wait 3H"), None)
+
+quest_v2 = bot_mod.parse_quest_status("""@Ruby's Quest Log
+Complete quests to earn rewards!
+Balance: **64** <:questseal:123> Quest Seals
+1. Receive an action from a friend 0/3
+2. Earn battle xp 0/2,000
+⏰ Next quest: <t:1790000000:R>""")
+check("parse_quest_status: Balance in dam (**64**) van doc duoc", quest_v2["seals"], 64)
+check("parse_quest_status: lay moc thoi gian <t:...>", quest_v2.get("next_quest_epoch"), 1790000000)
+check("parse_quest_status: van con quest chua xong", quest_v2["all_done"], False)
+
+
+def fake_component_message(components, content=""):
+    return SimpleNamespace(content=content, embeds=[], components=components,
+                           channel=SimpleNamespace(id=42))
+
+
+tree = [SimpleNamespace(children=[
+    SimpleNamespace(content="@Ruby's Quest Log"),
+    SimpleNamespace(children=[SimpleNamespace(content="Balance: **64** Quest Seals")],
+                    accessory=SimpleNamespace(content="[nut]")),
+    SimpleNamespace(children=[SimpleNamespace(label="Claim")]),  # hang nut bam, khong co chu
+])]
+flat = bot_mod.flatten_message(fake_component_message(tree, content="ngoai"))
+check("flatten_message: doc chu trong Container/Section/TextDisplay long nhau",
+      ("@Ruby's Quest Log" in flat, "Balance: **64** Quest Seals" in flat, "[nut]" in flat, "ngoai" in flat),
+      (True, True, True, True))
+check("flatten_message: tin thuong khong co components van chay",
+      bot_mod.flatten_message(SimpleNamespace(content="xin chao", embeds=[])), "xin chao")
+
+
+async def run_daily_flow_tests():
+    db = AsyncMongoMockClient()["daily_flow"]
+    bot_mod.mdb = db
+    ch = 42
+
+    # Tin quest kieu moi di qua ca luong xu ly that
+    bot_mod.last_owo_command[ch] = "oq"
+    quest_msg = fake_component_message([SimpleNamespace(children=[
+        SimpleNamespace(content="@Ruby's Quest Log\nBalance: **64** Quest Seals\n⏰ Next quest: <t:1790000000:R>")])])
+    await bot_mod.handle_owo_response(quest_msg, "u1")
+    q = await db[bot_mod.COL_QUEST].find_one(sort=[("_id", -1)])
+    check("luong that: tin quest kieu moi duoc doc + luu", (q["seals"], q["next_quest_epoch"]), (64, 1790000000))
+
+    # Daily: chua toi gio
+    bot_mod.last_owo_command[ch] = "odaily"
+    await bot_mod.handle_owo_response(SimpleNamespace(content=DAILY_WAIT, embeds=[], components=[],
+                                                      channel=SimpleNamespace(id=ch)), "u1")
+    now = datetime.utcnow()
+    hub = await bot_mod.build_hub(now)
+    check("luong that: daily 'chua toi gio' vao hub", hub["daily"]["state"], "waiting")
+    check("luong that: daily con ~3h11m (sai so vai giay)", 11400 <= hub["daily"]["seconds_left"] <= 11488, True)
+    check("luong that: chua co streak/thuong khi chi thay tin cho", (hub["daily"]["streak"], hub["daily"]["last_reward"]), (None, None))
+
+    # Daily: da nhan
+    await bot_mod.handle_owo_response(SimpleNamespace(content=DAILY_CLAIMED, embeds=[], components=[],
+                                                      channel=SimpleNamespace(id=ch)), "u1")
+    hub = await bot_mod.build_hub(datetime.utcnow())
+    check("luong that: daily 'da nhan' -> streak + thuong + gio ke tiep",
+          (hub["daily"]["state"], hub["daily"]["streak"], hub["daily"]["last_reward"],
+           84400 <= hub["daily"]["seconds_left"] <= 84557), ("claimed", 337, 5000, True))
+
+    # Sau do go lai daily -> tin 'cho' KHONG duoc xoa streak/thuong
+    await bot_mod.handle_owo_response(SimpleNamespace(content=DAILY_WAIT, embeds=[], components=[],
+                                                      channel=SimpleNamespace(id=ch)), "u1")
+    hub = await bot_mod.build_hub(datetime.utcnow())
+    check("luong that: tin 'cho' giu nguyen streak/thuong cu",
+          (hub["daily"]["state"], hub["daily"]["streak"], hub["daily"]["last_reward"]), ("waiting", 337, 5000))
+
+    # Tin 'need to wait' cua lenh khac khong duoc tinh la daily
+    before = (await db[bot_mod.COL_DAILY].find_one({"_id": "latest"}))["ready_at"]
+    bot_mod.last_owo_command[ch] = "owo cookie"
+    await bot_mod.handle_owo_response(SimpleNamespace(content="Nu! You need to wait **9M 5S**", embeds=[], components=[],
+                                                      channel=SimpleNamespace(id=ch)), "u1")
+    after = (await db[bot_mod.COL_DAILY].find_one({"_id": "latest"}))["ready_at"]
+    check("luong that: 'need to wait' cua lenh khac khong ghi de daily", after, before)
+
+    # Cowoncy
+    bot_mod.last_owo_command[ch] = "owo money"
+    await bot_mod.handle_owo_response(SimpleNamespace(
+        content="<:cash:1> | **Ruby**, you currently have **__2,061,145__ cowoncy**!", embeds=[], components=[],
+        channel=SimpleNamespace(id=ch)), "u1")
+    hub = await bot_mod.build_hub(datetime.utcnow())
+    check("luong that: cowoncy vao hub", hub["cowoncy"]["amount"], 2061145)
+
+    # Hub: quest co dem nguoc tu moc <t:...>
+    now2 = datetime(1970, 1, 1) + timedelta(seconds=1790000000 - 600)
+    hub_q = await bot_mod.build_hub(now2)
+    check("hub: quest con 600 giay toi quest ke tiep, khong lo chuoi <t:...>",
+          (hub_q["quest"]["next_quest_seconds"], hub_q["quest"]["next_quest"]), (600, None))
+    check("hub: JSON hop le", isinstance(json.dumps(hub), str), True)
+
+
+asyncio.run(run_daily_flow_tests())
+
 print("\n" + ("=" * 40))
 if failures:
     print(f"{FAIL} {len(failures)} test thất bại: {failures}")
