@@ -286,6 +286,64 @@ def parse_huntbot_status(text: str):
     }
 
 
+def parse_quest_items(text: str):
+    """Doc tung quest trong Quest Log. Moi quest (mau that lay tu log Railway):
+
+        <:blank_box:...> **1. <:common:...> ⚔️ Battle**
+        > Battle 10 times!
+        > Reward: <:cowoncy:...> +120  •  <:seal:...> +12
+        ▰▱▱▱▱▱▱▱▱▱ `1/10`
+
+    Dong "-# ..." (chan trang, vd Next quest) la het danh sach quest.
+    Xong 1 quest = tien do dat toi da (khong dua vao icon o vuong vi chua biet
+    icon 'da xong' trong nhu the nao)."""
+    quests = []
+    cur = None
+    for line in text.split("\n"):
+        head = re.search(r"\*\*(\d+)\.\s*(.+?)\*\*", line)
+        if head:
+            if cur:
+                quests.append(cur)
+            raw_title = head.group(2)
+            rarity_m = re.search(r"<a?:(\w+):\d+>", raw_title)
+            title = re.sub(r"<a?:\w+:\d+>", "", raw_title)
+            title = re.sub(r"^[^\w]+", "", title).strip()  # bo emoji dung dau ten
+            cur = {"index": int(head.group(1)), "title": title,
+                   "rarity": rarity_m.group(1) if rarity_m else None,
+                   "description": None, "rewards": [], "current": None, "max": None}
+            continue
+        if cur is None:
+            continue
+        stripped = line.strip()
+        if stripped.startswith("-#"):
+            quests.append(cur)
+            cur = None
+            continue
+        if stripped.startswith(">"):
+            body = stripped.lstrip("> ").strip()
+            if re.match(r"reward:", body, re.I):
+                for part in body.split("•"):
+                    amt = re.search(r"\+\s*([\d,]+)", part)
+                    if not amt:
+                        continue
+                    name_m = re.search(r"<a?:(\w+):\d+>", part)
+                    leftover = re.sub(r"reward:|\+\s*[\d,]+|<a?:\w+:\d+>", "", part, flags=re.I).strip()
+                    cur["rewards"].append({"item": name_m.group(1) if name_m else (leftover or "?"),
+                                           "amount": int(amt.group(1).replace(",", ""))})
+            else:
+                cur["description"] = body if cur["description"] is None else cur["description"] + " " + body
+            continue
+        prog = re.search(r"`\s*([\d,]+)\s*/\s*([\d,]+)\s*`", stripped)
+        if prog:
+            cur["current"] = int(prog.group(1).replace(",", ""))
+            cur["max"] = int(prog.group(2).replace(",", ""))
+    if cur:
+        quests.append(cur)
+    for q in quests:
+        q["done"] = q["current"] is not None and q["max"] is not None and q["current"] >= q["max"]
+    return quests
+
+
 def parse_quest_status(text: str):
     if "Quest Log" not in text and "Quest Seals" not in text:
         return None
@@ -302,6 +360,9 @@ def parse_quest_status(text: str):
     ts_m = re.search(r"<t:(\d+)(?::[A-Za-z])?>", next_m.group(1)) if next_m else None
     if ts_m:
         result["next_quest_epoch"] = int(ts_m.group(1))
+    quests = parse_quest_items(text)
+    if quests:
+        result["quests"] = quests
     return result
 
 
@@ -675,6 +736,7 @@ async def _hub_quest(now):
     return _with_age({
         "seals": row.get("seals"), "all_done": bool(row.get("all_done")),
         "next_quest": next_text, "next_quest_seconds": next_seconds,
+        "quests": row.get("quests") or [],
     }, row.get("created_at"), now)
 
 

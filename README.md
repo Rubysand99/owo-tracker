@@ -184,9 +184,10 @@ tin tưởng hoàn toàn cơ chế nhắc.
 - **`owo quest`** — bảng Quest Log là loại tin nhắn kiểu mới của Discord
   (Components V2: có các tab Daily/Weekly/Quests), chữ không nằm trong
   `content` hay embed mà nằm trong các thành phần lồng nhau. Bot đã biết
-  đọc loại này (`flatten_message`) và lấy được Seals + mốc quest kế tiếp.
-  Chi tiết từng quest (tiến độ 0/3...) **chưa đọc** — cần mẫu chữ thật
-  từ `,debugnext`.
+  đọc loại này (`flatten_message`) và lấy được Seals + mốc quest kế tiếp
+  + **từng quest** (tên, mô tả, phần thưởng, tiến độ `1/10`). Một quest
+  tính là xong khi tiến độ đạt tối đa. Các mẫu tin nhắn thật lấy bằng
+  `,debugnext` (in ra Logs của Railway).
 - **`owo profile`** — là **ảnh** (thẻ hồ sơ), không có chữ nào để đọc nên
   bot không lấy được dữ liệu từ đây.
 

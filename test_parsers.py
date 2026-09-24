@@ -521,6 +521,72 @@ async def run_daily_flow_tests():
 
 asyncio.run(run_daily_flow_tests())
 
+
+# ========================================================================
+# 5. QUEST tung cai (mau THAT lay tu log Railway ngay 24/09/2026)
+# ========================================================================
+print("\n=== Quest chi tiet ===")
+
+QUEST_REAL = ("\n### 📜 <@846332174734983219>'s Quest Log\n-# Complete quests to earn rewards!\n"
+              "-# Balance: **112** <:seal:1508740094125932614> Quest Seals\n"
+              "<:blank_box:808212600533942322> **1. <:common:416520037713838081> ⚔️ Battle**\n"
+              "> Battle 10 times!\n"
+              "> Reward: <:cowoncy:416043450337853441> +120  •  <:seal:1508740094125932614> +12\n"
+              "▰▱▱▱▱▱▱▱▱▱ `1/10`\n-# ⏰ Next quest: **<t:1790319600:R>**")
+qr = bot_mod.parse_quest_status(QUEST_REAL)
+check("quest that: seals / chua xong / moc ke tiep",
+      (qr["seals"], qr["all_done"], qr["next_quest_epoch"]), (112, False, 1790319600))
+check("quest that: 1 quest, dung ten + do hiem + mo ta", (len(qr["quests"]), qr["quests"][0]["title"],
+      qr["quests"][0]["rarity"], qr["quests"][0]["description"]), (1, "Battle", "common", "Battle 10 times!"))
+check("quest that: thuong (cowoncy +120, seal +12)", qr["quests"][0]["rewards"],
+      [{"item": "cowoncy", "amount": 120}, {"item": "seal", "amount": 12}])
+check("quest that: tien do 1/10, chua xong", (qr["quests"][0]["current"], qr["quests"][0]["max"], qr["quests"][0]["done"]),
+      (1, 10, False))
+
+QUEST_TWO = """### 📜 <@1>'s Quest Log
+-# Balance: **64** <:seal:1> Quest Seals
+<:blank_box:2> **1. <:rare:3> 😂 Receive an action from a friend**
+> Have a friend use an action command on you 3 times!
+> Reward: 📦 +2  •  <:seal:1> +12
+▱▱▱▱▱▱▱▱▱▱▱▱ `0/3`
+<:checked:9> **2. <:epic:4> <:xp:5> Earn battle xp**
+> Earn 2000 xp from hunting
+> and battling!
+> Reward: <:crate:6> +2  •  <:seal:1> +12
+▰▰▰▰▰▰▰▰▰▰▰▰ `2,000/2,000`
+-# ⏰ Next quest: **<t:1790319600:R>**"""
+q2 = bot_mod.parse_quest_status(QUEST_TWO)["quests"]
+check("quest 2 cai: dem dung + ten sach emoji", (len(q2), q2[0]["title"], q2[1]["title"]),
+      (2, "Receive an action from a friend", "Earn battle xp"))
+check("quest 2 cai: thuong dang emoji chuan (📦) + emoji tuy chinh", (q2[0]["rewards"][0], q2[1]["rewards"][0]),
+      ({"item": "📦", "amount": 2}, {"item": "crate", "amount": 2}))
+check("quest 2 cai: so co dau phay 2,000/2,000 -> xong", (q2[1]["current"], q2[1]["max"], q2[1]["done"]), (2000, 2000, True))
+check("quest 2 cai: mo ta nhieu dong duoc noi lai", q2[1]["description"], "Earn 2000 xp from hunting and battling!")
+check("quest 2 cai: quest chua xong khong bi danh dau xong", q2[0]["done"], False)
+
+qd = bot_mod.parse_quest_status("""### 📜 <@1>'s Quest Log
+-# Balance: **112** <:seal:1> Quest Seals
+UwU You finished all of your quests! Come back tomorrow! <3
+-# ⏰ Next quest: **<t:1790233200:R>**""")
+check("quest da xong het: khong co danh sach quest", ("quests" in qd, qd["all_done"], qd["seals"]), (False, True, 112))
+
+
+async def run_quest_items_hub_test():
+    db = AsyncMongoMockClient()["quest_items"]
+    bot_mod.mdb = db
+    bot_mod.last_owo_command[5] = "owo quest"
+    await bot_mod.handle_owo_response(
+        SimpleNamespace(content="", embeds=[], components=[SimpleNamespace(children=[SimpleNamespace(content=QUEST_REAL)])],
+                        channel=SimpleNamespace(id=5)), "u1")
+    hub = await bot_mod.build_hub(datetime(1970, 1, 1) + timedelta(seconds=1790319600 - 3600))
+    hq = hub["quest"]
+    check("hub: quest co danh sach + dem nguoc", (len(hq["quests"]), hq["quests"][0]["title"], hq["next_quest_seconds"]),
+          (1, "Battle", 3600))
+    check("hub: JSON hop le", isinstance(json.dumps(hub), str), True)
+
+
+asyncio.run(run_quest_items_hub_test())
+
 print("\n" + ("=" * 40))
 if failures:
     print(f"{FAIL} {len(failures)} test thất bại: {failures}")
