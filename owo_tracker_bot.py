@@ -73,6 +73,57 @@ COL_INVENTORY = "owot_inventory_items"
 COL_GEM_STATUS = "owot_gem_status"
 COL_DAILY = "owot_daily_status"
 COL_COWONCY = "owot_cowoncy"
+COL_EMOJI = "owot_emoji_registry"
+
+EMOJI_TAG = re.compile(r"<(a)?:(\w+):(\d+)>")
+
+# Nhung pet/con vat OwO hien bang EMOJI CHUAN cua Discord (khong co ID rieng,
+# vd :bee:) — khong the tai anh qua CDN nen anh xa sang ky tu Unicode that de
+# app hien truc tiep, khong can tai mang.
+EMOJI_UNICODE = {
+    "bee": "🐝", "bug": "🐛", "snail": "🐌", "beetle": "🪲", "butterfly": "🦋",
+    "baby_chick": "🐤", "mouse2": "🐁", "rooster": "🐓", "rabbit2": "🐇", "chipmunk": "🐿️",
+    "sheep": "🐑", "pig2": "🐖", "cow2": "🐄", "dog2": "🐕", "cat2": "🐈",
+    "crocodile": "🐊", "tiger2": "🐅", "penguin": "🐧", "elephant": "🐘", "whale": "🐋",
+    "dragon": "🐉", "unicorn": "🦄", "snowman2": "⛄", "ghost": "👻", "dove": "🕊️",
+}
+
+emoji_registry_cache = {}  # ten -> {"id":..., "animated": bool} — nap 1 lan/hub, tranh truy van lai
+
+
+def extract_emoji_tags(text):
+    """Tim moi emoji tuy chinh <a?:ten:id> trong 1 doan chu. Tra ve list (ten, id, dong)."""
+    return [(name, eid, bool(a)) for a, name, eid in EMOJI_TAG.findall(text or "")]
+
+
+async def remember_emojis(text):
+    """Ghi nho ID cua moi emoji tuy chinh xuat hien trong tin nhan, de dung lai
+    sau nay (vd tier tag trong zoo/quest, gem trong hunt...). Khong ghi de neu
+    da co (ID 1 emoji la co dinh, khong doi)."""
+    for name, eid, animated in extract_emoji_tags(text):
+        await mdb[COL_EMOJI].update_one(
+            {"_id": name}, {"$setOnInsert": {"id": eid, "animated": animated}}, upsert=True)
+
+
+async def load_emoji_cache():
+    global emoji_registry_cache
+    rows = await mdb[COL_EMOJI].find().to_list(length=2000)
+    emoji_registry_cache = {r["_id"]: {"id": r["id"], "animated": r.get("animated", False)} for r in rows}
+
+
+def resolve_emoji(name):
+    """Tra ve du lieu hien icon cho 1 ten emoji: uu tien ID that (tai duoc anh
+    that tu Discord), sau do ky tu Unicode co san, cuoi cung None (chua biet)."""
+    if not name:
+        return {}
+    found = emoji_registry_cache.get(name)
+    if found:
+        return {"emoji_id": found["id"], "emoji_animated": found["animated"]}
+    uni = EMOJI_UNICODE.get(name)
+    if uni:
+        return {"emoji": uni}
+    return {}
+
 
 pending_commands = {}  # channel_id -> timestamp gần nhất có lệnh owo từ tracked user
 tracked_names = {}  # user_id (chuỗi) -> các tên Discord của người đó (ghi lại mỗi khi họ gõ lệnh owo)
@@ -284,8 +335,13 @@ def parse_team(text: str):
         stat_zone = re.sub(r"Lvl\s*\d+\s*\[[\d,/]+\]", "", stat_zone)
         stat_zone = re.sub(r"`[A-Z0-9]{6}`.*", "", stat_zone, flags=re.S)
         nums = re.findall(r"(\d+)%?", stat_zone)
+        pet_name, pet_id, pet_animated = name_m.group(1), None, False
+        emoji_m = re.match(r"\s*<(a)?:(\w+):(\d+)>", block)
+        if emoji_m:
+            pet_animated, pet_name, pet_id = bool(emoji_m.group(1)), emoji_m.group(2), emoji_m.group(3)
         entry = {
             "pos": i, "name": emoji_to_name(name_m.group(1)),
+            "emoji_id": pet_id, "emoji_animated": pet_animated,
             "level": int(lvl_m.group(1)) if lvl_m else None,
             "weaponId": weapon_m.group(1) if weapon_m else None,
             "quality": float(quality_m.group(1)) if quality_m else None,
@@ -467,7 +523,7 @@ def parse_zoo(text: str, continuation: bool = False, start_tier=None):
         return None
 
     tier_tag_pattern = re.compile(r"^<a?:(\w+):\d+>")
-    entry_pattern = re.compile(r"(?:<a?:(\w+):\d+>|:(\w+):)([⁰¹²³⁴⁵⁶⁷⁸⁹]+)")
+    entry_pattern = re.compile(r"(?:<(a)?:(\w+):(\d+)>|:(\w+):)([⁰¹²³⁴⁵⁶⁷⁸⁹]+)")
 
     pets = []
     current_tier = None
@@ -487,8 +543,13 @@ def parse_zoo(text: str, continuation: bool = False, start_tier=None):
         if current_tier is None:
             continue
         for m in entry_pattern.finditer(line):
-            name = m.group(1) or m.group(2)
-            pets.append({"tier": current_tier, "name": name, "count": decode_superscript_number(m.group(3))})
+            animated, custom_name, custom_id, plain_name = m.group(1), m.group(2), m.group(3), m.group(4)
+            name = custom_name or plain_name
+            entry = {"tier": current_tier, "name": name, "count": decode_superscript_number(m.group(5))}
+            if custom_id:
+                entry["emoji_id"] = custom_id
+                entry["emoji_animated"] = bool(animated)
+            pets.append(entry)
 
     points_m = re.search(r"Zoo Points:\s*__([\d,]+)__", text)
     breakdown_m = re.search(r"\*\*(F-[\d\-A-Za-z, ]+C-[\d,]+)\*\*", text)
@@ -521,9 +582,9 @@ def parse_inventory(text: str):
     cách). Trả về cả item thường lẫn gem — gem được đánh dấu is_gem."""
     if "Inventory" not in text:
         return None
-    pattern = re.compile(r"`(\d{3})`<a?:([a-zA-Z0-9_]+):(\d+)>([⁰¹²³⁴⁵⁶⁷⁸⁹]+)")
+    pattern = re.compile(r"`(\d{3})`<(a)?:([a-zA-Z0-9_]+):(\d+)>([⁰¹²³⁴⁵⁶⁷⁸⁹]+)")
     items = []
-    for code, name, emoji_id, sup in pattern.findall(text):
+    for code, animated, name, emoji_id, sup in pattern.findall(text):
         gem_info = parse_gem_name(name)
         items.append({
             "code": code, "name": name, "count": decode_superscript_number(sup),
@@ -531,6 +592,7 @@ def parse_inventory(text: str):
             "gem_tier": gem_info["tier"] if gem_info else None,
             "gem_slot": gem_info["slot"] if gem_info else None,
             "gem_tier_rank": _GEM_TIER_RANK.get(gem_info["tier"]) if gem_info else None,
+            "emoji_id": emoji_id, "emoji_animated": bool(animated),
         })
     if not items:
         return None
@@ -543,14 +605,15 @@ def parse_hunt_gem_status(text: str):
     đúng đặc điểm bạn mô tả."""
     if "empowered by" not in text:
         return None
-    pattern = re.compile(r"<a?:([a-zA-Z0-9_]+):\d+>\[(\d+)/(\d+)\]")
+    pattern = re.compile(r"<(a)?:([a-zA-Z0-9_]+):(\d+)>\[(\d+)/(\d+)\]")
     gems = []
-    for name, cur, mx in pattern.findall(text):
+    for animated, name, emoji_id, cur, mx in pattern.findall(text):
         gem_info = parse_gem_name(name)
         if not gem_info:
             continue
-        gems.append({"slot": gem_info["slot"], "tier": gem_info["tier"],
-                     "emoji_name": name, "current": int(cur), "max": int(mx)})
+        gems.append({"slot": gem_info["slot"], "tier": gem_info["tier"], "emoji_name": name,
+                     "emoji_id": emoji_id, "emoji_animated": bool(animated),
+                     "current": int(cur), "max": int(mx)})
     if not gems:
         return None
     return {"gems": gems}
@@ -631,6 +694,7 @@ async def save_gem_status(gs, source_id=None):
         await mdb[COL_GEM_STATUS].update_one(
             {"_id": g["slot"]},
             {"$set": {"tier": g["tier"], "emoji_name": g["emoji_name"],
+                      "emoji_id": g.get("emoji_id"), "emoji_animated": g.get("emoji_animated", False),
                       "current": g["current"], "max": g["max"],
                       "updated_at": datetime.utcnow().isoformat(), "updated_by": source_id}},
             upsert=True,
@@ -761,13 +825,15 @@ async def _hub_gems(now):
     for r in rows:
         mx = r.get("max") or 0
         pct = round(r["current"] / mx * 100) if mx else 0
+        icon = {"emoji_id": r["emoji_id"], "emoji_animated": r.get("emoji_animated", False)} if r.get("emoji_id") else {}
         equipped.append(_with_age({
             "slot": r["_id"], "tier": r.get("tier"),
-            "current": r.get("current"), "max": mx, "percent": pct,
+            "current": r.get("current"), "max": mx, "percent": pct, **icon,
         }, r.get("updated_at"), now))
     spare = sorted(
         ({"code": r["_id"], "slot": r.get("gem_slot"), "tier": r.get("gem_tier"),
-          "count": r.get("count"), "tier_rank": r.get("gem_tier_rank") or 0}
+          "count": r.get("count"), "tier_rank": r.get("gem_tier_rank") or 0,
+          **({"emoji_id": r["emoji_id"], "emoji_animated": r.get("emoji_animated", False)} if r.get("emoji_id") else {})}
          for r in spare_rows),
         key=lambda x: (x["slot"] or "", x["tier_rank"]),
     )
@@ -806,10 +872,16 @@ async def _hub_quest(now):
     if epoch is not None:
         next_seconds = max(0, int(epoch - (now - datetime(1970, 1, 1)).total_seconds()))
         next_text = None  # chi la moc <t:...>, khong phai chu doc duoc
+    quests = []
+    for q in row.get("quests") or []:
+        q = dict(q)
+        q.update(resolve_emoji(q.get("rarity")))
+        q["rewards"] = [dict(r, **resolve_emoji(r.get("item"))) for r in q.get("rewards") or []]
+        quests.append(q)
     return _with_age({
         "seals": row.get("seals"), "all_done": bool(row.get("all_done")),
         "next_quest": next_text, "next_quest_seconds": next_seconds,
-        "quests": row.get("quests") or [],
+        "quests": quests,
     }, row.get("created_at"), now)
 
 
@@ -821,7 +893,7 @@ async def _hub_daily(now):
     seconds_left = max(0, int((ready - now).total_seconds())) if ready else None
     return _with_age({
         "state": doc.get("state"), "streak": doc.get("streak"),
-        "last_reward": doc.get("last_reward"),
+        "last_reward": doc.get("last_reward"), **resolve_emoji("cowoncy"),
         "ready_at": _iso_z(doc.get("ready_at")), "seconds_left": seconds_left,
     }, doc.get("updated_at"), now)
 
@@ -830,7 +902,7 @@ async def _hub_cowoncy(now):
     doc = await mdb[COL_COWONCY].find_one({"_id": "latest"})
     if not doc:
         return None
-    return _with_age({"amount": doc.get("amount")}, doc.get("updated_at"), now)
+    return _with_age({"amount": doc.get("amount"), **resolve_emoji("cowoncy")}, doc.get("updated_at"), now)
 
 
 async def _hub_team(now):
@@ -840,8 +912,12 @@ async def _hub_team(now):
     members = []
     for r in rows:
         m = {k: r.get(k) for k in ("pos", "name", "level", "hp", "wp", "att", "mag", "pr", "mr",
-                                   "weaponId", "quality")}
+                                   "weaponId", "quality", "emoji_id", "emoji_animated")}
         m["name"] = emoji_to_name(m["name"])
+        if not m.get("emoji_id"):
+            m.pop("emoji_id", None)
+            m.pop("emoji_animated", None)
+            m.update(resolve_emoji(m["name"]))
         # Ban ghi cu tung doc nham ID emoji thanh so lieu (so ~18 chu so) -> bo, cho lan owo team ke tiep ghi de.
         for stat in ("hp", "wp", "att", "mag", "pr", "mr"):
             if isinstance(m[stat], int) and m[stat] >= 10 ** 9:
@@ -880,7 +956,16 @@ async def _hub_zoo(now):
         t["total"] += p.get("count", 0)
         if p.get("count", 0) > 0:
             t["species"] += 1
-    pets = [p for p in doc.get("pets", []) if p.get("count", 0) > 0]
+    for tier_name, t in by_tier.items():
+        t.update(resolve_emoji(tier_name))
+    pets = []
+    for p in doc.get("pets", []):
+        if p.get("count", 0) <= 0:
+            continue
+        pet = dict(p)
+        if "emoji_id" not in pet:
+            pet.update(resolve_emoji(pet["name"]))
+        pets.append(pet)
     list_total = sum(t["total"] for t in by_tier.values())
 
     # Tong pet lay tu DONG CUOI cua bang zoo (so lieu day du) khi dong do phu du
@@ -924,6 +1009,7 @@ async def _hub_weapons(now):
 async def build_hub(now=None):
     """Gom du lieu cho man hinh Hub. Muc nao bot chua tung thay thi = null."""
     now = now or datetime.utcnow()
+    await load_emoji_cache()
     return {
         "hub_version": 1,
         "server_time": now.isoformat() + "Z",
@@ -1186,6 +1272,8 @@ async def handle_owo_response(message: discord.Message, source_id):
     text = flatten_message(message)
     if not text.strip():
         return
+
+    await remember_emojis(text)
 
     pet = parse_owodex(text)
     if pet:

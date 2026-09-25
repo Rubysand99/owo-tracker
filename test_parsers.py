@@ -633,7 +633,7 @@ check("zoo tin 2: dong 'blank' noi tiep tier cpatreon (5+4 = 9 con)",
 midtier = bot_mod.parse_zoo("""<:blank:427371936482328596>    <a:y:2>⁰⁰²
 **Zoo Points: __5__**""", continuation=True, start_tier="special")
 check("zoo tin tiep noi bat dau bang 'blank' -> ke thua tier truoc",
-      midtier["pets"], [{"tier": "special", "name": "y", "count": 2}])
+      midtier["pets"], [{"tier": "special", "name": "y", "count": 2, "emoji_id": "2", "emoji_animated": True}])
 check("zoo tin tiep noi KHONG bat dau bang tier tag -> khong nhan pet nham",
       bot_mod.parse_zoo("`051`<:cgem1:1>¹⁰⁴\n**Zoo Points: __7__**", continuation=True, start_tier="rare")["pets"], [])
 
@@ -834,6 +834,96 @@ async def run_on_message_names_test():
 
 
 asyncio.run(run_on_message_names_test())
+
+
+# ========================================================================
+# 9. ICON THAT: ID emoji Discord de app tai hinh anh, hoac Unicode co san
+# ========================================================================
+print("\n=== Icon (emoji_id / unicode) ===")
+
+check("extract_emoji_tags: dong + tinh, lay dung ID", bot_mod.extract_emoji_tags(
+    "<a:slothbot:711772997320441897> va <:common:416520037713838081> va :bee: (khong ID)"),
+    [("slothbot", "711772997320441897", True), ("common", "416520037713838081", False)])
+check("EMOJI_UNICODE: co du 25 con vat trong zoo", len(bot_mod.EMOJI_UNICODE), 25)
+
+
+async def run_icon_tests():
+    db = AsyncMongoMockClient()["icons"]
+    bot_mod.mdb = db
+
+    def msg(t, ch=3):
+        return SimpleNamespace(content=t, embeds=[], components=[], channel=SimpleNamespace(id=ch))
+
+    # --- Zoo: pet co ID (custom) + pet khong ID (unicode) trong cung 1 tin ---
+    zoo_text = ("Ruby's zoo!\n<:common:100> :bee:¹⁹⁰ :bug:²⁰²\n"
+                "<:gem:200> <a:gowl:300>⁰⁰¹\n**Zoo Points: __191__**")
+    await bot_mod.handle_owo_response(msg(zoo_text), "u1")
+    hub = await bot_mod.build_hub(datetime.utcnow())
+    zoo = hub["zoo"]
+    bee = next(p for p in zoo["pets"] if p["name"] == "bee")
+    gowl = next(p for p in zoo["pets"] if p["name"] == "gowl")
+    check("zoo: pet KHONG co ID -> dung Unicode that", bee.get("emoji"), "🐝")
+    check("zoo: pet CO ID -> dung emoji_id that (khong phai Unicode)",
+          (gowl.get("emoji_id"), gowl.get("emoji_animated"), "emoji" in gowl), ("300", True, False))
+    check("zoo: tier cung co icon (tra tu registry, ID cua chinh tag tier)",
+          zoo["by_tier"]["common"].get("emoji_id"), "100")
+    check("zoo: tier gem cung co icon", zoo["by_tier"]["gem"].get("emoji_id"), "200")
+
+    # --- Gem dang trang bi: icon la ID that cua chinh vien gem ---
+    hunt_text = "hunt is empowered by <a:cgem1:400>[47/75] tôi ơi"
+    bot_mod.last_owo_command[3] = "owo hunt"
+    await bot_mod.handle_owo_response(msg(hunt_text), "u1")
+    hub = await bot_mod.build_hub(datetime.utcnow())
+    slot1 = hub["gems"]["equipped"][0]
+    check("gem dang dung: icon dung ID that cua vien gem (khong phai suy doan)",
+          (slot1["emoji_id"], slot1["emoji_animated"]), ("400", True))
+
+    # --- Kho: gem du phong cung mang theo icon da luu tu truoc ---
+    inv = bot_mod.parse_inventory("Inventory\n`051`<a:cgem1:500>¹⁰⁴")
+    await bot_mod.save_inventory(inv, "u1")
+    hub = await bot_mod.build_hub(datetime.utcnow())
+    spare = hub["gems"]["spare"][0]
+    check("gem du phong: icon dung ID that", (spare["emoji_id"], spare["emoji_animated"]), ("500", True))
+
+    # --- Doi hinh: icon la ID that cua pet ---
+    team = bot_mod.parse_team("[1] <a:slothbot:600>\nLvl 26 [1/2]\n100 100\n10 10\n1% 1%")
+    await bot_mod.save_team(team)
+    hub = await bot_mod.build_hub(datetime.utcnow())
+    m0 = hub["team"]["members"][0]
+    check("doi hinh: icon dung ID that cua pet", (m0["emoji_id"], m0["emoji_animated"]), ("600", True))
+
+    # --- Cowoncy: icon la ID that cua dong xu (hoc duoc tu tin nhan money) ---
+    bot_mod.last_owo_command[3] = "owo money"
+    await bot_mod.handle_owo_response(msg("<:cowoncy:700> | Ruby, you currently have 999 cowoncy!"), "u1")
+    hub = await bot_mod.build_hub(datetime.utcnow())
+    check("cowoncy: icon dung ID that", hub["cowoncy"]["emoji_id"], "700")
+    check("daily: dung chung icon cowoncy da hoc duoc (chua co tin daily nao)",
+          (await bot_mod.build_hub(datetime.utcnow()))["daily"], None)
+
+    # --- Chua tung thay emoji nao -> khong co icon, khong bao loi ---
+    check("resolve_emoji: ten la khong ai biet -> tra ve rong", bot_mod.resolve_emoji("con_vat_khong_ton_tai"), {})
+    check("resolve_emoji: ten rong/None -> tra ve rong", (bot_mod.resolve_emoji(""), bot_mod.resolve_emoji(None)), ({}, {}))
+
+    # --- Quest: icon do hiem + icon phan thuong ---
+    quest_row = {"seals": 10, "all_done": False, "quests": [
+        {"index": 1, "title": "Battle", "rarity": "common", "rewards": [
+            {"item": "cowoncy", "amount": 120}, {"item": "📦", "amount": 2}], "current": 1, "max": 10, "done": False}]}
+    await db[bot_mod.COL_QUEST].insert_one(dict(quest_row, created_at=datetime.utcnow().isoformat()))
+    await bot_mod.remember_emojis("<:common:800>")  # tier "common" da co ID=100 tu truoc — khong ghi de (setOnInsert)
+    hub = await bot_mod.build_hub(datetime.utcnow())
+    qi = hub["quest"]["quests"][0]
+    check("quest: icon do hiem lay tu registry (van la ID dau tien hoc duoc, khong bi ghi de)", qi.get("emoji_id"), "100")
+    check("quest: phan thuong cowoncy co icon, phan thuong 📦 (unicode san, khong can tra) khong co gi them",
+          (qi["rewards"][0].get("emoji_id"), qi["rewards"][1].get("emoji_id")), ("700", None))
+
+    # --- ID emoji la co dinh: ghi de bang ten khac ID van GIU ID dau tien ---
+    await bot_mod.remember_emojis("<:common:999999>")
+    await bot_mod.load_emoji_cache()
+    check("remember_emojis: ID 1 ten la co dinh, khong bi doi boi lan thay sau",
+          bot_mod.resolve_emoji("common").get("emoji_id"), "100")
+
+
+asyncio.run(run_icon_tests())
 
 print("\n" + ("=" * 40))
 if failures:

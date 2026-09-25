@@ -150,6 +150,13 @@ vũ khí chỉ có những cây bạn từng xem bằng `owo weapon <ID>`.
   `<a:slothbot:711772997320441897>` — hàm `emoji_to_name` lấy đúng tên
   (`slothbot`). Đội hình cũng bỏ ID emoji (dãy số ~18 chữ số) trước khi
   đọc HP/WP/ATT/MAG/PR/MR.
+- **Icon thật cho app:** bot ghi nhớ ID của MỌI emoji tuỳ chỉnh từng thấy
+  trong bất kỳ tin nhắn OwO nào (`owot_emoji_registry`, hàm
+  `remember_emojis`/`resolve_emoji`) — ID emoji là cố định nên chỉ cần học 1
+  lần. Trong `/hub`, pet/gem/tier/thành viên đội hình/phần thưởng quest được
+  gắn thêm `emoji_id` + `emoji_animated` (app tự ghép thành link CDN của
+  Discord để tải ảnh thật) hoặc `emoji` (ký tự Unicode có sẵn, cho các con
+  vật OwO hiện bằng emoji chuẩn như `:bee:`, không có ID riêng).
 - **Passive** (`owot_passives`): tên + mô tả chính xác, lấy từ đúng
   dòng `__Tên__ - mô tả` trong tin nhắn OwO.
 
