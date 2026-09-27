@@ -925,6 +925,25 @@ async def run_icon_tests():
 
 asyncio.run(run_icon_tests())
 
+
+# ========================================================================
+# 10. Gem dang dung: OwO boc so trong dau backtick (mau THAT lay tu
+#     ,debugnext ngay 27/09/2026) — truoc day khong khop vi thieu backtick.
+# ========================================================================
+print("\n=== Gem dang dung (dau backtick that) ===")
+
+HUNT_REAL = ("**🌱 | Ruby**, hunt is empowered by <:egem1:492572122477101056>`[48/75]` "
+             "<:egem3:510366792800272394>`[120/450]` <:egem4:510366763972558848>`[324/450]`  !\n"
+             "**<:blank:427371936482328596> |** You found:  :bee: :bee: :bee:")
+gr = bot_mod.parse_hunt_gem_status(HUNT_REAL)
+check("gem that: doc du 3 vien (truoc day regex khong khop vi co backtick)", len(gr["gems"]), 3)
+check("gem that: vien slot 1 (egem1, Epic, 48/75, co ID that)",
+      (gr["gems"][0]["slot"], gr["gems"][0]["tier"], gr["gems"][0]["current"], gr["gems"][0]["max"], gr["gems"][0]["emoji_id"]),
+      ("1", "Epic", 48, 75, "492572122477101056"))
+check("gem that: vien slot 3 va 4 cung Epic", [g["slot"] for g in gr["gems"] if g["tier"] == "Epic"], ["1", "3", "4"])
+check("gem: van doc duoc KHONG co backtick (dang cu, phong khi OwO doi lai)",
+      len(bot_mod.parse_hunt_gem_status("hunt is empowered by <:cgem1:1>[10/20]!")["gems"]), 1)
+
 print("\n" + ("=" * 40))
 if failures:
     print(f"{FAIL} {len(failures)} test thất bại: {failures}")

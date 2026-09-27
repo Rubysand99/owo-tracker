@@ -150,6 +150,15 @@ vũ khí chỉ có những cây bạn từng xem bằng `owo weapon <ID>`.
   `<a:slothbot:711772997320441897>` — hàm `emoji_to_name` lấy đúng tên
   (`slothbot`). Đội hình cũng bỏ ID emoji (dãy số ~18 chữ số) trước khi
   đọc HP/WP/ATT/MAG/PR/MR.
+- **Gem đang dùng:** OwO bọc `[hiện/tối đa]` trong dấu backtick, ví dụ
+  `` <:egem1:...>`[48/75]` `` — regex cho phép dấu backtick này ở cả 2 đầu
+  (tuỳ chọn, để phòng khi OwO đổi lại không có backtick).
+- **Zoo bị chia 2 tin nhắn — log chẩn đoán:** mỗi khi có tin nhắn giống bảng
+  zoo, bot LUÔN in 1 dòng `[tracker][zoo] ...` vào Logs (không cần
+  `,debugnext`), cho biết: tin có tiêu đề hay là tin nối tiếp, ghép được bao
+  nhiêu pet, có đọc được Zoo Points không, và nếu bỏ qua thì vì sao (tới quá
+  muộn, hay dòng đầu không phải tier tag). Nếu Zoo Points còn hiện `?` trên
+  app, xem dòng log này để biết chính xác lý do.
 - **Icon thật cho app:** bot ghi nhớ ID của MỌI emoji tuỳ chỉnh từng thấy
   trong bất kỳ tin nhắn OwO nào (`owot_emoji_registry`, hàm
   `remember_emojis`/`resolve_emoji`) — ID emoji là cố định nên chỉ cần học 1

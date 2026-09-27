@@ -605,7 +605,7 @@ def parse_hunt_gem_status(text: str):
     đúng đặc điểm bạn mô tả."""
     if "empowered by" not in text:
         return None
-    pattern = re.compile(r"<(a)?:([a-zA-Z0-9_]+):(\d+)>\[(\d+)/(\d+)\]")
+    pattern = re.compile(r"<(a)?:([a-zA-Z0-9_]+):(\d+)>`?\[(\d+)/(\d+)\]`?")
     gems = []
     for animated, name, emoji_id, cur, mx in pattern.findall(text):
         gem_info = parse_gem_name(name)
@@ -646,11 +646,26 @@ async def handle_zoo_text(channel_id, text, source_id=None):
     merged = None
     if is_header:
         merged = parse_zoo(text)
-    elif session and time.time() - session["ts"] < ZOO_PART_WINDOW:
-        pets_so_far = session["data"]["pets"]
-        part = parse_zoo(text, continuation=True, start_tier=pets_so_far[-1]["tier"] if pets_so_far else None)
-        if part:
-            merged = merge_zoo_parts(session["data"], part)
+        print(f"[tracker][zoo] tin co tieu de, {len(merged['pets']) if merged else 0} pet, "
+              f"zoo_points={merged.get('zoo_points') if merged else None}")
+    elif session:
+        age = time.time() - session["ts"]
+        if age < ZOO_PART_WINDOW:
+            pets_so_far = session["data"]["pets"]
+            part = parse_zoo(text, continuation=True, start_tier=pets_so_far[-1]["tier"] if pets_so_far else None)
+            if part:
+                merged = merge_zoo_parts(session["data"], part)
+                print(f"[tracker][zoo] tin noi tiep (cach {age:.1f}s), ghep xong -> "
+                      f"{len(merged['pets'])} pet, zoo_points={merged.get('zoo_points')}")
+            else:
+                print(f"[tracker][zoo] tin toi trong cua so ({age:.1f}s) nhung parse_zoo khong "
+                      f"nhan dien duoc dong dau la tier tag — bo qua. Dong dau: {text.splitlines()[:1]!r}")
+        else:
+            print(f"[tracker][zoo] co phien zoo dang cho nhung tin nay toi qua muon ({age:.1f}s "
+                  f"> {ZOO_PART_WINDOW}s) — bo qua, khong ghep.")
+    else:
+        # Khong phai tieu de, cung khong co phien zoo nao dang cho — binh thuong (tin khac).
+        pass
     if merged:
         zoo_session[channel_id] = {"ts": time.time(), "data": merged}
         await save_zoo(merged, source_id)
