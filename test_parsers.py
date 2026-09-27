@@ -685,6 +685,13 @@ async def run_zoo_split_tests():
     await bot_mod.handle_owo_response(zoo_msg(ZOO_MSG2), "u1")
     doc = await db[bot_mod.COL_ZOO].find_one({"_id": "latest"})
     check("luong that: tin 2 toi qua muon -> khong ghep", len(doc["pets"]), 53)
+    check("luong that: phien het han bi XOA, khong con luu lai", 77 in bot_mod.zoo_session, False)
+
+    # Sau khi phien het han, mot tin owo KHAC hoan toan (khong lien quan zoo) toi
+    # sau do -> KHONG con bi bao "toi qua muon" nua (vi phien da bi xoa that su)
+    await bot_mod.handle_owo_response(zoo_msg("Ruby, you currently have 999 cowoncy!"), "u1")
+    check("luong that: sau khi phien dong, tin khac khong dinh vao zoo nua",
+          len((await db[bot_mod.COL_ZOO].find_one({"_id": "latest"}))["pets"]), 53)
 
     # Zoo ngan (vua 1 tin) van chay nhu cu
     bot_mod.zoo_session.clear()

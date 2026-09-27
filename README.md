@@ -153,12 +153,17 @@ vũ khí chỉ có những cây bạn từng xem bằng `owo weapon <ID>`.
 - **Gem đang dùng:** OwO bọc `[hiện/tối đa]` trong dấu backtick, ví dụ
   `` <:egem1:...>`[48/75]` `` — regex cho phép dấu backtick này ở cả 2 đầu
   (tuỳ chọn, để phòng khi OwO đổi lại không có backtick).
-- **Zoo bị chia 2 tin nhắn — log chẩn đoán:** mỗi khi có tin nhắn giống bảng
-  zoo, bot LUÔN in 1 dòng `[tracker][zoo] ...` vào Logs (không cần
-  `,debugnext`), cho biết: tin có tiêu đề hay là tin nối tiếp, ghép được bao
-  nhiêu pet, có đọc được Zoo Points không, và nếu bỏ qua thì vì sao (tới quá
-  muộn, hay dòng đầu không phải tier tag). Nếu Zoo Points còn hiện `?` trên
-  app, xem dòng log này để biết chính xác lý do.
+- **Zoo bị chia 2 tin nhắn — độ trễ RẤT thất thường:** thực tế đo được, tin
+  thứ 2 (chứa Zoo Points) có lúc tới sau **1-2 giây**, có lúc sau **gần 2
+  tiếng** — không cố định. Vì vậy cửa sổ chờ ghép (`ZOO_PART_WINDOW`) để
+  **30 phút**, không phải 60 giây như bản đầu. Bot LUÔN in 1 dòng
+  `[tracker][zoo] ...` vào Logs cho mỗi tin liên quan (không cần
+  `,debugnext`), cho biết: tin có tiêu đề hay nối tiếp, ghép được bao nhiêu
+  pet, đọc được Zoo Points chưa, và nếu bỏ qua thì vì sao. Khi hết 30 phút
+  mà tin nối tiếp vẫn chưa tới, phiên chờ tự đóng (xoá khỏi bộ nhớ) để không
+  còn báo "tới quá muộn" lặp lại cho mọi tin owo sau đó. Nếu Zoo Points còn
+  hiện `?` ngay sau khi gõ lệnh, cứ đợi thêm rồi bấm Làm mới lại — bot sẽ tự
+  cập nhật ngay khi tin thứ 2 tới, không cần gõ lại `owo zoo`.
 - **Icon thật cho app:** bot ghi nhớ ID của MỌI emoji tuỳ chỉnh từng thấy
   trong bất kỳ tin nhắn OwO nào (`owot_emoji_registry`, hàm
   `remember_emojis`/`resolve_emoji`) — ID emoji là cố định nên chỉ cần học 1
@@ -176,7 +181,7 @@ Bot còn đọc thêm 3 loại tin nhắn:
 - **`owo zoo`** — lưu toàn bộ bảng đếm pet theo mọi tier + Zoo Points.
   Zoo dài nên OwO chia thành **2 tin nhắn** (hoặc nhiều hơn): tin đầu có
   tiêu đề `'s zoo`, tin sau không có tiêu đề và chứa các tier còn lại +
-  Zoo Points. Bot tự ghép các tin liên tiếp trong vòng 60 giây (cùng kênh)
+  Zoo Points. Bot tự ghép các tin liên tiếp trong vòng 30 phút (cùng kênh)
   thành 1 bảng (`handle_zoo_text`). Gõ lại `owo zoo` thì bắt đầu bảng mới,
   không cộng dồn.
   Trong hub, **tổng pet** và số pet từng tier lấy từ **dòng cuối** của bảng

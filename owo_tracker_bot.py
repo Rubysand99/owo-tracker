@@ -623,7 +623,8 @@ def parse_hunt_gem_status(text: str):
 # LƯU — tất cả upsert theo key tự nhiên (tên pet, tên loại vũ khí, tên
 # passive, ID vũ khí) nên gọi lại nhiều lần không tạo bản trùng.
 # ----------------------------------------------------------------------
-ZOO_PART_WINDOW = 60  # giay: tin tiep noi cua zoo phai toi trong khoang nay sau tin truoc
+ZOO_PART_WINDOW = 1800  # giay (30 phut): OwO gui tin 2 rat that thuong — co luc 1-2 giay,
+                         # co luc gan 2 tieng, nen phai cho rong tay
 zoo_session = {}  # channel_id -> {"ts": thoi diem tin zoo gan nhat, "data": zoo da ghep}
 
 
@@ -661,8 +662,11 @@ async def handle_zoo_text(channel_id, text, source_id=None):
                 print(f"[tracker][zoo] tin toi trong cua so ({age:.1f}s) nhung parse_zoo khong "
                       f"nhan dien duoc dong dau la tier tag — bo qua. Dong dau: {text.splitlines()[:1]!r}")
         else:
-            print(f"[tracker][zoo] co phien zoo dang cho nhung tin nay toi qua muon ({age:.1f}s "
-                  f"> {ZOO_PART_WINDOW}s) — bo qua, khong ghep.")
+            # Qua han cho — xoa phien de KHONG bao tin nay va moi tin owo khac sau do la
+            # "toi qua muon" nua (tranh spam log). Chi in 1 lan luc dong phien.
+            zoo_session.pop(channel_id, None)
+            print(f"[tracker][zoo] phien cho tin noi tiep da qua {ZOO_PART_WINDOW}s ma khong "
+                  f"thay tin nao hop le — dong phien (khong ghep duoc Zoo Points lan nay).")
     else:
         # Khong phai tieu de, cung khong co phien zoo nao dang cho — binh thuong (tin khac).
         pass
