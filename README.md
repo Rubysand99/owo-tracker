@@ -96,6 +96,7 @@ vũ khí chỉ có những cây bạn từng xem bằng `owo weapon <ID>`.
 
 ```
 ,track @Ruby            → đặt tài khoản cần theo dõi (chỉ owner)
+,setchannel #kênh       → giới hạn bot CHỈ hoạt động trong 1 kênh (chỉ owner)
 ,status                 → tổng quan: đang theo dõi ai, huntbot
 ,weaponowner            → xem/đặt tên chủ vũ khí được chấp nhận (chỉ owner)
 ,huntbot                 → trạng thái HuntBot hiện tại
@@ -173,6 +174,16 @@ vũ khí chỉ có những cây bạn từng xem bằng `owo weapon <ID>`.
   vật OwO hiện bằng emoji chuẩn như `:bee:`, không có ID riêng).
 - **Passive** (`owot_passives`): tên + mô tả chính xác, lấy từ đúng
   dòng `__Tên__ - mô tả` trong tin nhắn OwO.
+
+### Giới hạn hoạt động vào 1 kênh
+
+Mặc định bot xử lý lệnh `owo` + tin nhắn OwO ở **mọi kênh** nó có mặt. Dùng
+`,setchannel #tên-kênh` (hoặc dán thẳng ID kênh) để giới hạn CHỈ 1 kênh duy
+nhất — hữu ích nếu bạn chơi OwO ở nhiều server/kênh nhưng chỉ muốn theo dõi
+1 chỗ, tránh dữ liệu bị lẫn. Gõ `,setchannel` không kèm gì để xem đang giới
+hạn kênh nào; `,setchannel xoa` để bỏ giới hạn. Lệnh của chính bot này
+(`,status`, `,zoo`, `,debugnext`...) vẫn dùng được ở mọi kênh, không bị ảnh
+hưởng — giới hạn chỉ áp dụng cho việc theo dõi lệnh owo/tin nhắn OwO.
 
 ### Zoo, Inventory, và nhắc thay gem tự động
 

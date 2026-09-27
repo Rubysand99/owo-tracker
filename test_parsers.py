@@ -842,6 +842,95 @@ async def run_on_message_names_test():
 
 asyncio.run(run_on_message_names_test())
 
+# ========================================================================
+# 11. ,setchannel — gioi han owo-tracker chi hoat dong trong 1 kenh
+# ========================================================================
+print("\n=== Gioi han kenh (,setchannel) ===")
+
+
+async def run_setchannel_tests():
+    db = AsyncMongoMockClient()["setchannel"]
+    bot_mod.mdb = db
+    bot_mod.tracked_names.clear()
+    await bot_mod.set_config("tracked_user_id", "555")
+    await bot_mod.set_config("tracked_channel_id", "")
+
+    async def _noop(msg):
+        return None
+    original = bot_mod.bot.process_commands
+    bot_mod.bot.process_commands = _noop
+    me = SimpleNamespace(id=555, display_name="Ruby", global_name="Ruby", nick=None, name="ruby")
+
+    def cmd(text, ch):
+        return SimpleNamespace(content=text, author=me, channel=SimpleNamespace(id=ch))
+
+    def owo_msg(text, ch):
+        return SimpleNamespace(content=text, embeds=[], components=[],
+                                author=SimpleNamespace(id=bot_mod.OWO_BOT_ID), channel=SimpleNamespace(id=ch))
+
+    try:
+        # --- CHUA gioi han kenh nao -> hoat dong o moi kenh (giu nguyen hanh vi cu) ---
+        await bot_mod.on_message(cmd("owo money", 111))
+        await bot_mod.on_message(owo_msg("Ruby, you currently have 500 cowoncy!", 111))
+        hub = await bot_mod.build_hub()
+        check("chua gioi han: kenh 111 van duoc xu ly", hub["cowoncy"]["amount"], 500)
+
+        # --- Dat gioi han vao kenh 42 ---
+        await bot_mod.set_config("tracked_channel_id", "42")
+
+        # Kenh KHONG phai 42 -> lenh owo cua chinh nguoi dang theo doi cung bi bo qua
+        await bot_mod.on_message(cmd("owo money", 999))
+        check("da gioi han: lenh owo o kenh khac (999) KHONG duoc ghi nhan la lenh cho",
+              999 in bot_mod.pending_commands, False)
+        await bot_mod.on_message(owo_msg("Ruby, you currently have 999999 cowoncy!", 999))
+        hub = await bot_mod.build_hub()
+        check("da gioi han: tin OwO o kenh khac (999) KHONG duoc doc, du lieu cu giu nguyen",
+              hub["cowoncy"]["amount"], 500)
+
+        # Dung kenh 42 -> hoat dong binh thuong
+        await bot_mod.on_message(cmd("owo money", 42))
+        await bot_mod.on_message(owo_msg("Ruby, you currently have 777 cowoncy!", 42))
+        hub = await bot_mod.build_hub()
+        check("da gioi han: kenh dung (42) van hoat dong binh thuong", hub["cowoncy"]["amount"], 777)
+
+        # --- Bo gioi han (,setchannel xoa) -> kenh nao cung duoc lai ---
+        await bot_mod.set_config("tracked_channel_id", "")
+        await bot_mod.on_message(cmd("owo money", 999))
+        await bot_mod.on_message(owo_msg("Ruby, you currently have 123 cowoncy!", 999))
+        hub = await bot_mod.build_hub()
+        check("bo gioi han: kenh khac hoat dong tro lai", hub["cowoncy"]["amount"], 123)
+    finally:
+        bot_mod.bot.process_commands = original
+
+    # --- Lenh ,setchannel: dan ID tho, dan mention <#id>, xoa, xem trang thai ---
+    sent = []
+
+    async def fake_send(text=None, **kw):
+        sent.append(text)
+
+    ctx = SimpleNamespace(send=fake_send)
+    await bot_mod.setchannel_cmd(ctx, arg="")
+    check("setchannel rong: bao dang khong gioi han", "MỌI kênh" in sent[-1], True)
+
+    await bot_mod.setchannel_cmd(ctx, arg="1553802336109989951")
+    check("setchannel voi ID tho: luu dung", await bot_mod.get_config("tracked_channel_id"),
+          "1553802336109989951")
+
+    await bot_mod.setchannel_cmd(ctx, arg="<#987>")
+    check("setchannel voi dang mention <#id>: tach dung so", await bot_mod.get_config("tracked_channel_id"), "987")
+
+    await bot_mod.setchannel_cmd(ctx, arg="")
+    check("setchannel rong sau khi dat: bao dung kenh dang gioi han", "987" in sent[-1], True)
+
+    await bot_mod.setchannel_cmd(ctx, arg="xoa")
+    check("setchannel xoa: xoa sach gioi han", await bot_mod.get_config("tracked_channel_id"), "")
+
+    await bot_mod.setchannel_cmd(ctx, arg="khong-phai-so")
+    check("setchannel voi chu khong hop le: bao loi, khong luu bay", await bot_mod.get_config("tracked_channel_id"), "")
+
+
+asyncio.run(run_setchannel_tests())
+
 
 # ========================================================================
 # 9. ICON THAT: ID emoji Discord de app tai hinh anh, hoac Unicode co san

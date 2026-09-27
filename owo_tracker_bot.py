@@ -1228,6 +1228,15 @@ async def on_message(message: discord.Message):
         await bot.process_commands(message)
         return
 
+    # Gioi han hoat dong vao 1 kenh duy nhat (,setchannel) — neu dat, bo qua
+    # HOAN TOAN moi kenh khac (khong theo doi lenh owo, khong doc tin OwO o
+    # do). Lenh cua chinh bot nay (,status, ,setchannel, ,debugnext...) van
+    # chay duoc o moi kenh, vi do la lenh quan tri, khong phai theo doi OwO.
+    tracked_channel_id = await get_config("tracked_channel_id")
+    if tracked_channel_id and str(message.channel.id) != str(tracked_channel_id):
+        await bot.process_commands(message)
+        return
+
     tracked_id = await get_config("tracked_user_id")
     prefixes = await get_owo_prefixes()
     content_lower = message.content.lower()
@@ -1421,6 +1430,37 @@ async def setprefixes_cmd(ctx, *, prefixes: str = ""):
     await ctx.send(f"Đã cập nhật, giờ nhận diện: {', '.join(f'`{p}`' for p in new_list)}")
 
 
+@bot.command(name="setchannel")
+@is_owner()
+async def setchannel_cmd(ctx, *, arg: str = ""):
+    """Gioi han owo-tracker CHI xu ly lenh owo + tin nhan OwO trong 1 kenh duy
+    nhat — tranh theo doi nham o kenh khac (server khac, kenh test...). Cac
+    lenh cua CHINH bot nay (,status, ,zoo, ,debugnext...) van dung duoc o moi
+    kenh, khong bi anh huong.
+    Dung: ,setchannel #ten-kenh (hoac dan thang ID kenh). Bo gioi han: ,setchannel xoa
+    Khong kem gi: hien trang thai hien tai."""
+    arg = arg.strip()
+    if not arg:
+        current = await get_config("tracked_channel_id")
+        if current:
+            await ctx.send(f"Đang giới hạn hoạt động trong kênh <#{current}> (`{current}`).\n"
+                            f"Đổi: `,setchannel #kênh` · Bỏ giới hạn: `,setchannel xoa`")
+        else:
+            await ctx.send("Chưa giới hạn kênh nào — bot xử lý lệnh owo ở MỌI kênh.\n"
+                            "Giới hạn: `,setchannel #kênh`")
+        return
+    if arg.lower() in ("xoa", "xóa", "clear"):
+        await set_config("tracked_channel_id", "")
+        await ctx.send("Đã bỏ giới hạn kênh — bot xử lý lệnh owo ở mọi kênh trở lại.")
+        return
+    channel_id = arg.strip("<#>")
+    if not channel_id.isdigit():
+        await ctx.send("Không đọc được kênh. Dùng: `,setchannel #kênh` hoặc dán thẳng ID kênh.")
+        return
+    await set_config("tracked_channel_id", channel_id)
+    await ctx.send(f"Đã giới hạn: owo-tracker giờ CHỈ xử lý lệnh/tin nhắn OwO trong <#{channel_id}>.")
+
+
 @bot.command(name="weaponowner")
 @is_owner()
 async def weaponowner_cmd(ctx, *, aliases: str = ""):
@@ -1450,6 +1490,9 @@ async def status(ctx):
 
     embed = discord.Embed(title="Trạng thái theo dõi", color=0xD9A227)
     embed.add_field(name="Đang theo dõi", value=f"<@{tracked}>" if tracked else "Chưa đặt — dùng `,track`", inline=False)
+    tracked_channel = await get_config("tracked_channel_id")
+    embed.add_field(name="Giới hạn kênh",
+                     value=f"<#{tracked_channel}>" if tracked_channel else "Không giới hạn — mọi kênh", inline=False)
     if last_hunt:
         state = f"{last_hunt['progress_pct']}% · {last_hunt['animals_captured']} pet · còn {last_hunt['time_remaining']}" \
             if last_hunt["hunting"] else "Không đang hunt"
@@ -1788,7 +1831,7 @@ async def help_cmd(ctx):
     )
     embed.add_field(
         name="Theo dõi cá nhân",
-        value="`,track @user` (owner) · `,setprefixes owo,o` (owner) · `,status` · `,weaponowner` (owner) · "
+        value="`,track @user` (owner) · `,setprefixes owo,o` (owner) · `,status` · `,setchannel` (owner) · `,weaponowner` (owner) · "
               "`,huntbot` · `,quests` · `,team` · `,myweapons [tìm]` · "
               "`,zoo [tìm]` · `,inv [tìm]` · `,gems`",
         inline=False,
