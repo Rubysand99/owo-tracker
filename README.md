@@ -97,6 +97,7 @@ vũ khí chỉ có những cây bạn từng xem bằng `owo weapon <ID>`.
 ```
 ,track @Ruby            → đặt tài khoản cần theo dõi (chỉ owner)
 ,setchannel #kênh       → giới hạn bot CHỈ hoạt động trong 1 kênh (chỉ owner)
+,rawdump                → gửi file nguyên văn tin OwO + kết quả bot đọc (chỉ owner)
 ,status                 → tổng quan: đang theo dõi ai, huntbot
 ,weaponowner            → xem/đặt tên chủ vũ khí được chấp nhận (chỉ owner)
 ,huntbot                 → trạng thái HuntBot hiện tại
@@ -174,6 +175,26 @@ vũ khí chỉ có những cây bạn từng xem bằng `owo weapon <ID>`.
   vật OwO hiện bằng emoji chuẩn như `:bee:`, không có ID riêng).
 - **Passive** (`owot_passives`): tên + mô tả chính xác, lấy từ đúng
   dòng `__Tên__ - mô tả` trong tin nhắn OwO.
+
+### Kiểm tra bot đọc có đúng không (`,rawdump`)
+
+Bot lưu lại **nguyên văn** tin nhắn OwO mới nhất của từng loại (hunt, inv,
+zoo, team, quest, daily, hb, cash, weapon) cùng với **kết quả bot đọc được**
+từ tin đó. Gõ `,rawdump` để nhận 1 file `owo_raw.json` qua **tin nhắn riêng**
+(không hiện ở kênh chung). Cách dùng:
+
+1. Trong kênh đang theo dõi, gõ lần lượt: `owo hunt`, `owo inv`, `owo zoo`,
+   `owo team`, `owo quest`, `owo daily`, `owo hb`, `owo cash`, và
+   `owo weapon <ID vũ khí của bạn>`.
+2. Gõ `,rawdump`. Bot sẽ liệt kê những loại **chưa thấy** để bạn gõ bù.
+3. So từng mục trong file với tin nhắn thật trong game (hoặc gửi file cho
+   người sửa bot). Mục `unrecognized` giữ vài tin OwO mà bot **không hiểu gì**
+   — nếu 1 lệnh bạn gõ mà chỉ thấy nó nằm ở đây, nghĩa là bot chưa biết đọc
+   loại tin đó (hoặc OwO đã đổi cách viết).
+4. `,rawdump xoa` để xoá mẫu cũ, bắt đầu lại cho sạch.
+
+Mục `weapon` luôn được ghi mẫu kể cả khi vũ khí không phải của bạn (kèm
+`saved: false` để biết bot đã bỏ qua).
 
 ### Giới hạn hoạt động vào 1 kênh
 

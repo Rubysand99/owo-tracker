@@ -1040,6 +1040,120 @@ check("gem that: vien slot 3 va 4 cung Epic", [g["slot"] for g in gr["gems"] if 
 check("gem: van doc duoc KHONG co backtick (dang cu, phong khi OwO doi lai)",
       len(bot_mod.parse_hunt_gem_status("hunt is empowered by <:cgem1:1>[10/20]!")["gems"]), 1)
 
+
+# ========================================================================
+# 12. Mau tho + ,rawdump — kiem tra do chinh xac bang nguyen van tin OwO
+# ========================================================================
+print("\n=== Mau tho / ,rawdump ===")
+
+
+async def run_rawdump_tests():
+    import discord
+    db = AsyncMongoMockClient()["rawdump"]
+    bot_mod.mdb = db
+    ch = 21
+    bot_mod.tracked_names.clear()
+
+    def msg(t):
+        return SimpleNamespace(content=t, embeds=[], components=[], channel=SimpleNamespace(id=ch))
+
+    # 1) hunt that (tu log) -> hunt_gems co raw + parsed dung
+    bot_mod.last_owo_command[ch] = "owo hunt"
+    await bot_mod.handle_owo_response(msg(HUNT_REAL), "555")
+    row = await db[bot_mod.COL_RAW].find_one({"_id": "hunt_gems"})
+    check("rawdump: hunt_gems luu nguyen van (co ca dau backtick that)", "`[48/75]`" in row["raw"], True)
+    check("rawdump: hunt_gems luu ket qua doc duoc (3 vien) + lenh da go",
+          (len(row["parsed"]["gems"]), row["command"]), (3, "owo hunt"))
+
+    # 2) zoo 2 tin -> zoo_1 va zoo_2
+    bot_mod.zoo_session.pop(ch, None)
+    bot_mod.last_owo_command[ch] = "owo zoo"
+    await bot_mod.handle_owo_response(msg(ZOO_MSG1), "555")
+    await bot_mod.handle_owo_response(msg(ZOO_MSG2), "555")
+    z1 = await db[bot_mod.COL_RAW].find_one({"_id": "zoo_1"})
+    z2 = await db[bot_mod.COL_RAW].find_one({"_id": "zoo_2"})
+    check("rawdump: zoo_1 chua tieu de, chua co Zoo Points", ("Ruby's zoo" in z1["raw"], z1["parsed"]["zoo_points"]), (True, None))
+    check("rawdump: zoo_2 chua Zoo Points va da ghep du pet",
+          (z2["parsed"]["zoo_points"], z2["parsed"]["pets_da_ghep_tong"]), (13559875, 76))
+
+    # 3) cowoncy, daily, quest, inventory
+    bot_mod.last_owo_command[ch] = "owo cash"
+    await bot_mod.handle_owo_response(msg("<:cowoncy:700> | **Ruby**, you currently have **__2,061,145__ cowoncy**!"), "555")
+    bot_mod.last_owo_command[ch] = "odaily"
+    await bot_mod.handle_owo_response(msg(DAILY_WAIT), "555")
+    check("rawdump: cowoncy va daily deu co mau",
+          [k for k in ("cowoncy", "daily") if await db[bot_mod.COL_RAW].find_one({"_id": k})], ["cowoncy", "daily"])
+
+    # 4) tin KHONG loai nao nhan ra -> vao "unrecognized", giu toi da UNRECOGNIZED_KEEP tin
+    bot_mod.last_owo_command[ch] = "owo hb"
+    await bot_mod.handle_owo_response(msg("tin la hoan toan khong biet 0"), "555")
+    for i in range(1, bot_mod.UNRECOGNIZED_KEEP + 3):
+        await bot_mod.handle_owo_response(msg(f"tin la hoan toan khong biet {i}"), "555")
+    un = await db[bot_mod.COL_RAW].find_one({"_id": "unrecognized"})
+    check("rawdump: tin la duoc giu, khong vuot qua gioi han", len(un["items"]), bot_mod.UNRECOGNIZED_KEEP)
+    check("rawdump: giu tin MOI nhat, bo tin cu nhat", (un["items"][-1]["raw"], "biet 0" in json.dumps(un["items"])),
+          (f"tin la hoan toan khong biet {bot_mod.UNRECOGNIZED_KEEP + 2}", False))
+    check("rawdump: tin la ghi kem lenh da go", un["items"][-1]["command"], "owo hb")
+
+    # 5) tin DA nhan ra thi KHONG bi ghi la "unrecognized"
+    before = len((await db[bot_mod.COL_RAW].find_one({"_id": "unrecognized"}))["items"])
+    bot_mod.last_owo_command[ch] = "owo cash"
+    await bot_mod.handle_owo_response(msg("<:cowoncy:700> | **Ruby**, you currently have **__5__ cowoncy**!"), "555")
+    after = len((await db[bot_mod.COL_RAW].find_one({"_id": "unrecognized"}))["items"])
+    check("rawdump: tin da nhan ra khong lot vao 'unrecognized'", after, before)
+
+    # 6) vu khu: ghi mau ca khi SAI chu (de thay bot da bo qua), kem co 'saved'
+    bot_mod.last_owo_command[ch] = "owo weapon ZZZ"
+    await bot_mod.handle_owo_response(msg("""## Nguoi Khac's Culling Scythe [2]
+**Name:** Culling Scythe
+**ID:** `ZZZZZ9`
+**Quality:** 95.2%
+
+**__Giant Slayer__** - Deal +23.95% more damage to bosses.
+Reroll Changes: 0"""), "555")
+    w = await db[bot_mod.COL_RAW].find_one({"_id": "weapon"})
+    check("rawdump: vu khi sai chu van co mau nhung saved=False", (w["saved"], w["parsed"]["owner"]), (False, "Nguoi Khac"))
+
+    # --- ,rawdump: gui file qua tin nhan RIENG ---
+    dm, chan = [], []
+
+    async def dm_send(text=None, **kw):
+        dm.append((text, kw))
+
+    async def chan_send(text=None, **kw):
+        chan.append((text, kw))
+
+    ctx = SimpleNamespace(author=SimpleNamespace(send=dm_send), send=chan_send, guild=object())
+    await bot_mod.rawdump_cmd(ctx, arg="")
+    check("rawdump: gui file qua tin nhan rieng", (len(dm), "file" in dm[0][1]), (1, True))
+    f = dm[0][1]["file"]
+    f.fp.seek(0)
+    payload = json.loads(f.fp.read().decode("utf-8"))
+    check("rawdump: ten file + co du cac loai da co mau",
+          (f.filename, {"hunt_gems", "zoo_1", "zoo_2", "cowoncy", "daily", "weapon", "unrecognized"} <= set(payload["mau"])),
+          ("owo_raw.json", True))
+    check("rawdump: liet ke cac loai CHUA thay kem lenh can go",
+          ("inventory (gõ: owo inv)" in payload["chua_thay_loai_nao"], "hunt_gems" in " ".join(payload["chua_thay_loai_nao"])),
+          (True, False))
+    check("rawdump: kenh chung chi bao 1 dong ngan, khong lo file", (len(chan), "file" in chan[0][1]), (1, False))
+
+    # --- Tin nhan rieng bi chan -> gui o kenh kem canh bao ---
+    async def dm_blocked(text=None, **kw):
+        raise discord.Forbidden(SimpleNamespace(status=403, reason="Forbidden"), "cannot dm")
+
+    chan.clear()
+    ctx2 = SimpleNamespace(author=SimpleNamespace(send=dm_blocked), send=chan_send, guild=object())
+    await bot_mod.rawdump_cmd(ctx2, arg="")
+    check("rawdump: DM bi chan -> gui o kenh kem canh bao", (len(chan), "file" in chan[0][1], "người khác" in chan[0][0]), (1, True, True))
+
+    # --- ,rawdump xoa ---
+    chan.clear()
+    await bot_mod.rawdump_cmd(ctx, arg="xoa")
+    check("rawdump xoa: xoa sach mau cu", await db[bot_mod.COL_RAW].count_documents({}), 0)
+
+
+asyncio.run(run_rawdump_tests())
+
 print("\n" + ("=" * 40))
 if failures:
     print(f"{FAIL} {len(failures)} test thất bại: {failures}")

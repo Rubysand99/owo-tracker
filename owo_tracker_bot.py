@@ -22,8 +22,10 @@ Chạy:
   DISCORD_TOKEN=... OWNER_ID=... MONGODB_URI=... python owo_tracker_bot.py
 """
 
+import io
 import os
 import re
+import json
 import time
 import hmac
 import asyncio
@@ -74,6 +76,7 @@ COL_GEM_STATUS = "owot_gem_status"
 COL_DAILY = "owot_daily_status"
 COL_COWONCY = "owot_cowoncy"
 COL_EMOJI = "owot_emoji_registry"
+COL_RAW = "owot_raw_samples"
 
 EMOJI_TAG = re.compile(r"<(a)?:(\w+):(\d+)>")
 
@@ -645,8 +648,10 @@ async def handle_zoo_text(channel_id, text, source_id=None):
     is_header = "'s zoo" in text or "zoo!" in text.lower()
     session = zoo_session.get(channel_id)
     merged = None
+    kind = None
     if is_header:
         merged = parse_zoo(text)
+        kind = "zoo_1" if merged else None
         print(f"[tracker][zoo] tin co tieu de, {len(merged['pets']) if merged else 0} pet, "
               f"zoo_points={merged.get('zoo_points') if merged else None}")
     elif session:
@@ -656,11 +661,17 @@ async def handle_zoo_text(channel_id, text, source_id=None):
             part = parse_zoo(text, continuation=True, start_tier=pets_so_far[-1]["tier"] if pets_so_far else None)
             if part:
                 merged = merge_zoo_parts(session["data"], part)
+                kind = "zoo_2"
                 print(f"[tracker][zoo] tin noi tiep (cach {age:.1f}s), ghep xong -> "
                       f"{len(merged['pets'])} pet, zoo_points={merged.get('zoo_points')}")
             else:
-                print(f"[tracker][zoo] tin toi trong cua so ({age:.1f}s) nhung parse_zoo khong "
-                      f"nhan dien duoc dong dau la tier tag — bo qua. Dong dau: {text.splitlines()[:1]!r}")
+                # Chi bao khi tin nay TRONG GIONG zoo (co "Zoo Points" hoac dong pet co so mu) —
+                # cua so cho la 30 phut nen moi tin owo khac (cash, daily...) cung roi vao day,
+                # neu khong loc se spam log.
+                looks_zoo = "Zoo Points" in text or bool(re.search(r"<a?:\w+:\d+>[⁰¹²³⁴⁵⁶⁷⁸⁹]", text))
+                if looks_zoo:
+                    print(f"[tracker][zoo] tin giong zoo toi trong cua so ({age:.1f}s) nhung parse_zoo khong "
+                          f"nhan dien duoc dong dau la tier tag — bo qua. Dong dau: {text.splitlines()[:1]!r}")
         else:
             # Qua han cho — xoa phien de KHONG bao tin nay va moi tin owo khac sau do la
             # "toi qua muon" nua (tranh spam log). Chi in 1 lan luc dong phien.
@@ -673,6 +684,7 @@ async def handle_zoo_text(channel_id, text, source_id=None):
     if merged:
         zoo_session[channel_id] = {"ts": time.time(), "data": merged}
         await save_zoo(merged, source_id)
+    return kind, merged
 
 
 async def save_zoo(z, source_id=None):
@@ -1296,16 +1308,76 @@ def flatten_message(message: discord.Message) -> str:
     return text
 
 
+# ----------------------------------------------------------------------
+# MAU THO: luu NGUYEN VAN moi loai tin nhan OwO moi nhat + ket qua bot doc
+# duoc, de doi chieu do chinh xac (lenh ,rawdump gui ra 1 file). Day chi la
+# ban ghi de kiem tra — khong anh huong du lieu Hub.
+# ----------------------------------------------------------------------
+RAW_MAX_CHARS = 12000
+UNRECOGNIZED_KEEP = 12
+
+# Cac loai tin nhan bot biet doc, va lenh OwO nguoi choi can go de bot thay no.
+RAW_EXPECTED = {
+    "hunt_gems": "owo hunt",
+    "inventory": "owo inv",
+    "zoo_1": "owo zoo",
+    "zoo_2": "owo zoo (tin thu 2 — OwO chia bang zoo lam 2 tin)",
+    "team": "owo team",
+    "quest": "owo quest",
+    "daily": "owo daily",
+    "huntbot": "owo hb",
+    "cowoncy": "owo cash",
+    "weapon": "owo weapon <ID vu khi cua ban>",
+}
+
+
+def _json_safe(value):
+    """Doi ket qua doc duoc sang dang luu/xuat JSON duoc (kieu la -> chuoi)."""
+    return json.loads(json.dumps(value, ensure_ascii=False, default=str))
+
+
+async def record_raw(kind, text, parsed, message, extra=None):
+    """Moi loai 1 ban, ban moi ghi de ban cu."""
+    body = text or ""
+    doc = {
+        "raw": body[:RAW_MAX_CHARS],
+        "raw_truncated": len(body) > RAW_MAX_CHARS,
+        "parsed": _json_safe(parsed),
+        "command": last_owo_command.get(message.channel.id, ""),
+        "channel_id": str(message.channel.id),
+        "at": datetime.utcnow().isoformat() + "Z",
+    }
+    if extra:
+        doc.update(extra)
+    await mdb[COL_RAW].update_one({"_id": kind}, {"$set": doc}, upsert=True)
+
+
+async def record_unrecognized(text, message):
+    """Tin OwO ma khong loai nao nhan ra — giu vai tin gan nhat de xem OwO co
+    doi dinh dang (vd lenh huntbot khong con duoc doc) hay khong."""
+    doc = {
+        "raw": (text or "")[:2500],
+        "command": last_owo_command.get(message.channel.id, ""),
+        "at": datetime.utcnow().isoformat() + "Z",
+    }
+    row = await mdb[COL_RAW].find_one({"_id": "unrecognized"}) or {}
+    items = (row.get("items") or []) + [doc]
+    await mdb[COL_RAW].update_one({"_id": "unrecognized"}, {"$set": {"items": items[-UNRECOGNIZED_KEEP:]}}, upsert=True)
+
+
 async def handle_owo_response(message: discord.Message, source_id):
     text = flatten_message(message)
     if not text.strip():
         return
 
     await remember_emojis(text)
+    recognized = False  # co loai nao nhan ra tin nay khong (neu khong -> ghi vao "unrecognized")
 
     pet = parse_owodex(text)
     if pet:
         await save_pet_species(pet, source_id)
+        await record_raw("owodex", text, pet, message)
+        recognized = True
 
     weapon = parse_weapon_detail(text)
     if weapon:
@@ -1314,7 +1386,11 @@ async def handle_owo_response(message: discord.Message, source_id):
         names = set(tracked_names.get(str(source_id), set()))
         aliases = await get_config("weapon_owner_aliases", "") or ""
         names |= {a.strip() for a in aliases.split(",") if a.strip()}
-        if weapon_owner_matches(weapon.get("owner"), names):
+        owner_ok = weapon_owner_matches(weapon.get("owner"), names)
+        recognized = True
+        await record_raw("weapon", text, weapon, message,
+                         extra={"saved": bool(owner_ok), "accepted_owner_names": sorted(names)})
+        if owner_ok:
             await save_weapon_type(weapon, source_id)
             await save_weapon_instance(weapon, source_id)
             if weapon.get("passive"):
@@ -1330,34 +1406,59 @@ async def handle_owo_response(message: discord.Message, source_id):
         team = parse_team(text)
         if team:
             await save_team(team)
+            await record_raw("team", text, team, message)
+            recognized = True
 
     hunt = parse_huntbot_status(text)
     if hunt:
         await save_huntbot(hunt)
+        await record_raw("huntbot", text, hunt, message)
+        recognized = True
 
     quest = parse_quest_status(text)
     if quest:
         await save_quest(quest)
+        await record_raw("quest", text, quest, message)
+        recognized = True
 
     daily = parse_daily(text, last_owo_command.get(message.channel.id, ""))
     if daily:
         await save_daily(daily)
+        await record_raw("daily", text, daily, message)
+        recognized = True
 
     cash = parse_cowoncy(text)
     if cash:
         await save_cowoncy(cash, source_id)
+        await record_raw("cowoncy", text, cash, message)
+        recognized = True
 
-    await handle_zoo_text(message.channel.id, text, source_id)
+    zoo_kind, zoo_result = await handle_zoo_text(message.channel.id, text, source_id)
+    if zoo_kind:
+        await record_raw(zoo_kind, text, {
+            "pets_da_ghep_tong": len(zoo_result["pets"]),
+            "zoo_points": zoo_result.get("zoo_points"),
+            "breakdown_raw": zoo_result.get("breakdown_raw"),
+        }, message)
+        recognized = True
 
     inv = parse_inventory(text)
     if inv:
         await save_inventory(inv, source_id)
+        await record_raw("inventory", text, inv, message)
+        recognized = True
 
     gem_status = parse_hunt_gem_status(text)
     if gem_status:
         vanished_slots = await save_gem_status(gem_status, source_id)
+        await record_raw("hunt_gems", text, gem_status, message,
+                         extra={"vanished_slots": sorted(vanished_slots)})
+        recognized = True
         for slot in vanished_slots:
             await remind_gem_replacement(message, slot, source_id)
+
+    if not recognized:
+        await record_unrecognized(text, message)
 
 
 async def remind_gem_replacement(message: discord.Message, slot: str, source_id):
@@ -1428,6 +1529,46 @@ async def setprefixes_cmd(ctx, *, prefixes: str = ""):
     await set_config("owo_prefixes", prefixes)
     new_list = await get_owo_prefixes()
     await ctx.send(f"Đã cập nhật, giờ nhận diện: {', '.join(f'`{p}`' for p in new_list)}")
+
+
+@bot.command(name="rawdump")
+@is_owner()
+async def rawdump_cmd(ctx, *, arg: str = ""):
+    """Gui cho ban 1 FILE chua NGUYEN VAN tin nhan OwO moi nhat cua tung loai (hunt, inv,
+    zoo, team, quest, daily, huntbot, cash, weapon) + ket qua bot doc duoc tu do — de doi
+    chieu bot doc dung hay sai. File gui qua TIN NHAN RIENG (khong hien o kenh chung).
+    ,rawdump xoa  -> xoa het mau cu de bat dau lai cho sach."""
+    if arg.strip().lower() in ("xoa", "xóa", "clear"):
+        await mdb[COL_RAW].delete_many({})
+        await ctx.send("Đã xoá hết mẫu cũ. Gõ lại các lệnh owo rồi `,rawdump` để lấy mẫu mới.")
+        return
+
+    rows = await mdb[COL_RAW].find({}).to_list(length=200)
+    samples = {r["_id"]: {k: v for k, v in r.items() if k != "_id"} for r in rows}
+    missing = [f"{kind} (gõ: {cmd})" for kind, cmd in RAW_EXPECTED.items() if kind not in samples]
+    payload = {
+        "tao_luc": datetime.utcnow().isoformat() + "Z",
+        "kenh_gioi_han": await get_config("tracked_channel_id") or None,
+        "chua_thay_loai_nao": missing,
+        "mau": samples,
+    }
+    data = json.dumps(payload, ensure_ascii=False, indent=1).encode("utf-8")
+
+    note = f"Đây là nguyên văn tin nhắn OwO bot đã thấy + kết quả bot đọc được ({len(samples)} loại)."
+    if missing:
+        note += "\nChưa thấy: " + "; ".join(missing)
+
+    def make_file():
+        return discord.File(io.BytesIO(data), filename="owo_raw.json")
+
+    try:
+        await ctx.author.send(note, file=make_file())
+        if ctx.guild is not None:
+            await ctx.send("Đã gửi file qua tin nhắn riêng cho bạn.")
+    except discord.Forbidden:
+        await ctx.send("Không nhắn riêng được (bạn đang tắt tin nhắn riêng từ thành viên server?). "
+                        "Gửi thẳng ở đây — file có thể bị người khác trong kênh thấy:\n" + note,
+                        file=make_file())
 
 
 @bot.command(name="setchannel")
@@ -1831,7 +1972,7 @@ async def help_cmd(ctx):
     )
     embed.add_field(
         name="Theo dõi cá nhân",
-        value="`,track @user` (owner) · `,setprefixes owo,o` (owner) · `,status` · `,setchannel` (owner) · `,weaponowner` (owner) · "
+        value="`,track @user` (owner) · `,setprefixes owo,o` (owner) · `,status` · `,setchannel` (owner) · `,rawdump` (owner) · `,weaponowner` (owner) · "
               "`,huntbot` · `,quests` · `,team` · `,myweapons [tìm]` · "
               "`,zoo [tìm]` · `,inv [tìm]` · `,gems`",
         inline=False,
