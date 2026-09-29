@@ -1037,6 +1037,40 @@ async def _hub_weapons(now):
     return _with_age({"count": len(weapons), "weapons": weapons}, rows[0].get("updated_at"), now)
 
 
+async def _hub_pet_dex(now):
+    """So tay pet (owodex): MOI loai pet ban tung tra (`owo dex <ten>` / `odex <ten>`)
+    it nhat 1 lan — bao gom CA loai ban CHUA co (chi can tra la biet). Loai nao
+    chua bao gio tra thi KHONG co trong day (bot khong biet toan bo pet trong
+    game, chi biet loai da duoc hoi)."""
+    rows = await mdb[COL_PET_SPECIES].find().to_list(length=2000)
+    if not rows:
+        return None
+    zoo_doc = await mdb[COL_ZOO].find_one({"_id": "latest"})
+    owned_counts = {p["name"].lower(): p.get("count", 0) for p in (zoo_doc or {}).get("pets", []) if p.get("count", 0) > 0}
+
+    species = []
+    for r in rows:
+        name = r["display_name"]
+        icon = resolve_emoji(name)
+        species.append({
+            "name": name, "rank": r.get("rank"), "rank_vi": r.get("rank_vi"),
+            "owned": name.lower() in owned_counts, "owned_count": owned_counts.get(name.lower()),
+            "hp": r.get("hp"), "att": r.get("att"), "pr": r.get("pr"),
+            "wp": r.get("wp"), "mag": r.get("mag"), "mr": r.get("mr"),
+            "flavor_text": r.get("flavor_text"), "rarity_caught": r.get("rarity_caught"),
+            "points": r.get("points"), "sell_cowoncy": r.get("sell_cowoncy"),
+            "sell_sold_count": r.get("sell_sold_count"), "sacrifice_essence": r.get("sacrifice_essence"),
+            "sacrifice_killed_count": r.get("sacrifice_killed_count"),
+            **icon,
+        })
+    species.sort(key=lambda p: (not p["owned"], (p["rank"] or "").lower(), p["name"].lower()))
+    latest_confirmed = max((r.get("confirmed_at") or "" for r in rows), default=None) or None
+    return _with_age({
+        "total_known": len(species), "total_owned": sum(1 for p in species if p["owned"]),
+        "species": species,
+    }, latest_confirmed, now)
+
+
 async def build_hub(now=None):
     """Gom du lieu cho man hinh Hub. Muc nao bot chua tung thay thi = null."""
     now = now or datetime.utcnow()
@@ -1053,6 +1087,7 @@ async def build_hub(now=None):
         "zoo": await _hub_zoo(now),
         "inventory": await _hub_inventory(now),
         "weapons": await _hub_weapons(now),
+        "pet_dex": await _hub_pet_dex(now),
     }
 
 

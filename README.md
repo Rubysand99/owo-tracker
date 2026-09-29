@@ -8,7 +8,7 @@ chính lệnh Discord. Không web, không GitHub Pages, không app riêng.
 > thoại qua Termux, không cần máy tính? Xem `TERMUX.md`.
 
 **Không có dữ liệu game nào ghi sẵn trong file.** Toàn bộ thông tin về
-pet/loại vũ khí/passive đều do bot tự bắt được lúc chơi (`owo owodex`,
+pet/loại vũ khí/passive đều do bot tự bắt được lúc chơi (`owo dex`/`odex`,
 `owo weapon`), hoặc do bạn gõ lệnh nhập tay trực tiếp. Bot ghi nhận
 **mọi** pet/vũ khí/passive quan sát được — không lọc theo độ hiếm hay
 sức mạnh.
@@ -130,7 +130,7 @@ vũ khí chỉ có những cây bạn từng xem bằng `owo weapon <ID>`.
 
 ## Cách dữ liệu được tích luỹ
 
-- **Pet** (`owot_pet_species`): mỗi lần `owo owodex <tên>` được đọc,
+- **Pet** (`owot_pet_species`): mỗi lần `owo dex <tên>` (hoặc `odex <tên>`)
   bot upsert theo tên loài — vì base stat của 1 loài là hằng số của
   game, ghi 1 lần là đủ, các lần sau chỉ cập nhật lại `confirmed_at`.
 - **Loại vũ khí** (`owot_weapon_types`): mỗi lần `owo weapon <ID>`
@@ -175,6 +175,16 @@ vũ khí chỉ có những cây bạn từng xem bằng `owo weapon <ID>`.
   vật OwO hiện bằng emoji chuẩn như `:bee:`, không có ID riêng).
 - **Passive** (`owot_passives`): tên + mô tả chính xác, lấy từ đúng
   dòng `__Tên__ - mô tả` trong tin nhắn OwO.
+
+### Pet Dex trong Hub (số liệu gốc từng loài pet)
+
+Ngoài Zoo (số con đang có), hub còn có mục **Pet Dex** — số liệu GỐC của
+từng loài (6 chỉ số, độ hiếm, giá bán/hiến tế) lấy từ `owot_pet_species`.
+Khác với Zoo, mục này liệt kê **cả loài bạn chưa có**, miễn là bạn từng gõ
+`owo dex <tên>` hoặc `odex <tên>` cho loài đó — vì bot không có sẵn danh
+sách toàn bộ pet trong game, chỉ biết loài nào bạn đã từng tra. Loài đang
+sở hữu xếp lên trước, kèm số lượng hiện có (đối chiếu với Zoo mới nhất);
+loài chưa có chỉ hiện số liệu gốc, không có số lượng.
 
 ### Kiểm tra bot đọc có đúng không (`,rawdump`)
 

@@ -1154,6 +1154,88 @@ Reroll Changes: 0"""), "555")
 
 asyncio.run(run_rawdump_tests())
 
+
+# ========================================================================
+# 13. Pet Dex (owodex) trong hub — bao gom CA pet CHUA co, danh dau ro
+# ========================================================================
+print("\n=== Pet Dex trong hub ===")
+
+GOWL_DEX = """*Forever petrified in this golden state, the owl is always watching you.*
+
+**Count:** 0/63
+**Rank:** legendary
+**Rarity:** 24,508,696 total caught
+**Alias:** gowl, owl
+**Points:** 10000
+**Sell:** 15000 Cowoncy | 10 sold
+**Sacrifice:** 10000 Essence | 53 killed
+HP `10` ATT `1` PR `3`
+WP `1` MAG `2` MR `3`"""
+
+BEE_DEX = """**Count:** 5/5
+**Rank:** common
+**Rarity:** 999,999 total caught
+**Alias:** bee
+**Points:** 10
+**Sell:** 5 Cowoncy | 2 sold
+**Sacrifice:** 5 Essence | 1 killed
+HP `1` ATT `1` PR `1`
+WP `1` MAG `1` MR `1`"""
+
+
+async def run_pet_dex_tests():
+    db = AsyncMongoMockClient()["pet_dex"]
+    bot_mod.mdb = db
+    ch = 55
+
+    def msg(t):
+        return SimpleNamespace(content=t, embeds=[], components=[], channel=SimpleNamespace(id=ch))
+
+    bot_mod.last_owo_command[ch] = "odex gowl"
+    await bot_mod.handle_owo_response(msg(GOWL_DEX), "555")
+    bot_mod.last_owo_command[ch] = "owo dex bee"
+    await bot_mod.handle_owo_response(msg(BEE_DEX), "555")
+
+    # Chua co du lieu zoo -> ca 2 loai deu "chua co"
+    hub = await bot_mod.build_hub(datetime.utcnow())
+    dex = hub["pet_dex"]
+    check("pet_dex: biet 2 loai, ca 2 deu chua co (chua co du lieu zoo)",
+          (dex["total_known"], dex["total_owned"]), (2, 0))
+    gowl_entry = next(p for p in dex["species"] if p["name"] == "gowl")
+    check("pet_dex: gowl chua co du lieu zoo -> owned=False", gowl_entry["owned"], False)
+    check("pet_dex: du 6 chi so goc + gia ban/hien te", (gowl_entry["hp"], gowl_entry["att"], gowl_entry["pr"],
+          gowl_entry["wp"], gowl_entry["mag"], gowl_entry["mr"], gowl_entry["sell_cowoncy"], gowl_entry["sell_sold_count"],
+          gowl_entry["sacrifice_essence"], gowl_entry["sacrifice_killed_count"], gowl_entry["rank_vi"]),
+          (10, 1, 3, 1, 2, 3, 15000, 10, 10000, 53, "Huyền thoại"))
+    check("pet_dex: icon lay tu emoji da hoc (chua co ID rieng cho 'gowl' -> tra ve rong)",
+          "emoji_id" in gowl_entry or "emoji" in gowl_entry, False)
+
+    # Ghi zoo: co gowl (3 con), khong co bee -> gowl thanh "dang co", bee van "chua co"
+    bot_mod.last_owo_command[ch] = "owo zoo"
+    await bot_mod.handle_owo_response(
+        msg("Ruby's zoo!\n<:legendary:600>   <a:gowl:700>³\n**Zoo Points: __5__**"), "u1")
+    hub = await bot_mod.build_hub(datetime.utcnow())
+    dex = hub["pet_dex"]
+    gowl_entry = next(p for p in dex["species"] if p["name"] == "gowl")
+    bee_entry = next(p for p in dex["species"] if p["name"] == "bee")
+    check("pet_dex: sau khi co trong zoo -> gowl owned=True, dung so luong", (gowl_entry["owned"], gowl_entry["owned_count"]), (True, 3))
+    check("pet_dex: bee van chua co (khong trong zoo)", (bee_entry["owned"], bee_entry["owned_count"]), (False, None))
+    check("pet_dex: tong so dang co = 1/2", (dex["total_owned"], dex["total_known"]), (1, 2))
+    check("pet_dex: gowl gio co icon (ID that hoc duoc tu tin zoo)", gowl_entry.get("emoji_id"), "700")
+    check("pet_dex: dang co xep TRUOC chua co (owned truoc)", [p["name"] for p in dex["species"]][0], "gowl")
+
+    # Loai chua tung tra owodex -> khong xuat hien trong danh sach (bot khong biet)
+    check("pet_dex: loai chua tra owodex bao gio -> khong co trong danh sach",
+          any(p["name"] == "dragon" for p in dex["species"]), False)
+
+    # Chua tung tra owodex loai nao -> pet_dex = None (khong phai list rong)
+    m2 = bot_mod.mdb = AsyncMongoMockClient()["pet_dex_empty"]
+    check("pet_dex: chua tra owodex loai nao -> None", (await bot_mod.build_hub(datetime.utcnow()))["pet_dex"], None)
+    check("pet_dex: JSON hop le", isinstance(json.dumps(hub), str), True)
+
+
+asyncio.run(run_pet_dex_tests())
+
 print("\n" + ("=" * 40))
 if failures:
     print(f"{FAIL} {len(failures)} test thất bại: {failures}")
