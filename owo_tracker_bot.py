@@ -262,6 +262,25 @@ def weapon_owner_matches(owner, names):
     return bool(key) and any(_name_key(n) == key for n in names if n)
 
 
+def speaker_name(text):
+    """Ten nguoi choi o dong dau tin OwO: '**🌱 | Ruby**, hunt…' / '**| Ruby**, you currently…' -> 'Ruby'."""
+    m = re.search(r"\*\*[^|\n*]{0,8}\|\s*([^*\n]+?)\s*\*\*", text or "")
+    return clean_owner_name(m.group(1)) if m else None
+
+
+def header_owner(text):
+    """Ten chu trong tieu de zoo / kho: \"Ruby's zoo!\" , \"Ruby's Inventory\" -> 'Ruby'."""
+    m = re.search(r"([^\n=*]+?)'s (?:zoo|Inventory)", text or "")
+    return clean_owner_name(m.group(1)) if m else None
+
+
+async def tracked_name_set(source_id):
+    names = set(tracked_names.get(str(source_id), set()))
+    aliases = await get_config("weapon_owner_aliases", "") or ""
+    names |= {a.strip() for a in aliases.split(",") if a.strip()}
+    return names
+
+
 def parse_weapon_detail(text: str):
     """Trả về dict gồm: loại vũ khí, ID, quality, mô tả chính, các hiệu
     ứng cố định thuộc về loại vũ khí (vd Mortality/Taunt), và passive
@@ -349,7 +368,14 @@ def parse_team(text: str):
             "weaponId": weapon_m.group(1) if weapon_m else None,
             "quality": float(quality_m.group(1)) if quality_m else None,
         }
-        if len(nums) >= 6:
+        # Dinh dang HIEN TAI cua OwO: <:hp:ID> `1130` <:wp:ID> `1060` ... — moi so dung ngay sau
+        # emoji ten chi so. Doc theo NHAN nen khong bao gio lech (so cu tung doc nham Lvl thanh HP).
+        labeled = {}
+        for lm in re.finditer(r"<a?:(hp|wp|att|mag|pr|mr):\d+>\s*`?([\d,]+)%?`?", block):
+            labeled.setdefault(lm.group(1), int(lm.group(2).replace(",", "")))
+        if len(labeled) == 6:
+            entry.update(labeled)
+        elif len(nums) >= 6:  # dinh dang cu (khong co emoji nhan): so xep theo thu tu
             entry.update({"hp": int(nums[0]), "wp": int(nums[1]), "att": int(nums[2]),
                           "mag": int(nums[3]), "pr": int(nums[4]), "mr": int(nums[5])})
         result.append(entry)
@@ -579,11 +605,11 @@ def parse_gem_name(emoji_name: str):
     return {"tier": _GEM_TIER_PREFIX.get(m.group(1)), "slot": m.group(2)}
 
 
-def parse_inventory(text: str):
+def parse_inventory(text: str, continuation: bool = False):
     """owo inventory — danh sách item, mỗi item có mã 3 số (backtick),
     emoji tên item, và số lượng bằng chữ số mũ ngay sau (không có dấu
     cách). Trả về cả item thường lẫn gem — gem được đánh dấu is_gem."""
-    if "Inventory" not in text:
+    if "Inventory" not in text and not continuation:
         return None
     pattern = re.compile(r"`(\d{3})`<(a)?:([a-zA-Z0-9_]+):(\d+)>([⁰¹²³⁴⁵⁶⁷⁸⁹]+)")
     items = []
@@ -668,7 +694,7 @@ async def handle_zoo_text(channel_id, text, source_id=None):
                 # Chi bao khi tin nay TRONG GIONG zoo (co "Zoo Points" hoac dong pet co so mu) —
                 # cua so cho la 30 phut nen moi tin owo khac (cash, daily...) cung roi vao day,
                 # neu khong loc se spam log.
-                looks_zoo = "Zoo Points" in text or bool(re.search(r"<a?:\w+:\d+>[⁰¹²³⁴⁵⁶⁷⁸⁹]", text))
+                looks_zoo = "Zoo Points" in text or bool(re.search(r"(?<!`)<a?:\w+:\d+>[⁰¹²³⁴⁵⁶⁷⁸⁹]", text))
                 if looks_zoo:
                     print(f"[tracker][zoo] tin giong zoo toi trong cua so ({age:.1f}s) nhung parse_zoo khong "
                           f"nhan dien duoc dong dau la tier tag — bo qua. Dong dau: {text.splitlines()[:1]!r}")
@@ -697,6 +723,29 @@ async def save_zoo(z, source_id=None):
                   "updated_at": datetime.utcnow().isoformat(), "updated_by": source_id}},
         upsert=True,
     )
+
+
+INV_PART_WINDOW = 600  # giay: kho do dai nen OwO chia 2 tin; tin 2 khong co tieu de "Inventory"
+inv_session = {}  # channel_id -> thoi diem tin kho gan nhat
+
+
+async def handle_inventory_text(channel_id, text, source_id=None):
+    """Tin co tieu de -> kho moi. Tin KHONG tieu de nhung toi ngay sau (trong INV_PART_WINDOW)
+    va chi gom dong item -> phan tiep theo cua cung 1 kho. Tra ve (loai, ket qua) hoac (None, None)."""
+    inv = parse_inventory(text)
+    kind = "inventory"
+    if not inv:
+        ts = inv_session.get(channel_id)
+        if ts is not None and time.time() - ts < INV_PART_WINDOW:
+            inv = parse_inventory(text, continuation=True)
+            kind = "inventory_2"
+        elif ts is not None:
+            inv_session.pop(channel_id, None)
+    if not inv:
+        return None, None
+    inv_session[channel_id] = time.time()
+    await save_inventory(inv, source_id)
+    return kind, inv
 
 
 async def save_inventory(inv, source_id=None):
@@ -999,18 +1048,18 @@ async def _hub_zoo(now):
         pets.append(pet)
     list_total = sum(t["total"] for t in by_tier.values())
 
-    # Tong pet lay tu DONG CUOI cua bang zoo (so lieu day du) khi dong do phu du
-    # moi tier; thieu tier nao thi quay ve cach cong cac so nho trong bang.
+    # So nho trong bang (chu so mu) = pet DANG CO. Dong cuoi (F-6, CP-16, ... C-478489) = so pet
+    # DA BAT tu truoc toi nay (ban/hien te di van khong giam) — chi de tham khao, KHONG phai tong pet.
     breakdown = parse_zoo_breakdown(doc.get("breakdown_raw"))
-    use_breakdown = bool(breakdown) and all(tier in breakdown for tier in by_tier)
-    if use_breakdown:
-        for tier, t in by_tier.items():
-            t["total"] = breakdown[tier]
+    for tier, t in by_tier.items():
+        if tier in breakdown:
+            t["caught"] = breakdown[tier]
     return _with_age({
         "zoo_points": doc.get("zoo_points"), "breakdown_raw": doc.get("breakdown_raw"),
-        "total_pets": sum(breakdown.values()) if use_breakdown else list_total,
-        "total_source": "breakdown" if use_breakdown else "list",
+        "total_pets": list_total,
+        "total_source": "list",
         "list_total": list_total,
+        "caught_total": sum(breakdown.values()) if breakdown else None,
         "by_tier": by_tier, "pets": pets,
     }, doc.get("updated_at"), now)
 
@@ -1303,8 +1352,11 @@ async def on_message(message: discord.Message):
     if message.author.id == OWO_BOT_ID:
         last = pending_commands.get(message.channel.id)
         if last and (time.time() - last) < CORRELATION_WINDOW:
-            pending_commands[message.channel.id] = time.time()
+            # KHONG gia han cua so khi OwO tra loi: neu gia han, tin OwO tra loi nguoi KHAC
+            # trong cung kenh se bi tinh la cua ban (gem, tien, zoo cua nguoi do lan vao du lieu).
             await handle_owo_response(message, tracked_id)
+        elif _continuation_open(message.channel.id):
+            await handle_continuation_only(message, tracked_id)
 
     await bot.process_commands(message)
 
@@ -1405,6 +1457,16 @@ async def handle_owo_response(message: discord.Message, source_id):
     if not text.strip():
         return
 
+    # Tin OwO tra loi NGUOI KHAC (ten o dong dau / tieu de khong khop ten ban) -> bo qua.
+    # Chua biet ten nao (bot vua khoi dong, ban chua go lenh) thi khong loc.
+    who = speaker_name(text) or header_owner(text)
+    if who:
+        names = await tracked_name_set(source_id)
+        if names and not weapon_owner_matches(who, names):
+            print(f"[tracker] Bo qua tin cua '{who}' (khong khop {sorted(names)})")
+            await record_raw("foreign_skipped", text, {"ten_trong_tin": who, "ten_chap_nhan": sorted(names)}, message)
+            return
+
     await remember_emojis(text)
     recognized = False  # co loai nao nhan ra tin nay khong (neu khong -> ghi vao "unrecognized")
 
@@ -1477,10 +1539,9 @@ async def handle_owo_response(message: discord.Message, source_id):
         }, message)
         recognized = True
 
-    inv = parse_inventory(text)
-    if inv:
-        await save_inventory(inv, source_id)
-        await record_raw("inventory", text, inv, message)
+    inv_kind, inv = await handle_inventory_text(message.channel.id, text, source_id)
+    if inv_kind:
+        await record_raw(inv_kind, text, inv, message)
         recognized = True
 
     gem_status = parse_hunt_gem_status(text)
@@ -1494,6 +1555,34 @@ async def handle_owo_response(message: discord.Message, source_id):
 
     if not recognized:
         await record_unrecognized(text, message)
+
+
+def _continuation_open(channel_id):
+    now = time.time()
+    z = zoo_session.get(channel_id)
+    i = inv_session.get(channel_id)
+    return bool((z and now - z["ts"] < ZOO_PART_WINDOW) or (i is not None and now - i < INV_PART_WINDOW))
+
+
+async def handle_continuation_only(message: discord.Message, source_id):
+    """Cua so lenh da dong nhung dang cho phan 2 cua zoo/kho: chi nhan tin NOI TIEP (khong tieu de).
+    Tin co tieu de (co the cua nguoi khac) hoac loai tin khac bi bo qua."""
+    text = flatten_message(message)
+    if not text.strip() or "'s zoo" in text or "zoo!" in text.lower() or "Inventory" in text:
+        return
+    # Dong item cua kho bat dau bang `123`<:emoji:id>so-mu -> di duong kho truoc, tranh zoo doc nham
+    if re.search(r"`\d{3}`<a?:\w+:\d+>[⁰¹²³⁴⁵⁶⁷⁸⁹]", text):
+        inv_kind, inv = await handle_inventory_text(message.channel.id, text, source_id)
+        if inv_kind:
+            await record_raw(inv_kind, text, inv, message)
+        return
+    zoo_kind, zoo_result = await handle_zoo_text(message.channel.id, text, source_id)
+    if zoo_kind:
+        await record_raw(zoo_kind, text, {
+            "pets_da_ghep_tong": len(zoo_result["pets"]),
+            "zoo_points": zoo_result.get("zoo_points"),
+            "breakdown_raw": zoo_result.get("breakdown_raw"),
+        }, message)
 
 
 async def remind_gem_replacement(message: discord.Message, slot: str, source_id):

@@ -665,10 +665,10 @@ async def run_zoo_split_tests():
     z = hub["zoo"]
     check("hub: zoo co du tier moi + diem", (z["zoo_points"], "cpatreon" in z["by_tier"], "gem" in z["by_tier"]),
           (13559875, True, True))
-    check("hub: tong pet lay tu DONG CUOI (748,012), khong phai cong cac so nho",
-          (z["total_pets"], z["total_source"], z["list_total"]), (748012, "breakdown", 1718))
-    check("hub: tung tier theo dong cuoi (common 439,810; epic 7,448; fabled 3)",
-          (z["by_tier"]["common"]["total"], z["by_tier"]["epic"]["total"], z["by_tier"]["fabled"]["total"]),
+    check("hub: tong pet = so DANG CO (cong cac so nho trong bang), dong cuoi chi la 'da bat'",
+          (z["total_pets"], z["total_source"], z["list_total"], z["caught_total"]), (1718, "list", 1718, 748012))
+    check("hub: tung tier — dang co o 'total', da bat o 'caught' (common 439,810; epic 7,448; fabled 3)",
+          (z["by_tier"]["common"]["caught"], z["by_tier"]["epic"]["caught"], z["by_tier"]["fabled"]["caught"]),
           (439810, 7448, 3))
     check("hub: so loai (species) van dem tu bang (common 5 loai, mythic 1 loai)",
           (z["by_tier"]["common"]["species"], z["by_tier"]["mythic"]["species"]), (5, 1))
