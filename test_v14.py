@@ -50,6 +50,22 @@ INV2 = "`123`<:cstaff:1449685764966453349>⁰¹³    `124`<:stithe:1456101001152
 check("kho phần 2 (không tiêu đề) chỉ đọc khi bật continuation",
       (b.parse_inventory(INV2), [i["count"] for i in b.parse_inventory(INV2, continuation=True)["items"]]), (None, [13, 9]))
 
+# v15: tên toàn ký hiệu không bị coi là người khác
+check("tên ký hiệu: khớp nguyên văn", b.weapon_owner_matches("✨", {"✨"}), True)
+check("tên ký hiệu: khác tên thì không khớp", b.weapon_owner_matches("✨", {"Ruby"}), False)
+check("tên thường vẫn khớp không phân biệt hoa/thường/dấu cách", b.weapon_owner_matches("ruby  ", {"Ruby"}), True)
+check("tên rỗng không khớp gì", b.weapon_owner_matches("", {"Ruby", ""}), False)
+
+# v15: reply — chỉ bỏ khi CHẮC CHẮN OwO trả lời người khác
+ns = types.SimpleNamespace
+def reply_msg(author_id):
+    return ns(reference=ns(resolved=ns(author=ns(id=author_id))))
+check("reply: không có reference -> khong_co", b.reply_target(ns(reference=None), "5"), "khong_co")
+check("reply: tin gốc đã bị xóa (không có author) -> khong_co (giữ tin)", b.reply_target(ns(reference=ns(resolved=ns())), "5"), "khong_co")
+check("reply: trả lời bạn -> ban", b.reply_target(reply_msg(5), "5"), "ban")
+check("reply: trả lời người khác -> nguoi_khac", b.reply_target(reply_msg(9), "5"), "nguoi_khac")
+check("reply: message không có thuộc tính reference -> khong_co", b.reply_target(ns(), "5"), "khong_co")
+
 # Luồng đầy đủ với DB giả tối thiểu
 class Col:
     def __init__(s): s.d = {}
@@ -80,8 +96,12 @@ async def run():
     b.tracked_names["u1"] = {"Ruby"}
     await b.handle_owo_response(msg(HUNT.replace("| Ruby**", "| Linh**"), 2), "u1")
     check("người khác: gem KHÔNG bị ghi", len(b.mdb[b.COL_GEM_STATUS].d), 0)
+    check("người khác: bot nhớ tên bị bỏ để ,status báo", (b.skipped_foreign["name"], b.skipped_foreign["count"]), ("Linh", 1))
     await b.handle_owo_response(msg(HUNT, 2), "u1")
     check("của mình: gem được ghi", sorted(b.mdb[b.COL_GEM_STATUS].d), ["1", "4"])
+    await b.set_config("tracked_user_id", "5")
+    await b.record_raw("kiem_tra", "x", {}, ns(channel=ns(id=2), reference=ns(resolved=ns(author=ns(id=5)))))
+    check("record_raw ghi reply_to để biết OwO có dùng reply không", b.mdb[b.COL_RAW].d["kiem_tra"]["reply_to"], "ban")
 
 asyncio.run(run())
 print("\n❌ CÓ LỖI:" if fails else "\n✅ Toàn bộ test v14 pass", fails or "")

@@ -130,6 +130,7 @@ def resolve_emoji(name):
 
 pending_commands = {}  # channel_id -> timestamp gần nhất có lệnh owo từ tracked user
 tracked_names = {}  # user_id (chuỗi) -> các tên Discord của người đó (ghi lại mỗi khi họ gõ lệnh owo)
+skipped_foreign = {"name": None, "count": 0}  # tin OwO bi bo qua vi ten khac ten ban (de ,status / ,weaponowner bao)
 skipped_weapon = {"owner": None, "id": None}  # vũ khí gần nhất bị bỏ qua vì sai chủ (để lệnh ,weaponowner báo)
 last_owo_command = {}  # channel_id -> nội dung lệnh owo gần nhất (chữ thường), để biết tin OwO đang trả lời lệnh nào
 _automacro_api_started = False
@@ -259,7 +260,22 @@ def _name_key(name):
 
 def weapon_owner_matches(owner, names):
     key = _name_key(owner)
-    return bool(key) and any(_name_key(n) == key for n in names if n)
+    if not key:
+        # Ten toan emoji / ky hieu: khoa so sanh rong -> so nguyen van (khong phan biet hoa thuong)
+        raw = (owner or "").strip().casefold()
+        return bool(raw) and any((n or "").strip().casefold() == raw for n in names if n)
+    return any(_name_key(n) == key for n in names if n)
+
+
+def reply_target(message, tracked_id):
+    """OwO co tra loi (reply) tin nao khong? 'khong_co' = khong co / khong doc duoc,
+    'ban' = tra loi tin cua nguoi duoc theo doi, 'nguoi_khac' = tra loi tin cua nguoi khac."""
+    ref = getattr(message, "reference", None)
+    resolved = getattr(ref, "resolved", None) if ref else None
+    author = getattr(resolved, "author", None)
+    if author is None:
+        return "khong_co"
+    return "ban" if str(getattr(author, "id", "")) == str(tracked_id) else "nguoi_khac"
 
 
 def speaker_name(text):
@@ -1349,7 +1365,10 @@ async def on_message(message: discord.Message):
         await bot.process_commands(message)
         return
 
-    if message.author.id == OWO_BOT_ID:
+    if message.author.id == OWO_BOT_ID and reply_target(message, tracked_id) == "nguoi_khac":
+        # Chac chan OwO dang tra loi tin cua NGUOI KHAC -> bo qua, du loai tin nao (team, quest, ...)
+        print("[tracker] Bo qua tin OwO tra loi nguoi khac (reply)")
+    elif message.author.id == OWO_BOT_ID:
         last = pending_commands.get(message.channel.id)
         if last and (time.time() - last) < CORRELATION_WINDOW:
             # KHONG gia han cua so khi OwO tra loi: neu gia han, tin OwO tra loi nguoi KHAC
@@ -1433,6 +1452,8 @@ async def record_raw(kind, text, parsed, message, extra=None):
         "command": last_owo_command.get(message.channel.id, ""),
         "channel_id": str(message.channel.id),
         "at": datetime.utcnow().isoformat() + "Z",
+        # OwO co dung reply khong? (neu co, bot se bo tin tra loi nguoi khac chinh xac hon)
+        "reply_to": reply_target(message, await get_config("tracked_user_id")),
     }
     if extra:
         doc.update(extra)
@@ -1464,6 +1485,8 @@ async def handle_owo_response(message: discord.Message, source_id):
         names = await tracked_name_set(source_id)
         if names and not weapon_owner_matches(who, names):
             print(f"[tracker] Bo qua tin cua '{who}' (khong khop {sorted(names)})")
+            skipped_foreign["name"] = who
+            skipped_foreign["count"] += 1
             await record_raw("foreign_skipped", text, {"ten_trong_tin": who, "ten_chap_nhan": sorted(names)}, message)
             return
 
@@ -1745,6 +1768,9 @@ async def weaponowner_cmd(ctx, *, aliases: str = ""):
              f"Tên thêm tay: {extra or '(không có)'}"]
     if skipped_weapon["owner"] is not None:
         lines.append(f"Vũ khí gần nhất bị bỏ qua: `{skipped_weapon['id']}` — chủ ghi là **{skipped_weapon['owner']}**")
+    if skipped_foreign["name"] is not None:
+        lines.append(f"Tin gần nhất bị bỏ qua vì tên khác: **{skipped_foreign['name']}** "
+                     f"({skipped_foreign['count']} tin từ lúc bot chạy). Nếu đó là bạn: `,weaponowner {skipped_foreign['name']}`")
     await ctx.send("\n".join(lines))
 
 
@@ -1758,6 +1784,10 @@ async def status(ctx):
     tracked_channel = await get_config("tracked_channel_id")
     embed.add_field(name="Giới hạn kênh",
                      value=f"<#{tracked_channel}>" if tracked_channel else "Không giới hạn — mọi kênh", inline=False)
+    if skipped_foreign["name"] is not None:
+        embed.add_field(name="Tin bị bỏ qua (tên khác bạn)",
+                         value=f"{skipped_foreign['count']} tin, gần nhất của **{skipped_foreign['name']}**. "
+                               f"Nếu đó là bạn: `,weaponowner {skipped_foreign['name']}`", inline=False)
     if last_hunt:
         state = f"{last_hunt['progress_pct']}% · {last_hunt['animals_captured']} pet · còn {last_hunt['time_remaining']}" \
             if last_hunt["hunting"] else "Không đang hunt"
