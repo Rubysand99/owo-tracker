@@ -234,6 +234,15 @@ Bot còn đọc thêm 3 loại tin nhắn:
   Xem lại bằng `,zoo [tìm]`.
 - **`owo inventory`** — lưu toàn bộ item (gem, crate, vé, vũ khí thô...).
   Xem lại bằng `,inv [tìm]`.
+  **Mỗi lần gõ `owo inv` là một lần chụp mới (v16):** tin 1 (có tiêu đề) và
+  tin 2 (không tiêu đề, nếu có) cùng thuộc một snapshot. Sau khi các tin đã tới
+  (chờ `INV_PRUNE_GRACE` = 20 giây), món nào KHÔNG có trong lần chụp mới sẽ bị
+  xóa — nên gem F, star, box, crate đã hết sẽ không còn nằm lại trong Hub.
+  Hai chỗ an toàn: lần chụp đọc được ít hơn `INV_MIN_ITEMS` = 3 món thì coi như
+  đọc hỏng và giữ nguyên kho cũ; tin 2 "mồ côi" (bot vừa khởi động lại, không
+  biết tin 1) chỉ được ghi thêm, không xóa gì. Dữ liệu `gems.spare_updated_at` /
+  `spare_age_seconds` trong `/hub` là giờ cập nhật riêng của gem dự phòng
+  (lấy từ `owo inv`), tách khỏi gem đang dùng (lấy từ `owo hunt`).
 - **`owo hunt` / `owo autohunt`** — đọc dòng "hunt is empowered by..."
   để biết đang trang bị gem nào, độ bền còn bao nhiêu.
 

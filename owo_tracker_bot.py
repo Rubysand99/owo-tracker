@@ -28,6 +28,7 @@ import re
 import json
 import time
 import hmac
+import uuid
 import asyncio
 from datetime import datetime, timedelta
 
@@ -744,6 +745,49 @@ async def save_zoo(z, source_id=None):
 INV_PART_WINDOW = 600  # giay: kho do dai nen OwO chia 2 tin; tin 2 khong co tieu de "Inventory"
 inv_session = {}  # channel_id -> thoi diem tin kho gan nhat
 
+# --- "Moi lan go owo inv = 1 lan chup moi" ---
+# Truoc day bot chi them/cap nhat tung mon, KHONG BAO GIO xoa mon da het (gem F, star,
+# crate da dung... nam lai mai). Gio moi lan chup (tin co tieu de + tin 2 neu co) duoc
+# danh dau bang 1 snapshot id; sau khi cac tin da toi du, mon nao KHONG co trong lan
+# chup moi se bi xoa.
+INV_MIN_ITEMS = 3      # lan chup doc duoc it hon so mon nay -> coi nhu doc hong, KHONG xoa gi
+INV_PRUNE_GRACE = 20   # giay cho tin 2 toi truoc khi xoa mon cu (moi tin toi lai tinh lai tu dau)
+inv_snapshot = {}      # channel_id -> {"id": snapshot id hien tai, "count": so mon da doc duoc}
+inv_prune_tasks = {}   # channel_id -> asyncio.Task dang cho de xoa mon cu
+
+
+async def prune_inventory(snapshot_id):
+    """Xoa moi mon khong thuoc lan chup `snapshot_id` (ke ca dong cu chua tung co snapshot_id).
+    Tra ve so dong da xoa."""
+    res = await mdb[COL_INVENTORY].delete_many({"snapshot_id": {"$ne": snapshot_id}})
+    return res.deleted_count
+
+
+async def _prune_later(channel_id, snapshot_id):
+    try:
+        await asyncio.sleep(INV_PRUNE_GRACE)
+        snap = inv_snapshot.get(channel_id)
+        # Co lan chup moi hon chen vao trong luc cho -> bo qua, lan chup moi tu lo.
+        if not snap or snap["id"] != snapshot_id:
+            return
+        if snap["count"] < INV_MIN_ITEMS:
+            print(f"[tracker] Kho chi doc duoc {snap['count']} mon (<{INV_MIN_ITEMS}) -> giu nguyen kho cu, khong xoa")
+            return
+        removed = await prune_inventory(snapshot_id)
+        if removed:
+            print(f"[tracker] Kho moi thay the kho cu: xoa {removed} mon khong con trong kho")
+    except asyncio.CancelledError:
+        pass
+    except Exception as e:
+        print(f"[tracker] Loi khi don kho cu: {e!r}")
+
+
+def _schedule_prune(channel_id, snapshot_id):
+    old = inv_prune_tasks.get(channel_id)
+    if old and not old.done():
+        old.cancel()
+    inv_prune_tasks[channel_id] = asyncio.ensure_future(_prune_later(channel_id, snapshot_id))
+
 
 async def handle_inventory_text(channel_id, text, source_id=None):
     """Tin co tieu de -> kho moi. Tin KHONG tieu de nhung toi ngay sau (trong INV_PART_WINDOW)
@@ -760,17 +804,30 @@ async def handle_inventory_text(channel_id, text, source_id=None):
     if not inv:
         return None, None
     inv_session[channel_id] = time.time()
-    await save_inventory(inv, source_id)
+    if kind == "inventory":
+        inv_snapshot[channel_id] = {"id": uuid.uuid4().hex, "count": 0}
+    elif channel_id not in inv_snapshot:
+        # Tin 2 mo coi (khong biet tin 1 o dau): chi ghi them, tuyet doi khong xoa gi.
+        await save_inventory(inv, source_id)
+        return kind, inv
+    snap = inv_snapshot[channel_id]
+    snap["count"] += len(inv["items"])
+    await save_inventory(inv, source_id, snapshot_id=snap["id"])
+    _schedule_prune(channel_id, snap["id"])
     return kind, inv
 
 
-async def save_inventory(inv, source_id=None):
+async def save_inventory(inv, source_id=None, snapshot_id=None):
     """Mỗi item lưu riêng 1 document (khoá theo mã 3 số) — để dễ tra cứu
-    từng item và để lệnh ,gems tìm đúng mã cho `owo use`."""
+    từng item và để lệnh ,gems tìm đúng mã cho `owo use`.
+    snapshot_id: dau cua lan chup kho hien tai (xem prune_inventory)."""
     for item in inv["items"]:
+        doc = {**item, "updated_at": datetime.utcnow().isoformat(), "updated_by": source_id}
+        if snapshot_id:
+            doc["snapshot_id"] = snapshot_id
         await mdb[COL_INVENTORY].update_one(
             {"_id": item["code"]},
-            {"$set": {**item, "updated_at": datetime.utcnow().isoformat(), "updated_by": source_id}},
+            {"$set": doc},
             upsert=True,
         )
 
@@ -933,7 +990,13 @@ async def _hub_gems(now):
          for r in spare_rows),
         key=lambda x: (x["slot"] or "", x["tier_rank"]),
     )
-    return {"equipped": equipped, "spare": spare}
+    # Gem dang dung lay tu tin owo hunt, gem du phong lay tu tin owo inv -> 2 nguon, 2 gio rieng.
+    spare_latest = max((r.get("updated_at") or "" for r in spare_rows), default="") or None
+    return {
+        "equipped": equipped, "spare": spare,
+        "spare_updated_at": _iso_z(spare_latest) if spare_latest else None,
+        "spare_age_seconds": _age_seconds(spare_latest, now) if spare_latest else None,
+    }
 
 
 async def _hub_huntbot(now):
