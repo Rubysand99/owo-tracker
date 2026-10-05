@@ -80,6 +80,7 @@ COL_EMOJI = "owot_emoji_registry"
 COL_RAW = "owot_raw_samples"
 COL_BATTLE = "owot_battle_status"      # v17: chuoi battle moi nhat
 COL_NEW_PETS = "owot_new_pets"          # v17: pet vua bat duoc ma chua co trong zoo
+COL_ALERTS = "owot_alerts"              # v18: canh bao captcha cua OwO
 
 EMOJI_TAG = re.compile(r"<(a)?:(\w+):(\d+)>")
 
@@ -1374,6 +1375,97 @@ async def _hub_new_pets(now):
     return {"pets": pets}
 
 
+# ----------------------------------------------------------------------
+# CAPTCHA: OwO nghi ban spam -> bot (mat) bao cho app (tay) DUNG ngay + reo chuong
+# ----------------------------------------------------------------------
+CAPTCHA_ACTIVE_SECONDS = 12 * 60   # OwO cho 10 phut; qua 12 phut thi tu coi la het hieu luc
+_ZERO_WIDTH_RE = re.compile("[\u200b-\u200f\u2060\ufeff]")
+_CAPTCHA_PHRASES = (
+    "are you a real human",
+    "complete this within 10 minutes",
+    "complete your captcha",
+    "use the link below so i can check",
+)
+_CAPTCHA_SOLVED_RE = re.compile(r"(verified|you are human|you're human)[^\n]{0,80}thank", re.I)
+
+
+def normalize_alert_text(text: str) -> str:
+    """Bo ky tu vo hinh (zero-width), gop khoang trang, chu thuong - de so khop cau canh bao."""
+    t = _ZERO_WIDTH_RE.sub("", text or "")
+    return re.sub(r"\s+", " ", t).strip().lower()
+
+
+def is_captcha_text(text: str) -> bool:
+    norm = normalize_alert_text(text)
+    return any(ph in norm for ph in _CAPTCHA_PHRASES)
+
+
+def is_captcha_solved_text(text: str) -> bool:
+    return bool(_CAPTCHA_SOLVED_RE.search(normalize_alert_text(text)))
+
+
+async def captcha_addressed_to_tracked(message, text: str, tracked_id) -> bool:
+    """Canh bao captcha nay la goi BAN? Chua biet ban la ai -> coi la cua ban (thà dung nham con hon bo sot)."""
+    if not tracked_id:
+        return True
+    tid = str(tracked_id)
+    raw = _ZERO_WIDTH_RE.sub("", text or "")
+    if f"<@{tid}>" in raw or f"<@!{tid}>" in raw:
+        return True
+    if any(str(getattr(u, "id", "")) == tid for u in (getattr(message, "mentions", None) or [])):
+        return True
+    if reply_target(message, tracked_id) == "ban":
+        return True
+    names = await tracked_name_set(tracked_id)
+    low = normalize_alert_text(raw)
+    if any(n and n.lower() in low for n in names):
+        return True
+    # tin co nhac 1 nguoi KHAC (khong phai ban) -> la captcha cua nguoi khac
+    return not re.search(r"<@!?\d+>", raw)
+
+
+async def check_captcha_message(message, tracked_id):
+    """Goi voi MOI tin cua OwO trong kenh duoc theo doi (khong can doi ban vua go lenh)."""
+    text = flatten_message(message)
+    if not text.strip():
+        return
+    if is_captcha_text(text):
+        if not await captcha_addressed_to_tracked(message, text, tracked_id):
+            print("[tracker][captcha] Canh bao captcha cua nguoi khac - bo qua")
+            return
+        now_iso = datetime.utcnow().isoformat()
+        await mdb[COL_ALERTS].update_one(
+            {"_id": "captcha"},
+            {"$set": {"active": True, "at": now_iso, "cleared_at": None}},
+            upsert=True)
+        print("[tracker][captcha] !!! OwO DOI CAPTCHA - bao app dung farm + reo chuong")
+        await record_raw("captcha", text, {"active": True}, message)
+    elif is_captcha_solved_text(text):
+        doc = await mdb[COL_ALERTS].find_one({"_id": "captcha"})
+        if doc and doc.get("active"):
+            await mdb[COL_ALERTS].update_one(
+                {"_id": "captcha"},
+                {"$set": {"active": False, "cleared_at": datetime.utcnow().isoformat()}})
+            print("[tracker][captcha] OwO xac nhan da giai captcha - het canh bao")
+
+
+async def get_captcha_state(now=None):
+    """{'active': bool, 'at': iso, 'age_seconds': n}. Qua CAPTCHA_ACTIVE_SECONDS thi tu het hieu luc."""
+    now = now or datetime.utcnow()
+    doc = await mdb[COL_ALERTS].find_one({"_id": "captcha"}) or {}
+    at = doc.get("at")
+    age = _age_seconds(at, now) if at else None
+    active = bool(doc.get("active")) and age is not None and age < CAPTCHA_ACTIVE_SECONDS
+    return {"active": active, "at": _iso_z(at), "age_seconds": age}
+
+
+async def handle_get_alerts(request: web.Request):
+    """App goi moi vai giay khi dang farm: nhe, chi tra canh bao captcha."""
+    if not _check_api_token(request):
+        return web.json_response({"error": "unauthorized"}, status=401)
+    return web.json_response({"captcha": await get_captcha_state()})
+
+
 async def _hub_channel():
     """Kenh duoc chi dinh bang ,setchannel -> link Discord de app tu mo dung kenh.
     Link dang https://discord.com/channels/<server>/<kenh>. Chua dat kenh hoac bot khong
@@ -1416,6 +1508,7 @@ async def build_hub(now=None):
         "battle": await _hub_battle(now),
         "new_pets": await _hub_new_pets(now),
         "channel": await _hub_channel(),
+        "captcha": await get_captcha_state(now),
     }
 
 
@@ -1435,6 +1528,7 @@ async def start_automacro_api_server():
     app.router.add_get("/commands/pending", handle_get_pending_commands)
     app.router.add_post("/commands/{id}/ack", handle_ack_command)
     app.router.add_get("/hub", handle_get_hub)
+    app.router.add_get("/alerts", handle_get_alerts)
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, "0.0.0.0", AUTOMACRO_API_PORT)
@@ -1627,6 +1721,12 @@ async def on_message(message: discord.Message):
         }
         await bot.process_commands(message)
         return
+
+    if message.author.id == OWO_BOT_ID:
+        try:
+            await check_captcha_message(message, tracked_id)
+        except Exception as e:  # khong de loi o day lam hong luong doc tin con lai
+            print(f"[tracker][captcha] Loi kiem tra captcha: {e!r}")
 
     if message.author.id == OWO_BOT_ID and reply_target(message, tracked_id) == "nguoi_khac":
         # Chac chan OwO dang tra loi tin cua NGUOI KHAC -> bo qua, du loai tin nao (team, quest, ...)
@@ -2209,6 +2309,23 @@ async def gems_cmd(ctx):
                          value=f"{r['current']}/{r['max']} ({pct}%)", inline=True)
     embed.set_footer(text="Slot biến mất khỏi tin hunt = hết độ bền, bot sẽ tự nhắc owo use.")
     await ctx.send(embed=embed)
+
+
+@bot.command(name="captcha")
+async def captcha_cmd(ctx, action: str = ""):
+    """,captcha = xem trang thai canh bao captcha. ,captcha clear = tu bao da giai xong (huy canh bao)."""
+    if action.lower() in ("clear", "xoa", "huy", "xong"):
+        await mdb[COL_ALERTS].update_one(
+            {"_id": "captcha"},
+            {"$set": {"active": False, "cleared_at": datetime.utcnow().isoformat()}}, upsert=True)
+        await ctx.send("Đã huỷ cảnh báo captcha. Có thể bấm Bắt đầu farm lại trong app.")
+        return
+    st = await get_captcha_state()
+    if st["active"]:
+        mins = (st["age_seconds"] or 0) // 60
+        await ctx.send(f"🚨 OwO đang đòi captcha (cách đây khoảng {mins} phút). Giải xong thì gõ `,captcha clear`.")
+    else:
+        await ctx.send("✅ Không có cảnh báo captcha nào đang hiệu lực.")
 
 
 @bot.command(name="automacro")
