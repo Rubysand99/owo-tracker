@@ -78,6 +78,8 @@ COL_DAILY = "owot_daily_status"
 COL_COWONCY = "owot_cowoncy"
 COL_EMOJI = "owot_emoji_registry"
 COL_RAW = "owot_raw_samples"
+COL_BATTLE = "owot_battle_status"      # v17: chuoi battle moi nhat
+COL_NEW_PETS = "owot_new_pets"          # v17: pet vua bat duoc ma chua co trong zoo
 
 EMOJI_TAG = re.compile(r"<(a)?:(\w+):(\d+)>")
 
@@ -665,6 +667,70 @@ def parse_hunt_gem_status(text: str):
     return {"gems": gems}
 
 
+def parse_battle(text: str):
+    """owo battle — dong cuoi cua tin (footer):
+      thang:            'You won in 7 turns!  |  +200 xp  |  Streak: 144'
+      thua (khong co chuoi): 'You lost in 10 turns!  |  +80 xp'
+      thua (cat chuoi):  'You lost in 16 turns!  |  +70 xp  |  Streak ended at 1'
+    Thua = chuoi hien tai ve 0 ('ended at N' la chuoi da MAT, khong phai chuoi hien tai)."""
+    m = re.search(r"You\s+(won|lost)\s+in\s+(\d+)\s+turns?\b[^\n]*", text or "", re.I)
+    if not m:
+        return None
+    line = m.group(0)
+    result = m.group(1).lower()
+    xp_m = re.search(r"\+\s*([\d,]+)\s*xp", line, re.I)
+    streak_m = re.search(r"Streak\s*:\s*(\d+)", line, re.I)
+    ended_m = re.search(r"Streak\s+ended\s+at\s+(\d+)", line, re.I)
+    if result == "won":
+        streak = int(streak_m.group(1)) if streak_m else None  # thang ma khong ghi chuoi -> chua biet
+        lost_streak = None
+    else:
+        streak = 0
+        lost_streak = int(ended_m.group(1)) if ended_m else 0
+    return {
+        "result": result, "turns": int(m.group(2)),
+        "xp": int(xp_m.group(1).replace(",", "")) if xp_m else None,
+        "streak": streak, "lost_streak": lost_streak,
+    }
+
+
+def battle_owner_name(message):
+    """Ten nguoi danh trong tin battle: embed author = 'Ruby goes into battle!' -> 'Ruby'.
+    (flatten_message khong chua author nen phai lay rieng de khong nhan nham battle cua nguoi khac.)"""
+    for e in getattr(message, "embeds", None) or []:
+        author = getattr(e, "author", None)
+        name = getattr(author, "name", None) if author else None
+        if name:
+            m = re.match(r"^(.*?)\s+goes into battle", name, re.I)
+            if m:
+                return clean_owner_name(m.group(1))
+    return None
+
+
+_HUNT_ANIMAL_RE = re.compile(r"<(a)?:(\w+):(\d+)>|:(\w+):")
+
+
+def parse_hunt_found(text: str):
+    """owo hunt — dong 'You found:  :bee: :bee: <a:gowl:123> ...' -> danh sach loai thu
+    (khong trung, giu thu tu). Chi doc dung dong 'You found:', khong lay emoji o dong khac."""
+    m = re.search(r"You found:[ \t]*([^\n]*)", text or "")
+    if not m:
+        return None
+    animals, seen = [], set()
+    for animated, custom_name, custom_id, plain_name in _HUNT_ANIMAL_RE.findall(m.group(1)):
+        name = custom_name or plain_name
+        key = name.lower()
+        if key in seen or key == "blank":
+            continue
+        seen.add(key)
+        entry = {"name": name}
+        if custom_id:
+            entry["emoji_id"] = custom_id
+            entry["emoji_animated"] = bool(animated)
+        animals.append(entry)
+    return {"animals": animals} if animals else None
+
+
 # ----------------------------------------------------------------------
 # LƯU — tất cả upsert theo key tự nhiên (tên pet, tên loại vũ khí, tên
 # passive, ID vũ khí) nên gọi lại nhiều lần không tạo bản trùng.
@@ -855,6 +921,52 @@ async def save_gem_status(gs, source_id=None):
     for slot in vanished_slots:
         await mdb[COL_GEM_STATUS].delete_one({"_id": slot})
     return vanished_slots
+
+
+async def save_battle(b, source_id=None):
+    """Chuoi battle: ghi de ban cu. best_streak = chuoi dai nhat bot tung thay."""
+    prev = await mdb[COL_BATTLE].find_one({"_id": "latest"}) or {}
+    best = max(prev.get("best_streak") or 0, b.get("streak") or 0)
+    doc = {"result": b["result"], "turns": b["turns"], "xp": b["xp"],
+           "streak": b["streak"], "best_streak": best,
+           "updated_at": datetime.utcnow().isoformat(), "updated_by": source_id}
+    if b["result"] == "lost" and (b.get("lost_streak") or 0) > 0:
+        doc["last_lost_streak"] = b["lost_streak"]
+    await mdb[COL_BATTLE].update_one({"_id": "latest"}, {"$set": doc}, upsert=True)
+
+
+async def record_new_pets(found, source_id=None):
+    """So loai thu trong tin hunt voi zoo da luu. Zoo co loai nao (KE CA so luong 0 = da bat,
+    da hien te, van dung duoc de dung doi) thi KHONG phai pet moi. Chua co zoo -> tra None
+    (khong du co so de noi pet nao moi). Tra ve danh sach ten pet moi xuat hien LAN DAU."""
+    zoo_doc = await mdb[COL_ZOO].find_one({"_id": "latest"})
+    if not zoo_doc or not zoo_doc.get("pets"):
+        return None
+    known = {p["name"].lower() for p in zoo_doc["pets"]}
+    now_iso = datetime.utcnow().isoformat()
+    first_time = []
+    for a in found["animals"]:
+        key = a["name"].lower()
+        if key in known:
+            continue
+        sp = await mdb[COL_PET_SPECIES].find_one({"_id": key}) or {}
+        prev = await mdb[COL_NEW_PETS].find_one({"_id": key})
+        fields = {"name": a["name"], "last_found_at": now_iso, "updated_by": source_id,
+                  "rank": sp.get("rank"), "rank_vi": sp.get("rank_vi")}
+        if a.get("emoji_id"):
+            fields["emoji_id"] = a["emoji_id"]
+            fields["emoji_animated"] = a.get("emoji_animated", False)
+        await mdb[COL_NEW_PETS].update_one(
+            {"_id": key},
+            {"$set": fields, "$inc": {"times_found": 1}, "$setOnInsert": {"first_found_at": now_iso}},
+            upsert=True)
+        if not prev:
+            first_time.append(a["name"])
+    cutoff = (datetime.utcnow() - timedelta(days=7)).isoformat()
+    await mdb[COL_NEW_PETS].delete_many({"last_found_at": {"$lt": cutoff}})
+    if first_time:
+        print(f"[tracker][hunt] PET MOI (chua co trong zoo): {', '.join(first_time)}")
+    return first_time
 
 
 # ----------------------------------------------------------------------
@@ -1111,20 +1223,24 @@ async def _hub_zoo(now):
         return None
     by_tier = {}
     for p in doc.get("pets", []):
-        t = by_tier.setdefault(p["tier"], {"species": 0, "total": 0})
+        t = by_tier.setdefault(p["tier"], {"species": 0, "total": 0, "sacrificed": 0})
         t["total"] += p.get("count", 0)
-        if p.get("count", 0) > 0:
-            t["species"] += 1
+        t["species"] += 1  # loai nao da tung bat = da mo khoa, ke ca so luong 0
+        if p.get("count", 0) <= 0:
+            t["sacrificed"] += 1
     for tier_name, t in by_tier.items():
         t.update(resolve_emoji(tier_name))
     pets = []
+    sacrificed_pets = []  # so luong 0 = da bat, da hien te het: VAN LA DA CO / DA MO KHOA
     for p in doc.get("pets", []):
-        if p.get("count", 0) <= 0:
-            continue
         pet = dict(p)
         if "emoji_id" not in pet:
             pet.update(resolve_emoji(pet["name"]))
-        pets.append(pet)
+        if p.get("count", 0) <= 0:
+            pet["sacrificed"] = True
+            sacrificed_pets.append(pet)
+        else:
+            pets.append(pet)
     list_total = sum(t["total"] for t in by_tier.values())
 
     # So nho trong bang (chu so mu) = pet DANG CO. Dong cuoi (F-6, CP-16, ... C-478489) = so pet
@@ -1140,6 +1256,8 @@ async def _hub_zoo(now):
         "list_total": list_total,
         "caught_total": sum(breakdown.values()) if breakdown else None,
         "by_tier": by_tier, "pets": pets,
+        "sacrificed_pets": sacrificed_pets,
+        "unlocked_total": len(pets) + len(sacrificed_pets),
     }, doc.get("updated_at"), now)
 
 
@@ -1174,7 +1292,8 @@ async def _hub_pet_dex(now):
     if not rows:
         return None
     zoo_doc = await mdb[COL_ZOO].find_one({"_id": "latest"})
-    owned_counts = {p["name"].lower(): p.get("count", 0) for p in (zoo_doc or {}).get("pets", []) if p.get("count", 0) > 0}
+    # Co mat trong zoo (ke ca so luong 0 = da hien te het) = DA CO / DA MO KHOA.
+    owned_counts = {p["name"].lower(): p.get("count", 0) for p in (zoo_doc or {}).get("pets", [])}
 
     species = []
     for r in rows:
@@ -1183,6 +1302,7 @@ async def _hub_pet_dex(now):
         species.append({
             "name": name, "rank": r.get("rank"), "rank_vi": r.get("rank_vi"),
             "owned": name.lower() in owned_counts, "owned_count": owned_counts.get(name.lower()),
+            "sacrificed": owned_counts.get(name.lower()) == 0,
             "hp": r.get("hp"), "att": r.get("att"), "pr": r.get("pr"),
             "wp": r.get("wp"), "mag": r.get("mag"), "mr": r.get("mr"),
             "flavor_text": r.get("flavor_text"), "rarity_caught": r.get("rarity_caught"),
@@ -1197,6 +1317,30 @@ async def _hub_pet_dex(now):
         "total_known": len(species), "total_owned": sum(1 for p in species if p["owned"]),
         "species": species,
     }, latest_confirmed, now)
+
+
+async def _hub_battle(now):
+    doc = await mdb[COL_BATTLE].find_one({"_id": "latest"})
+    if not doc:
+        return None
+    out = {k: doc.get(k) for k in ("result", "turns", "xp", "streak", "best_streak", "last_lost_streak")}
+    return _with_age(out, doc.get("updated_at"), now)
+
+
+async def _hub_new_pets(now):
+    rows = await mdb[COL_NEW_PETS].find().sort("last_found_at", -1).to_list(length=30)
+    pets = []
+    for r in rows:
+        pet = {"name": r.get("name") or r["_id"], "rank": r.get("rank"), "rank_vi": r.get("rank_vi"),
+               "times_found": r.get("times_found"),
+               "first_found_at": _iso_z(r.get("first_found_at")), "last_found_at": _iso_z(r.get("last_found_at"))}
+        if r.get("emoji_id"):
+            pet["emoji_id"] = r["emoji_id"]
+            pet["emoji_animated"] = r.get("emoji_animated", False)
+        else:
+            pet.update(resolve_emoji(pet["name"]))
+        pets.append(pet)
+    return {"pets": pets}
 
 
 async def build_hub(now=None):
@@ -1216,6 +1360,8 @@ async def build_hub(now=None):
         "inventory": await _hub_inventory(now),
         "weapons": await _hub_weapons(now),
         "pet_dex": await _hub_pet_dex(now),
+        "battle": await _hub_battle(now),
+        "new_pets": await _hub_new_pets(now),
     }
 
 
@@ -1488,6 +1634,8 @@ UNRECOGNIZED_KEEP = 12
 # Cac loai tin nhan bot biet doc, va lenh OwO nguoi choi can go de bot thay no.
 RAW_EXPECTED = {
     "hunt_gems": "owo hunt",
+    "hunt_found": "owo hunt",
+    "battle": "owo battle",
     "inventory": "owo inv",
     "zoo_1": "owo zoo",
     "zoo_2": "owo zoo (tin thu 2 — OwO chia bang zoo lam 2 tin)",
@@ -1638,6 +1786,25 @@ async def handle_owo_response(message: discord.Message, source_id):
         recognized = True
         for slot in vanished_slots:
             await remind_gem_replacement(message, slot, source_id)
+
+    found = parse_hunt_found(text)
+    if found:
+        new_names = await record_new_pets(found, source_id)
+        await record_raw("hunt_found", text, found, message,
+                         extra={"pet_moi_lan_dau": new_names, "zoo_da_luu": new_names is not None})
+        recognized = True
+
+    battle = parse_battle(text)
+    if battle:
+        names = await tracked_name_set(source_id)
+        owner = battle_owner_name(message)
+        if owner and names and not weapon_owner_matches(owner, names):
+            print(f"[tracker] Bo qua battle cua '{owner}' (khong khop {sorted(names)})")
+            await record_raw("foreign_skipped", text, {"ten_trong_tin": owner, "ten_chap_nhan": sorted(names)}, message)
+        else:
+            await save_battle(battle, source_id)
+            await record_raw("battle", text, battle, message, extra={"owner": owner})
+        recognized = True
 
     if not recognized:
         await record_unrecognized(text, message)
