@@ -147,6 +147,9 @@ farm_watch = {
 LOST_PHONE_SECONDS = 180      # app im qua 3 phut khi dang farm -> bao
 OWO_SILENT_SECONDS = 240      # dang farm ma OwO khong tra loi qua 4 phut -> bao
 _notify_recent = {}           # text -> lan gui cuoi (chong spam tin nhac)
+# Acc phu cua Ruby: luc farm bang acc chinh, Ruby thuong vao acc nay. Tin nhac ve huntbot gui DM vao day.
+# Doi bang lenh ,setalt <id>.
+ALT_USER_ID_DEFAULT = "1238687916176183409"
 _farm_watchdog_task = None
 
 # --- Chong spam lenh thay gem (AutoMacro) ---
@@ -1404,7 +1407,7 @@ async def _hub_new_pets(now):
     return {"pets": pets}
 
 
-async def notify_owner(text: str, dm: bool = True, min_gap: int = 90):
+async def notify_owner(text: str, dm: bool = True, min_gap: int = 90, target: str = "owner"):
     """Nhan tin TAG ban trong kenh duoc theo doi (+ DM neu duoc) de dien thoai/may khac cua ban cung bao.
     Cung noi dung trong min_gap giay thi chi gui 1 lan (chong spam)."""
     now = time.time()
@@ -1412,6 +1415,12 @@ async def notify_owner(text: str, dm: bool = True, min_gap: int = 90):
     if now - last < min_gap:
         return False
     _notify_recent[text] = now
+    if target == "alt":
+        alt_id = await get_config("alt_user_id", ALT_USER_ID_DEFAULT)
+        if await dm_user(alt_id, text):
+            return True
+        print("[tracker][notify] Khong DM duoc acc phu - chuyen sang bao acc chinh")
+        text = "(Không DM được acc phụ) " + text
     tid = await get_config("tracked_user_id")
     cid = await get_config("tracked_channel_id")
     sent = False
@@ -1433,6 +1442,19 @@ async def notify_owner(text: str, dm: bool = True, min_gap: int = 90):
     return sent
 
 
+async def dm_user(user_id, text: str) -> bool:
+    """DM 1 tai khoan. Chi duoc khi tai khoan do CHUNG SERVER voi bot va cho phep nhan tin rieng tu thanh vien server."""
+    if not user_id:
+        return False
+    try:
+        user = bot.get_user(int(user_id)) or await bot.fetch_user(int(user_id))
+        await user.send(text)
+        return True
+    except Exception as e:
+        print(f"[tracker][notify] Khong DM duoc {user_id}: {e!r}")
+        return False
+
+
 async def handle_post_notify(request: web.Request):
     """App bao bot nhan tin cho Ruby (vd farm bi dung vi loi). Body: {"text": "..."}"""
     if not _check_api_token(request):
@@ -1444,7 +1466,8 @@ async def handle_post_notify(request: web.Request):
     text = str(body.get("text") or "").strip()[:400]
     if not text:
         return web.json_response({"error": "empty"}, status=400)
-    ok = await notify_owner("📱 " + text, dm=True)
+    target = "alt" if str(body.get("target") or "") == "alt" else "owner"
+    ok = await notify_owner("📱 " + text, dm=True, target=target)
     return web.json_response({"ok": bool(ok)})
 
 
@@ -1530,6 +1553,34 @@ async def captcha_addressed_to_tracked(message, text: str, tracked_id) -> bool:
     return not re.search(r"<@!?\d+>", raw)
 
 
+def _collect_component_urls(comp, out):
+    url = getattr(comp, "url", None)
+    if isinstance(url, str) and url.startswith("http"):
+        out.append(url)
+    for child in (getattr(comp, "children", None) or []):
+        _collect_component_urls(child, out)
+    accessory = getattr(comp, "accessory", None)
+    if accessory is not None:
+        _collect_component_urls(accessory, out)
+
+
+def find_captcha_links(message, text: str):
+    """Lay link giai captcha trong tin cua OwO (nut bam, embed hoac chu thuong). Toi da 2 link."""
+    urls = []
+    for comp in (getattr(message, "components", None) or []):
+        _collect_component_urls(comp, urls)
+    for e in (getattr(message, "embeds", None) or []):
+        if getattr(e, "url", None):
+            urls.append(e.url)
+    urls += re.findall(r"https?://[^\s<>)\]]+", _ZERO_WIDTH_RE.sub("", text or ""))
+    seen, out = set(), []
+    for u in urls:
+        if u not in seen:
+            seen.add(u)
+            out.append(u)
+    return out[:2]
+
+
 async def check_captcha_message(message, tracked_id):
     """Goi voi MOI tin cua OwO trong kenh duoc theo doi (khong can doi ban vua go lenh)."""
     text = flatten_message(message)
@@ -1546,8 +1597,15 @@ async def check_captcha_message(message, tracked_id):
             upsert=True)
         print("[tracker][captcha] !!! OwO DOI CAPTCHA - bao app dung farm + reo chuong")
         await record_raw("captcha", text, {"active": True}, message)
-        await notify_owner("🚨 OwO đang đòi CAPTCHA! Giải trong 10 phút kẻo bị ban. "
-                           "Giải xong gõ `,captcha clear`.", min_gap=120)
+        links = find_captcha_links(message, text)
+        lines = ["🚨 OwO đang đòi CAPTCHA! Giải trong 10 phút kẻo bị ban."]
+        if links:
+            lines.append("🔗 Link giải: " + "  ".join(links))
+        jump = getattr(message, "jump_url", None)
+        if jump:
+            lines.append(f"💬 Mở tin OwO: {jump}")
+        lines.append("Giải xong gõ `,captcha clear` rồi bấm Bắt đầu farm lại trong app.")
+        await notify_owner("\n".join(lines), min_gap=120)
     elif is_captcha_solved_text(text):
         doc = await mdb[COL_ALERTS].find_one({"_id": "captcha"})
         if doc and doc.get("active"):
@@ -2460,6 +2518,42 @@ async def gems_cmd(ctx):
                          value=f"{r['current']}/{r['max']} ({pct}%)", inline=True)
     embed.set_footer(text="Slot biến mất khỏi tin hunt = hết độ bền, bot sẽ tự nhắc owo use.")
     await ctx.send(embed=embed)
+
+
+@bot.command(name="setalt")
+@is_owner()
+async def setalt_cmd(ctx, user_id: str = ""):
+    """,setalt = xem acc phu dang dat. ,setalt <id> = doi acc phu (nhan DM nhac huntbot). ,setalt xoa = tat."""
+    user_id = user_id.strip()
+    if not user_id:
+        cur = await get_config("alt_user_id", ALT_USER_ID_DEFAULT)
+        await ctx.send(f"Acc phụ nhận DM nhắc huntbot: `{cur}`. Đổi: `,setalt <id>` · Thử: `,testalt`")
+        return
+    if user_id.lower() in ("xoa", "tat", "off"):
+        await set_config("alt_user_id", "")
+        await ctx.send("Đã tắt DM acc phụ — tin nhắc huntbot sẽ gửi cho acc chính.")
+        return
+    if not user_id.isdigit():
+        await ctx.send("ID phải là dãy số, ví dụ `,setalt 1238687916176183409`.")
+        return
+    await set_config("alt_user_id", user_id)
+    await ctx.send(f"Đã đặt acc phụ `{user_id}`. Gõ `,testalt` để thử gửi 1 tin.")
+
+
+@bot.command(name="testalt")
+@is_owner()
+async def testalt_cmd(ctx):
+    """Thu gui 1 tin DM vao acc phu de kiem tra co nhan duoc khong."""
+    alt_id = await get_config("alt_user_id", ALT_USER_ID_DEFAULT)
+    if not alt_id:
+        await ctx.send("Chưa đặt acc phụ. Dùng `,setalt <id>`.")
+        return
+    ok = await dm_user(alt_id, "🧪 Tin thử từ owo-tracker: acc phụ nhận được DM là ổn rồi.")
+    if ok:
+        await ctx.send(f"✅ Đã gửi DM thử cho `{alt_id}`. Vào acc phụ kiểm tra giúp.")
+    else:
+        await ctx.send(f"❌ Không DM được `{alt_id}`. Acc phụ phải **chung server** với bot và bật "
+                       f"\"Cho phép tin nhắn trực tiếp từ thành viên máy chủ\" (Cài đặt Quyền riêng tư).")
 
 
 @bot.command(name="captcha")
