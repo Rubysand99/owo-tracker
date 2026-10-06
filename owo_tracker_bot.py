@@ -424,7 +424,12 @@ def parse_team(text: str):
 
 
 def parse_huntbot_status(text: str):
-    if "HUNTBOT" not in text.upper():
+    up = text.upper()
+    # OwO tra 2 tin cho `owo hb`: trang thong tin (co chu HUNTBOT) va tin trang thai
+    # ("I AM STILL HUNTING... BACK IN 19H 41M") KHONG co chu HUNTBOT -> truoc day tin trang thai bi bo sot.
+    # Tin nhan ve ("I AM BACK WITH ...") cung la tin trang thai.
+    if not ("HUNTBOT" in up or "STILL HUNTING" in up or "I WILL BE BACK IN" in up
+            or "ANIMALS CAPTURED" in up or "I AM BACK WITH" in up):
         return None
     # Bo emoji tuy chinh (<:ten:ID>) truoc khi tim so: ID emoji la 1 day so dai
     # ~19 chu so, neu de lot vao se bi doc nham thanh so essence.
@@ -435,7 +440,15 @@ def parse_huntbot_status(text: str):
     progress_m = re.search(r"([\d.]+)%\s*DONE", text.upper())
     animals_m = re.search(r"([\d,]+)\s*ANIMALS CAPTURED", text.upper())
     time_m = re.search(r"BACK IN\s*([0-9HMhm ]+)", text.upper())
+    # Trang thong tin huntbot co cac chi so nang cap, moi dong dang:
+    #   **⏱️ Efficiency - `218/H`:** `Lvl 193 [17866/99787]`
+    traits = {}
+    for name, lvl in re.findall(
+            r"\*\*[^*\n]*?\b(Efficiency|Duration|Cost|Gain|Experience|Radar)\b[^*\n]*\*\*\s*`?\s*Lvl\s*(\d+)",
+            text, re.I):
+        traits[name.lower()] = int(lvl)
     return {
+        "traits": traits or None,
         "essence": int(essence_m.group(1).replace(",", "")) if essence_m else None,
         "hunting": hunting,
         "progress_pct": float(progress_m.group(1)) if progress_m else None,
@@ -1162,7 +1175,7 @@ async def _hub_huntbot(now):
     row = await mdb[COL_HUNTBOT].find_one(sort=[("_id", -1)])
     if not row:
         return None
-    observed = _parse_utc(row.get("created_at"))
+    observed = _parse_utc(row.get("status_at") or row.get("created_at"))
     secs = duration_to_seconds(row.get("time_remaining")) if row.get("hunting") else None
     ready_at, seconds_left = None, None
     if secs is not None and observed is not None:
@@ -1177,6 +1190,7 @@ async def _hub_huntbot(now):
         "time_remaining_text": row.get("time_remaining"),
         "ready_at": ready_at,
         "seconds_left": seconds_left,
+        "traits": row.get("traits"),
     }, row.get("created_at"), now)
 
 
@@ -1738,9 +1752,25 @@ async def save_team(team):
 
 
 async def save_huntbot(h):
+    """OwO tra 2 tin cho `owo hb`: (1) trang THONG TIN co chi so nang cap + essence (hunting=False vi
+    khong noi gi ve dang san), (2) tin TRANG THAI ('STILL HUNTING... BACK IN 19H 41M'). Truoc day moi tin la
+    1 dong rieng nen Hub nhay qua lai giua 2 loai. Gio gop thanh 1 ban ghi: tin nao den thi chi cap nhat
+    phan cua minh, phan con lai giu nguyen tu ban ghi truoc."""
     h = dict(h)
-    h["created_at"] = datetime.utcnow().isoformat()
-    await mdb[COL_HUNTBOT].insert_one(h)
+    now_iso = datetime.utcnow().isoformat()
+    prev = await mdb[COL_HUNTBOT].find_one(sort=[("_id", -1)]) or {}
+    row = {k: v for k, v in prev.items() if k != "_id"}
+    traits = h.get("traits")
+    if h.get("essence") is not None:
+        row["essence"] = h["essence"]
+    if traits:                       # trang thong tin: chi cap nhat chi so + essence
+        row["traits"] = traits
+    else:                            # tin trang thai: cap nhat dang san / tien do / thoi gian con lai
+        for k in ("hunting", "progress_pct", "animals_captured", "time_remaining"):
+            row[k] = h.get(k)
+        row["status_at"] = now_iso   # thoi diem QUAN SAT trang thai (de tinh gio xong cho dung)
+    row["created_at"] = now_iso
+    await mdb[COL_HUNTBOT].insert_one(row)
 
 
 async def save_quest(q):
