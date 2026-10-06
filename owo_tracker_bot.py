@@ -134,6 +134,21 @@ def resolve_emoji(name):
 
 pending_commands = {}  # channel_id -> timestamp gần nhất có lệnh owo từ tracked user
 tracked_names = {}  # user_id (chuỗi) -> các tên Discord của người đó (ghi lại mỗi khi họ gõ lệnh owo)
+# --- Theo doi phien farm (app = tay, bot = mat) ---
+farm_watch = {
+    "active": False,        # app bao dang farm (qua /alerts?farm=1)
+    "last_seen": 0.0,       # lan cuoi app goi /alerts
+    "last_reply_at": 0.0,   # lan cuoi OwO tra loi 1 lenh cua ban
+    "last_command_at": 0.0, # lan cuoi ban (hoac app) go 1 lenh owo
+    "lost_notified": False, # da bao "mat ket noi dien thoai" chua
+    "silent_notified": False,  # da bao "OwO im lang" chua
+    "resting": False,       # app dang nghi giai lao (khong go lenh) -> khong tinh la OwO im lang
+}
+LOST_PHONE_SECONDS = 180      # app im qua 3 phut khi dang farm -> bao
+OWO_SILENT_SECONDS = 240      # dang farm ma OwO khong tra loi qua 4 phut -> bao
+_notify_recent = {}           # text -> lan gui cuoi (chong spam tin nhac)
+_farm_watchdog_task = None
+
 # --- Chong spam lenh thay gem (AutoMacro) ---
 GEM_MISSING_CONFIRM = 2        # slot phai vang mat o 2 tin hunt LIEN TIEP moi tinh la gem het
 SWAP_COOLDOWN_SECONDS = 180    # 1 slot vua duoc tao lenh thay thi 3 phut sau moi duoc tao lai
@@ -1375,6 +1390,83 @@ async def _hub_new_pets(now):
     return {"pets": pets}
 
 
+async def notify_owner(text: str, dm: bool = True, min_gap: int = 90):
+    """Nhan tin TAG ban trong kenh duoc theo doi (+ DM neu duoc) de dien thoai/may khac cua ban cung bao.
+    Cung noi dung trong min_gap giay thi chi gui 1 lan (chong spam)."""
+    now = time.time()
+    last = _notify_recent.get(text, 0)
+    if now - last < min_gap:
+        return False
+    _notify_recent[text] = now
+    tid = await get_config("tracked_user_id")
+    cid = await get_config("tracked_channel_id")
+    sent = False
+    if cid:
+        try:
+            ch = bot.get_channel(int(cid)) or await bot.fetch_channel(int(cid))
+            mention = f"<@{tid}> " if tid else ""
+            await ch.send(f"{mention}{text}")
+            sent = True
+        except Exception as e:
+            print(f"[tracker][notify] Khong nhan duoc vao kenh: {e!r}")
+    if dm and tid:
+        try:
+            user = bot.get_user(int(tid)) or await bot.fetch_user(int(tid))
+            await user.send(text)
+            sent = True
+        except Exception as e:
+            print(f"[tracker][notify] Khong DM duoc (bo qua): {e!r}")
+    return sent
+
+
+async def handle_post_notify(request: web.Request):
+    """App bao bot nhan tin cho Ruby (vd farm bi dung vi loi). Body: {"text": "..."}"""
+    if not _check_api_token(request):
+        return web.json_response({"error": "unauthorized"}, status=401)
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    text = str(body.get("text") or "").strip()[:400]
+    if not text:
+        return web.json_response({"error": "empty"}, status=400)
+    ok = await notify_owner("📱 " + text, dm=True)
+    return web.json_response({"ok": bool(ok)})
+
+
+async def farm_watchdog():
+    """Chay nen: canh chung khi app dang farm. Bao Ruby neu dien thoai mat ket noi hoac OwO im lang."""
+    while True:
+        try:
+            await asyncio.sleep(30)
+            if not farm_watch["active"]:
+                continue
+            now = time.time()
+            quiet_phone = now - farm_watch["last_seen"]
+            if quiet_phone > LOST_PHONE_SECONDS:
+                if not farm_watch["lost_notified"]:
+                    farm_watch["lost_notified"] = True
+                    mins = int(quiet_phone // 60)
+                    await notify_owner(f"📵 Mất kết nối với điện thoại đang farm hơn {mins} phút "
+                                       f"(hết pin / mất mạng / app bị tắt?). Kiểm tra giúp mình nhé.")
+                continue
+            farm_watch["lost_notified"] = False
+            if farm_watch["resting"]:
+                continue
+            reply_age = now - farm_watch["last_reply_at"] if farm_watch["last_reply_at"] else None
+            if reply_age is not None and reply_age > OWO_SILENT_SECONDS:
+                if not farm_watch["silent_notified"]:
+                    farm_watch["silent_notified"] = True
+                    await notify_owner(f"⚠️ App đang farm nhưng đã {int(reply_age // 60)} phút không thấy OwO trả lời. "
+                                       f"Có thể bị chặn / Discord mất kênh / OwO lỗi.")
+            else:
+                farm_watch["silent_notified"] = False
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            print(f"[tracker][watchdog] Loi: {e!r}")
+
+
 # ----------------------------------------------------------------------
 # CAPTCHA: OwO nghi ban spam -> bot (mat) bao cho app (tay) DUNG ngay + reo chuong
 # ----------------------------------------------------------------------
@@ -1440,6 +1532,8 @@ async def check_captcha_message(message, tracked_id):
             upsert=True)
         print("[tracker][captcha] !!! OwO DOI CAPTCHA - bao app dung farm + reo chuong")
         await record_raw("captcha", text, {"active": True}, message)
+        await notify_owner("🚨 OwO đang đòi CAPTCHA! Giải trong 10 phút kẻo bị ban. "
+                           "Giải xong gõ `,captcha clear`.", min_gap=120)
     elif is_captcha_solved_text(text):
         doc = await mdb[COL_ALERTS].find_one({"_id": "captcha"})
         if doc and doc.get("active"):
@@ -1463,7 +1557,27 @@ async def handle_get_alerts(request: web.Request):
     """App goi moi vai giay khi dang farm: nhe, chi tra canh bao captcha."""
     if not _check_api_token(request):
         return web.json_response({"error": "unauthorized"}, status=401)
-    return web.json_response({"captcha": await get_captcha_state()})
+    flag = request.query.get("farm")
+    now = time.time()
+    if flag in ("1", "2"):
+        was_resting = farm_watch["resting"]
+        farm_watch["active"] = True
+        farm_watch["last_seen"] = now
+        farm_watch["resting"] = (flag == "2")      # 2 = dang nghi giai lao
+        if was_resting and flag == "1":
+            farm_watch["last_reply_at"] = now       # vua nghi xong: tinh moc im lang lai tu dau
+            farm_watch["silent_notified"] = False
+    elif flag == "0":
+        farm_watch["active"] = False
+        farm_watch["resting"] = False
+        farm_watch["lost_notified"] = False
+        farm_watch["silent_notified"] = False
+    reply_age = int(now - farm_watch["last_reply_at"]) if farm_watch["last_reply_at"] else None
+    cmd_age = int(now - farm_watch["last_command_at"]) if farm_watch["last_command_at"] else None
+    return web.json_response({
+        "captcha": await get_captcha_state(),
+        "activity": {"last_reply_age_seconds": reply_age, "last_command_age_seconds": cmd_age},
+    })
 
 
 async def _hub_channel():
@@ -1529,6 +1643,7 @@ async def start_automacro_api_server():
     app.router.add_post("/commands/{id}/ack", handle_ack_command)
     app.router.add_get("/hub", handle_get_hub)
     app.router.add_get("/alerts", handle_get_alerts)
+    app.router.add_post("/notify", handle_post_notify)
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, "0.0.0.0", AUTOMACRO_API_PORT)
@@ -1669,6 +1784,10 @@ async def on_ready():
     tracked = await get_config("tracked_user_id")
     print(f"[tracker] Đang theo dõi user ID: {tracked or '(chưa đặt — dùng ,track)'}")
 
+    global _farm_watchdog_task
+    if _farm_watchdog_task is None or _farm_watchdog_task.done():
+        _farm_watchdog_task = asyncio.create_task(farm_watchdog())
+
     global _automacro_api_started
     if AUTOMACRO_API_TOKEN:
         if not _automacro_api_started:
@@ -1713,6 +1832,7 @@ async def on_message(message: discord.Message):
     if tracked_id and str(message.author.id) == str(tracked_id) \
             and any(content_lower.startswith(p) for p in prefixes):
         pending_commands[message.channel.id] = time.time()
+        farm_watch["last_command_at"] = time.time()
         last_owo_command[message.channel.id] = content_lower
         author = message.author
         tracked_names[str(author.id)] = {
@@ -1736,6 +1856,7 @@ async def on_message(message: discord.Message):
         if last and (time.time() - last) < CORRELATION_WINDOW:
             # KHONG gia han cua so khi OwO tra loi: neu gia han, tin OwO tra loi nguoi KHAC
             # trong cung kenh se bi tinh la cua ban (gem, tien, zoo cua nguoi do lan vao du lieu).
+            farm_watch["last_reply_at"] = time.time()
             await handle_owo_response(message, tracked_id)
         elif _continuation_open(message.channel.id):
             await handle_continuation_only(message, tracked_id)
