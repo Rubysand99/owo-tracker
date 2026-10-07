@@ -81,6 +81,7 @@ COL_RAW = "owot_raw_samples"
 COL_BATTLE = "owot_battle_status"      # v17: chuoi battle moi nhat
 COL_NEW_PETS = "owot_new_pets"          # v17: pet vua bat duoc ma chua co trong zoo
 COL_ALERTS = "owot_alerts"              # v18: canh bao captcha cua OwO
+COL_CHECKLIST = "owot_checklists"        # v26: checklist Daily / Weekly cua Quest Log
 
 EMOJI_TAG = re.compile(r"<(a)?:(\w+):(\d+)>")
 
@@ -156,6 +157,8 @@ HB_PENDING_SECONDS = 600
 hb_pending = {"amount": None, "at": 0.0}
 
 # --- Chong spam lenh thay gem (AutoMacro) ---
+GEM_PICK_HIGHEST_TIER = True   # thay gem: dung vien tier CAO nhat con trong kho (False = tier thap nhat)
+GEM_KEEP_IF_COUNT_AT_MOST = 5  # tier nao chi con tu 5 vien tro xuong thi de danh (VD mythic x2), tru khi het cach
 GEM_MISSING_CONFIRM = 2        # slot phai vang mat o 2 tin hunt LIEN TIEP moi tinh la gem het
 SWAP_COOLDOWN_SECONDS = 180    # 1 slot vua duoc tao lenh thay thi 3 phut sau moi duoc tao lai
 COMMAND_EXPIRE_SECONDS = 600   # lenh cho qua 10 phut = da cu (gem da doi), tu huy, khong gui nua
@@ -541,6 +544,58 @@ def parse_quest_status(text: str):
     if quests:
         result["quests"] = quests
     return result
+
+
+# --- Checklist Daily / Weekly (tab trong Quest Log) -------------------------
+_CHECK_EMOJI_RE = re.compile(r"<a?:\w+:\d+>")
+_CHECK_ITEM_RE = re.compile(r"^(.*?)\s*`?\s*(\d+)\s*/\s*(\d+)\s*`?\s*$")
+
+
+def parse_checklist(text: str):
+    """Tab Daily/Weekly cua owo quest. Moi viec 1 dong, vd: `✅ 📦 Find 3 Lootboxes `3/3``, cuoi co dong
+    `Daily Progress `4/6``. Chi dua vao cum so cur/max cuoi dong nen khong phu thuoc kieu o tick."""
+    low = (text or "").lower()
+    if "daily checklist" in low:
+        kind = "daily"
+    elif "weekly checklist" in low:
+        kind = "weekly"
+    else:
+        return None
+    items, progress = [], None
+    for raw_line in (text or "").split("\n"):
+        line = raw_line.strip()
+        if not line:
+            continue
+        if "progress" in line.lower():
+            pm = re.search(r"(\d+)\s*/\s*(\d+)", line)
+            if pm:
+                progress = {"cur": int(pm.group(1)), "max": int(pm.group(2))}
+            continue
+        if "resets" in line.lower() or "balance" in line.lower():
+            continue
+        m = _CHECK_ITEM_RE.match(line)
+        if not m:
+            continue
+        name = _CHECK_EMOJI_RE.sub("", m.group(1))
+        name = re.sub(r"[`*_]", "", name)
+        name = re.sub(r"^[^\w]+", "", name).strip()      # bo o tick / emoji dau dong
+        if not name:
+            continue
+        cur, mx = int(m.group(2)), int(m.group(3))
+        items.append({"name": name, "cur": cur, "max": mx, "done": cur >= mx})
+    if not items:
+        return None
+    result = {"kind": kind, "items": items, "progress": progress}
+    reset_m = re.search(r"resets[^\n]*?<t:(\d+)(?::[A-Za-z])?>", text or "", re.I)
+    if reset_m:
+        result["resets_at_epoch"] = int(reset_m.group(1))
+    return result
+
+
+async def save_checklist(c):
+    doc = {k: v for k, v in c.items() if k != "kind"}
+    doc["updated_at"] = datetime.utcnow().isoformat()
+    await mdb[COL_CHECKLIST].update_one({"_id": c["kind"]}, {"$set": doc}, upsert=True)
 
 
 # --- Daily + Cowoncy ------------------------------------------------------
@@ -1735,6 +1790,17 @@ async def handle_get_alerts(request: web.Request):
     })
 
 
+async def _hub_checklists(now):
+    out = {}
+    for kind in ("daily", "weekly"):
+        doc = await mdb[COL_CHECKLIST].find_one({"_id": kind})
+        if doc:
+            body = {k: doc.get(k) for k in ("items", "progress", "resets_at_epoch")}
+            body["kind"] = kind
+            out[kind] = _with_age(body, doc.get("updated_at"), now)
+    return out or None
+
+
 async def _hub_channel():
     """Kenh duoc chi dinh bang ,setchannel -> link Discord de app tu mo dung kenh.
     Link dang https://discord.com/channels/<server>/<kenh>. Chua dat kenh hoac bot khong
@@ -1778,6 +1844,7 @@ async def build_hub(now=None):
         "new_pets": await _hub_new_pets(now),
         "channel": await _hub_channel(),
         "captcha": await get_captcha_state(now),
+        "checklists": await _hub_checklists(now),
     }
 
 
@@ -1982,6 +2049,36 @@ async def get_owo_prefixes():
 
 
 @bot.event
+async def on_raw_message_edit(payload):
+    """Bam tab Daily/Weekly/Quests trong Quest Log la SUA tin cu chu khong gui tin moi. Doc lai tin da sua
+    de co du lieu checklist Weekly va tab Quests (khong can ban go lai owo quest)."""
+    try:
+        if mdb is None:
+            return
+        data = payload.data or {}
+        author_id = (data.get("author") or {}).get("id")
+        if str(author_id) != str(OWO_BOT_ID):
+            return
+        tracked_channel_id = await get_config("tracked_channel_id")
+        if tracked_channel_id and str(payload.channel_id) != str(tracked_channel_id):
+            return
+        channel = bot.get_channel(payload.channel_id) or await bot.fetch_channel(payload.channel_id)
+        message = await channel.fetch_message(payload.message_id)
+        text = flatten_message(message)
+        checklist = parse_checklist(text)
+        if checklist:
+            await save_checklist(checklist)
+            await record_raw("checklist", text, checklist, message)
+            return
+        quest = parse_quest_status(text)
+        if quest and quest.get("quests"):
+            await save_quest(quest)
+            await record_raw("quest", text, quest, message)
+    except Exception as e:
+        print(f"[tracker][edit] Loi doc tin da sua: {e!r}")
+
+
+@bot.event
 async def on_message(message: discord.Message):
     if mdb is None:
         await bot.process_commands(message)
@@ -2097,6 +2194,7 @@ RAW_EXPECTED = {
     "hunt_gems": "owo hunt",
     "hunt_found": "owo hunt",
     "battle": "owo battle",
+    "checklist": "owo q",
     "inventory": "owo inv",
     "zoo_1": "owo zoo",
     "zoo_2": "owo zoo (tin thu 2 — OwO chia bang zoo lam 2 tin)",
@@ -2211,6 +2309,12 @@ async def handle_owo_response(message: discord.Message, source_id):
     if quest:
         await save_quest(quest)
         await record_raw("quest", text, quest, message)
+        recognized = True
+
+    checklist = parse_checklist(text)
+    if checklist:
+        await save_checklist(checklist)
+        await record_raw("checklist", text, checklist, message)
         recognized = True
 
     daily = parse_daily(text, last_owo_command.get(message.channel.id, ""))
@@ -2328,7 +2432,7 @@ async def remind_gem_replacements(message: discord.Message, slots, source_id):
     for slot in sorted(todo):
         options = await mdb[COL_INVENTORY].find(
             {"is_gem": True, "gem_slot": slot, "count": {"$gt": 0}}
-        ).sort("gem_tier_rank", 1).to_list(length=10)
+        ).sort("gem_tier_rank", -1 if GEM_PICK_HIGHEST_TIER else 1).to_list(length=10)
         if slot in slots:  # chi nhac trong kenh cho slot MOI het, khong nhac lai slot cu
             if not options:
                 await message.channel.send(
@@ -2339,7 +2443,9 @@ async def remind_gem_replacements(message: discord.Message, slots, source_id):
                 await message.channel.send(
                     f"<@{source_id}> ⚠️ Gem slot {slot} vừa hết độ bền! Chọn 1 trong các lựa chọn còn lại:\n" + "\n".join(lines))
         if options:
-            picks.append((slot, options[0]))  # mac dinh vien tier THAP nhat con lai (doi [0] -> [-1] neu muon tier cao)
+            # options da sap xep: tier CAO nhat dung dau. Tier chi con rat it vien thi giu lai (neu con tier khac)
+            usable = [o for o in options if (o.get("count") or 0) > GEM_KEEP_IF_COUNT_AT_MOST] or options
+            picks.append((slot, usable[0]))
 
     if not picks:
         return
