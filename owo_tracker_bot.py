@@ -151,6 +151,9 @@ _notify_recent = {}           # text -> lan gui cuoi (chong spam tin nhac)
 # Doi bang lenh ,setalt <id>.
 ALT_USER_ID_DEFAULT = "1238687916176183409"
 _farm_watchdog_task = None
+# Cua so "dang cho Ruby nhap ma huntbot": mo khi OwO vua dua mat khau (hoac Ruby vua go owo hb <thoi gian>)
+HB_PENDING_SECONDS = 600
+hb_pending = {"amount": None, "at": 0.0}
 
 # --- Chong spam lenh thay gem (AutoMacro) ---
 GEM_MISSING_CONFIRM = 2        # slot phai vang mat o 2 tin hunt LIEN TIEP moi tinh la gem het
@@ -1407,7 +1410,7 @@ async def _hub_new_pets(now):
     return {"pets": pets}
 
 
-async def notify_owner(text: str, dm: bool = True, min_gap: int = 90, target: str = "owner"):
+async def notify_owner(text: str, dm: bool = True, min_gap: int = 90, target: str = "owner", images=None):
     """Nhan tin TAG ban trong kenh duoc theo doi (+ DM neu duoc) de dien thoai/may khac cua ban cung bao.
     Cung noi dung trong min_gap giay thi chi gui 1 lan (chong spam)."""
     now = time.time()
@@ -1417,10 +1420,12 @@ async def notify_owner(text: str, dm: bool = True, min_gap: int = 90, target: st
     _notify_recent[text] = now
     if target == "alt":
         alt_id = await get_config("alt_user_id", ALT_USER_ID_DEFAULT)
-        if await dm_user(alt_id, text):
+        if await dm_user(alt_id, text, images):
             return True
         print("[tracker][notify] Khong DM duoc acc phu - chuyen sang bao acc chinh")
         text = "(Không DM được acc phụ) " + text
+        if images:
+            text += "\n🖼️ " + "  ".join(images)
     tid = await get_config("tracked_user_id")
     cid = await get_config("tracked_channel_id")
     sent = False
@@ -1442,12 +1447,29 @@ async def notify_owner(text: str, dm: bool = True, min_gap: int = 90, target: st
     return sent
 
 
-async def dm_user(user_id, text: str) -> bool:
-    """DM 1 tai khoan. Chi duoc khi tai khoan do CHUNG SERVER voi bot va cho phep nhan tin rieng tu thanh vien server."""
+async def dm_user(user_id, text: str, images=None) -> bool:
+    """DM 1 tai khoan, co the kem anh (hien ngay trong DM, khong can bam link).
+    Chi duoc khi tai khoan do CHUNG SERVER voi bot va cho phep nhan tin rieng tu thanh vien server."""
     if not user_id:
         return False
     try:
         user = bot.get_user(int(user_id)) or await bot.fetch_user(int(user_id))
+    except Exception as e:
+        print(f"[tracker][notify] Khong tim thay {user_id}: {e!r}")
+        return False
+    if images:
+        try:
+            embeds = []
+            for url in images[:2]:
+                em = discord.Embed(color=0xFFD54F)
+                em.set_image(url=url)
+                embeds.append(em)
+            await user.send(content=text, embeds=embeds)
+            return True
+        except Exception as e:
+            print(f"[tracker][notify] Gui kem anh loi ({e!r}) - gui dang link")
+            text = text + "\n🖼️ " + "  ".join(images)
+    try:
         await user.send(text)
         return True
     except Exception as e:
@@ -1594,24 +1616,24 @@ def find_message_image_urls(message):
 
 async def check_hb_password_message(message, tracked_id):
     """OwO dua MAT KHAU huntbot (anh) khi go `owo hb <so> `: chuyen anh sang DM acc phu de Ruby TU DOC.
-    Bot KHONG doc anh va KHONG giai ma. Ruby doc ma roi nhan lai `,hbcode <ma>` de app go giup."""
+    Bot KHONG doc anh va KHONG giai ma. Ruby doc ma roi nhan lai dung ma do trong DM de app go giup."""
     text = flatten_message(message)
     if "password" not in normalize_alert_text(text):
         return
     if not await captcha_addressed_to_tracked(message, text, tracked_id):
         return
     images = find_message_image_urls(message)
-    lines = ["🔐 OwO vừa đưa **mật khẩu huntbot**. Bạn tự đọc mã rồi nhắn lại cho mình ngay trong DM này:",
-             "`,hbcode abcde`  (hoặc `,hbcode 24h abcde` nếu muốn đổi thời gian). Mã hết hạn nhanh!"]
-    if images:
-        lines.append("🖼️ Ảnh: " + "  ".join(images))
-    else:
-        lines.append("(Không lấy được link ảnh — mở tin gốc bên dưới để xem)")
+    lines = ["hb",
+             "🔐 Mật khẩu huntbot — bạn đọc rồi nhắn lại đúng mã ở đây, ví dụ `abczyx` "
+             "(hoặc `24h abczyx` nếu muốn đổi thời gian). Mã hết hạn nhanh!"]
+    if not images:
+        lines.append("(Không lấy được ảnh — mở tin gốc bên dưới để xem)")
     jump = getattr(message, "jump_url", None)
     if jump:
         lines.append(f"💬 Tin gốc: {jump}")
+    open_hb_window(hb_pending["amount"])
     await record_raw("hb_password", text, {"images": images}, message)
-    await notify_owner("\n".join(lines), min_gap=45, target="alt")
+    await notify_owner("\n".join(lines), min_gap=45, target="alt", images=images)
 
 
 def _collect_component_urls(comp, out):
@@ -1965,6 +1987,14 @@ async def on_message(message: discord.Message):
         await bot.process_commands(message)
         return
 
+    # Tin nhan RIENG (DM) cho bot: Ruby gui ma huntbot sau khi tu doc anh
+    if message.guild is None and not message.author.bot:
+        try:
+            if await handle_hb_code_dm(message):
+                return
+        except Exception as e:
+            print(f"[tracker][hb] Loi xu ly ma huntbot qua DM: {e!r}")
+
     # Gioi han hoat dong vao 1 kenh duy nhat (,setchannel) — neu dat, bo qua
     # HOAN TOAN moi kenh khac (khong theo doi lenh owo, khong doc tin OwO o
     # do). Lenh cua chinh bot nay (,status, ,setchannel, ,debugnext...) van
@@ -1982,6 +2012,9 @@ async def on_message(message: discord.Message):
             and any(content_lower.startswith(p) for p in prefixes):
         pending_commands[message.channel.id] = time.time()
         farm_watch["last_command_at"] = time.time()
+        mt = _HB_TYPED_RE.match(content_lower.strip())
+        if mt:
+            open_hb_window(mt.group(1))
         last_owo_command[message.channel.id] = content_lower
         author = message.author
         tracked_names[str(author.id)] = {
@@ -2585,6 +2618,48 @@ async def gems_cmd(ctx):
     await ctx.send(embed=embed)
 
 
+_HB_PLAIN_CODE_RE = re.compile(r"^[A-Za-z0-9]{3,12}$")
+_HB_AMOUNT_CODE_RE = re.compile(r"^(\d{1,7}[hHmMdD]?)\s+([A-Za-z0-9]{3,12})$")
+_HB_TYPED_RE = re.compile(r"^(?:owo\s+(?:hb|autohunt|huntbot)|oah)\s+(\d{1,7}[hHmMdD]?)$", re.I)
+
+
+def open_hb_window(amount=None):
+    hb_pending["amount"] = amount
+    hb_pending["at"] = time.time()
+
+
+async def handle_hb_code_dm(message) -> bool:
+    """Ruby (acc chinh hoac acc phu) nhan RIENG cho bot dung ma mat khau huntbot, vd `abczyx`
+    (hoac `24h abczyx`). Neu vua co yeu cau mat khau (<10 phut) thi nho app go `owo hb <thoi gian> <ma>`.
+    Tra ve True neu tin nay da duoc xu ly (khong chuyen tiep cho lenh khac)."""
+    uid = str(message.author.id)
+    alt = await get_config("alt_user_id", ALT_USER_ID_DEFAULT)
+    if not ((OWNER_ID and uid == str(OWNER_ID)) or (alt and uid == str(alt))):
+        return False
+    text = (message.content or "").strip()
+    if not text or text.startswith(","):
+        return False            # lenh binh thuong cua bot -> de process_commands xu ly
+    m2 = _HB_AMOUNT_CODE_RE.match(text)
+    if m2:
+        amount, code = m2.group(1), m2.group(2)
+    elif _HB_PLAIN_CODE_RE.match(text):
+        amount, code = None, text
+    else:
+        return False            # tin tro chuyen thuong, khong phai ma
+    fresh = (time.time() - hb_pending["at"]) <= HB_PENDING_SECONDS
+    if not fresh:
+        await message.channel.send("Mình chưa thấy yêu cầu mật khẩu huntbot nào đang chờ. "
+                                   "Gõ `,hbstart 24h` để bắt đầu, rồi gửi lại mã nhé.")
+        return True
+    amount = amount or hb_pending["amount"] or await get_config("hb_last_amount", "24h")
+    if not _HB_AMOUNT_RE.match(str(amount)):
+        amount = "24h"
+    hb_pending["at"] = 0.0      # moi lan nhac chi dung 1 lan, tranh gui lap
+    await queue_automacro_command("hb_start", {"command_text": f"owo hb {amount} {code}"})
+    await message.channel.send(f"✅ Đã nhờ app gõ `owo hb {amount} {code}`. Nếu app đang farm thì lệnh được gõ chen vào trong vài giây.")
+    return True
+
+
 def is_owner_or_alt():
     """Chu bot HOAC acc phu cua Ruby (de tra loi ma huntbot ngay trong DM)."""
     async def predicate(ctx):
@@ -2609,8 +2684,9 @@ async def hbstart_cmd(ctx, amount: str = ""):
         await ctx.send("Thời gian/số tiền không hợp lệ. Ví dụ: `,hbstart 24h` hoặc `,hbstart 100`.")
         return
     await set_config("hb_last_amount", amount)
+    open_hb_window(amount)
     await queue_automacro_command("hb_start", {"command_text": f"owo hb {amount}"})
-    await ctx.send(f"✅ Đã nhờ app gõ `owo hb {amount}`. OwO sẽ đưa mật khẩu — mình chuyển sang acc phụ cho bạn đọc.")
+    await ctx.send(f"✅ Đã nhờ app gõ `owo hb {amount}`. OwO sẽ đưa mật khẩu — mình chuyển ảnh sang acc phụ, bạn đọc rồi nhắn lại đúng mã.")
 
 
 @bot.command(name="hbcode")
