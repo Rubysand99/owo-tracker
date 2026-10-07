@@ -1553,6 +1553,67 @@ async def captcha_addressed_to_tracked(message, text: str, tracked_id) -> bool:
     return not re.search(r"<@!?\d+>", raw)
 
 
+def _collect_component_media_urls(comp, out):
+    """Anh trong tin kieu moi (Components V2): MediaGallery.items[].media.url, Thumbnail.media.url..."""
+    media = getattr(comp, "media", None)
+    u = getattr(media, "url", None)
+    if isinstance(u, str) and u.startswith("http"):
+        out.append(u)
+    for item in (getattr(comp, "items", None) or []):
+        _collect_component_media_urls(item, out)
+    for child in (getattr(comp, "children", None) or []):
+        _collect_component_media_urls(child, out)
+    accessory = getattr(comp, "accessory", None)
+    if accessory is not None:
+        _collect_component_media_urls(accessory, out)
+
+
+def find_message_image_urls(message):
+    """Moi duong link anh trong tin: tep dinh kem, anh trong embed, anh trong thanh phan."""
+    urls = []
+    for a in (getattr(message, "attachments", None) or []):
+        ct = (getattr(a, "content_type", None) or "").lower()
+        name = (getattr(a, "filename", "") or "").lower()
+        if ct.startswith("image/") or name.endswith((".png", ".jpg", ".jpeg", ".gif", ".webp")):
+            if getattr(a, "url", None):
+                urls.append(a.url)
+    for e in (getattr(message, "embeds", None) or []):
+        for part in (getattr(e, "image", None), getattr(e, "thumbnail", None)):
+            u = getattr(part, "url", None)
+            if u:
+                urls.append(u)
+    for comp in (getattr(message, "components", None) or []):
+        _collect_component_media_urls(comp, urls)
+    seen, out = set(), []
+    for u in urls:
+        if u not in seen:
+            seen.add(u)
+            out.append(u)
+    return out[:2]
+
+
+async def check_hb_password_message(message, tracked_id):
+    """OwO dua MAT KHAU huntbot (anh) khi go `owo hb <so> `: chuyen anh sang DM acc phu de Ruby TU DOC.
+    Bot KHONG doc anh va KHONG giai ma. Ruby doc ma roi nhan lai `,hbcode <ma>` de app go giup."""
+    text = flatten_message(message)
+    if "password" not in normalize_alert_text(text):
+        return
+    if not await captcha_addressed_to_tracked(message, text, tracked_id):
+        return
+    images = find_message_image_urls(message)
+    lines = ["🔐 OwO vừa đưa **mật khẩu huntbot**. Bạn tự đọc mã rồi nhắn lại cho mình ngay trong DM này:",
+             "`,hbcode abcde`  (hoặc `,hbcode 24h abcde` nếu muốn đổi thời gian). Mã hết hạn nhanh!"]
+    if images:
+        lines.append("🖼️ Ảnh: " + "  ".join(images))
+    else:
+        lines.append("(Không lấy được link ảnh — mở tin gốc bên dưới để xem)")
+    jump = getattr(message, "jump_url", None)
+    if jump:
+        lines.append(f"💬 Tin gốc: {jump}")
+    await record_raw("hb_password", text, {"images": images}, message)
+    await notify_owner("\n".join(lines), min_gap=45, target="alt")
+
+
 def _collect_component_urls(comp, out):
     url = getattr(comp, "url", None)
     if isinstance(url, str) and url.startswith("http"):
@@ -1935,6 +1996,10 @@ async def on_message(message: discord.Message):
             await check_captcha_message(message, tracked_id)
         except Exception as e:  # khong de loi o day lam hong luong doc tin con lai
             print(f"[tracker][captcha] Loi kiem tra captcha: {e!r}")
+        try:
+            await check_hb_password_message(message, tracked_id)
+        except Exception as e:
+            print(f"[tracker][hb] Loi chuyen mat khau huntbot: {e!r}")
 
     if message.author.id == OWO_BOT_ID and reply_target(message, tracked_id) == "nguoi_khac":
         # Chac chan OwO dang tra loi tin cua NGUOI KHAC -> bo qua, du loai tin nao (team, quest, ...)
@@ -2518,6 +2583,53 @@ async def gems_cmd(ctx):
                          value=f"{r['current']}/{r['max']} ({pct}%)", inline=True)
     embed.set_footer(text="Slot biến mất khỏi tin hunt = hết độ bền, bot sẽ tự nhắc owo use.")
     await ctx.send(embed=embed)
+
+
+def is_owner_or_alt():
+    """Chu bot HOAC acc phu cua Ruby (de tra loi ma huntbot ngay trong DM)."""
+    async def predicate(ctx):
+        uid = str(ctx.author.id)
+        if OWNER_ID and uid == str(OWNER_ID):
+            return True
+        alt = await get_config("alt_user_id", ALT_USER_ID_DEFAULT)
+        return bool(alt) and uid == str(alt)
+    return commands.check(predicate)
+
+
+_HB_AMOUNT_RE = re.compile(r"^\d{1,7}[hHmMdD]?$")
+_HB_CODE_RE = re.compile(r"^[A-Za-z0-9]{3,12}$")
+
+
+@bot.command(name="hbstart")
+@is_owner_or_alt()
+async def hbstart_cmd(ctx, amount: str = ""):
+    """,hbstart [24h|so cowoncy] = nho app go `owo hb <amount>` de OwO dua mat khau huntbot (mac dinh 24h)."""
+    amount = (amount or "24h").strip()
+    if not _HB_AMOUNT_RE.match(amount):
+        await ctx.send("Thời gian/số tiền không hợp lệ. Ví dụ: `,hbstart 24h` hoặc `,hbstart 100`.")
+        return
+    await set_config("hb_last_amount", amount)
+    await queue_automacro_command("hb_start", {"command_text": f"owo hb {amount}"})
+    await ctx.send(f"✅ Đã nhờ app gõ `owo hb {amount}`. OwO sẽ đưa mật khẩu — mình chuyển sang acc phụ cho bạn đọc.")
+
+
+@bot.command(name="hbcode")
+@is_owner_or_alt()
+async def hbcode_cmd(ctx, first: str = "", second: str = ""):
+    """,hbcode <ma> hoac ,hbcode <24h> <ma> = Ruby doc ma huntbot roi nhap o day, app se go `owo hb <amount> <ma>`.
+    Bot chi chuyen tiep ma do Ruby tu doc, khong tu giai."""
+    if first and second:
+        amount, code = first.strip(), second.strip()
+    else:
+        amount, code = await get_config("hb_last_amount", "24h"), first.strip()
+    if not code:
+        await ctx.send("Cú pháp: `,hbcode abcde` hoặc `,hbcode 24h abcde`.")
+        return
+    if not _HB_AMOUNT_RE.match(str(amount)) or not _HB_CODE_RE.match(code):
+        await ctx.send("Mã chỉ gồm chữ và số (3–12 ký tự), thời gian dạng `24h`/`100`. Kiểm tra lại giúp mình.")
+        return
+    await queue_automacro_command("hb_start", {"command_text": f"owo hb {amount} {code}"})
+    await ctx.send(f"✅ Đã nhờ app gõ `owo hb {amount} {code}`. Nếu app đang farm thì lệnh được gõ chen vào trong vài giây.")
 
 
 @bot.command(name="setalt")
