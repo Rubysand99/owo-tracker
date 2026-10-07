@@ -158,7 +158,7 @@ hb_pending = {"amount": None, "at": 0.0}
 
 # --- Chong spam lenh thay gem (AutoMacro) ---
 GEM_PICK_HIGHEST_TIER = True   # thay gem: dung vien tier CAO nhat con trong kho (False = tier thap nhat)
-GEM_KEEP_IF_COUNT_AT_MOST = 5  # tier nao chi con tu 5 vien tro xuong thi de danh (VD mythic x2), tru khi het cach
+GEM_KEEP_IF_COUNT_AT_MOST = 0  # 0 = luon dung tier CAO nhat con vien nao (Ruby khong muon giu lai mythic). Dat 5 neu muon de danh tier it vien
 GEM_MISSING_CONFIRM = 2        # slot phai vang mat o 2 tin hunt LIEN TIEP moi tinh la gem het
 SWAP_COOLDOWN_SECONDS = 180    # 1 slot vua duoc tao lenh thay thi 3 phut sau moi duoc tao lai
 COMMAND_EXPIRE_SECONDS = 600   # lenh cho qua 10 phut = da cu (gem da doi), tu huy, khong gui nua
