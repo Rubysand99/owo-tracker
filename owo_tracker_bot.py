@@ -768,23 +768,25 @@ def parse_battle(text: str):
       thang:            'You won in 7 turns!  |  +200 xp  |  Streak: 144'
       thua (khong co chuoi): 'You lost in 10 turns!  |  +80 xp'
       thua (cat chuoi):  'You lost in 16 turns!  |  +70 xp  |  Streak ended at 1'
-    Thua = chuoi hien tai ve 0 ('ended at N' la chuoi da MAT, khong phai chuoi hien tai)."""
-    m = re.search(r"You\s+(won|lost)\s+in\s+(\d+)\s+turns?\b[^\n]*", text or "", re.I)
+      hoa:              "It's a tie in 24 turns!  |  +100 xp  |  Streak: 330"
+    Thua = chuoi hien tai ve 0 ('ended at N' la chuoi da MAT, khong phai chuoi hien tai).
+    Hoa = chuoi giu nguyen theo so ghi trong tin."""
+    m = re.search(r"(?:You\s+(won|lost)|It[\u2019']?s\s+a\s+(tie))\s+in\s+(\d+)\s+turns?\b[^\n]*", text or "", re.I)
     if not m:
         return None
     line = m.group(0)
-    result = m.group(1).lower()
+    result = (m.group(1) or m.group(2)).lower()
     xp_m = re.search(r"\+\s*([\d,]+)\s*xp", line, re.I)
     streak_m = re.search(r"Streak\s*:\s*(\d+)", line, re.I)
     ended_m = re.search(r"Streak\s+ended\s+at\s+(\d+)", line, re.I)
-    if result == "won":
-        streak = int(streak_m.group(1)) if streak_m else None  # thang ma khong ghi chuoi -> chua biet
+    if result in ("won", "tie"):
+        streak = int(streak_m.group(1)) if streak_m else None  # khong ghi chuoi -> chua biet
         lost_streak = None
     else:
         streak = 0
         lost_streak = int(ended_m.group(1)) if ended_m else 0
     return {
-        "result": result, "turns": int(m.group(2)),
+        "result": result, "turns": int(m.group(3)),
         "xp": int(xp_m.group(1).replace(",", "")) if xp_m else None,
         "streak": streak, "lost_streak": lost_streak,
     }
@@ -902,6 +904,13 @@ async def save_zoo(z, source_id=None):
                   "updated_at": datetime.utcnow().isoformat(), "updated_by": source_id}},
         upsert=True,
     )
+    # Pet nao da nam trong zoo thi khong con la "pet moi" nua
+    try:
+        names = [str(p["name"]).lower() for p in z["pets"] if p.get("name")]
+        if names:
+            await mdb[COL_NEW_PETS].delete_many({"_id": {"$in": names}})
+    except Exception as e:
+        print(f"[tracker][zoo] Khong don duoc danh sach pet moi: {e!r}")
 
 
 INV_PART_WINDOW = 600  # giay: kho do dai nen OwO chia 2 tin; tin 2 khong co tieu de "Inventory"
@@ -1037,7 +1046,7 @@ async def save_battle(b, source_id=None):
     prev = await mdb[COL_BATTLE].find_one({"_id": "latest"}) or {}
     best = max(prev.get("best_streak") or 0, b.get("streak") or 0)
     doc = {"result": b["result"], "turns": b["turns"], "xp": b["xp"],
-           "streak": b["streak"], "best_streak": best,
+           "streak": b["streak"] if b["streak"] is not None else prev.get("streak"), "best_streak": best,
            "updated_at": datetime.utcnow().isoformat(), "updated_by": source_id}
     if b["result"] == "lost" and (b.get("lost_streak") or 0) > 0:
         doc["last_lost_streak"] = b["lost_streak"]
