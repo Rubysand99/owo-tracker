@@ -77,6 +77,7 @@ COL_GEM_STATUS = "owot_gem_status"
 COL_DAILY = "owot_daily_status"
 COL_COWONCY = "owot_cowoncy"
 COL_WEAPON_SHARDS = "owot_weapon_shards"  # v29: so weapon shards (owo ws)
+COL_EVENT = "owot_event_hunt"              # v29: tin san thuong su kien [x/10]
 COL_EMOJI = "owot_emoji_registry"
 COL_RAW = "owot_raw_samples"
 COL_BATTLE = "owot_battle_status"      # v17: chuoi battle moi nhat
@@ -653,6 +654,45 @@ def parse_weapon_shards(text: str):
     return {"amount": int(m.group(1).replace(",", ""))}
 
 
+# --- Su kien: tin thuong khi hunt, vd
+#   🐻 **|** `[8/10]` <@123>, A bear-ista freshly brewed you ... with **435 <:weaponshard:655902978712272917> Weapon Shards** on the side!
+#   🍬 **|** `[1/10]` <@123>, Trick or treat! The neighbour is handing out **2 <:crate:523771259302182922> Weapon Crates**!
+_EVENT_HEAD_RE = re.compile(
+    r"^\s*(?P<kind>[^\n\[|`]{1,40}?)\s*\*{0,2}\|\*{0,2}\s*`?\[(?P<cur>\d+)\s*/\s*(?P<max>\d+)\]`?"
+    r"\s*<@!?(?P<uid>\d+)>\s*[,:]?\s*(?P<body>.*)$")
+_EVENT_REWARD_RE = re.compile(r"\*\*\s*([\d,]+)\s*(?:<a?:(\w+):(\d+)>)?\s*([^*<\n]*?)\s*\*\*")
+
+
+def parse_event_hunt(text: str, source_id=None):
+    """Doc cac dong su kien `[x/y]` trong tin OwO. Moi dong -> {kind, current, max, text, rewards}.
+    source_id (neu co): chi nhan dong nhac DUNG nguoi dang theo doi (<@id>), bo dong cua nguoi khac."""
+    events = []
+    for line in (text or "").split("\n"):
+        m = _EVENT_HEAD_RE.match(line)
+        if not m:
+            continue
+        if source_id and m.group("uid") != str(source_id):
+            continue
+        kind = re.sub(r"<a?:(\w+):\d+>", r":\1:", m.group("kind")).replace("*", "").strip()
+        if not kind:
+            continue
+        body = m.group("body")
+        rewards = []
+        for amount, ename, eid, label in _EVENT_REWARD_RE.findall(body):
+            if not label.strip():
+                continue
+            r = {"amount": int(amount.replace(",", "")), "item": label.strip()}
+            if ename:
+                r["emoji_name"] = ename
+                r["emoji_id"] = eid
+            rewards.append(r)
+        clean = re.sub(r"<a?:\w+:\d+>", "", body).replace("*", "")
+        clean = re.sub(r"\s+", " ", clean).strip()
+        events.append({"kind": kind, "current": int(m.group("cur")), "max": int(m.group("max")),
+                       "text": clean[:300], "rewards": rewards})
+    return events or None
+
+
 # --- Zoo / Inventory / Gem — OwO dùng chữ số mũ Unicode (¹⁰⁴ = 104) cho
 # số lượng ở cả 2 loại tin nhắn này, khác hẳn owodex (dùng backtick số
 # thường). Cần giải mã riêng, không dùng chung logic với các parser trên.
@@ -722,11 +762,13 @@ _GEM_TIER_RANK = {"Common": 1, "Uncommon": 2, "Rare": 3, "Epic": 4,
 
 
 def parse_gem_name(emoji_name: str):
-    """'cgem1' -> {'tier':'Common','slot':'1'}. None nếu không phải gem."""
-    m = re.match(r"^([curelmf])gem(\d+)$", emoji_name)
+    """'cgem1' -> {'tier':'Common','slot':'1'}; 'cstar' (gem đặc biệt, sự kiện) -> slot 'star'. None nếu không phải gem."""
+    m = re.match(r"^([curelmf])(?:gem(\d+)|(star))$", emoji_name)
     if not m:
         return None
-    return {"tier": _GEM_TIER_PREFIX.get(m.group(1)), "slot": m.group(2)}
+    # gem thuong theo loai gem1/gem3/gem4 (slot "1"/"3"/"4"); gem DAC BIET (cstar...) chi co
+    # trong su kien -> slot "star".
+    return {"tier": _GEM_TIER_PREFIX.get(m.group(1)), "slot": m.group(2) or "star"}
 
 
 def parse_inventory(text: str, continuation: bool = False):
@@ -1069,6 +1111,10 @@ async def record_new_pets(found, source_id=None):
     zoo_doc = await mdb[COL_ZOO].find_one({"_id": "latest"})
     if not zoo_doc or not zoo_doc.get("pets"):
         return None
+    # Zoo bi chia 2 tin; "Zoo Points" nam o tin CUOI. Chua thay no = bang zoo co the moi doc 1 nua
+    # -> pet nam o nua con lai se bi bao nham la "moi". Khong du co so thi khong ket luan.
+    if zoo_doc.get("zoo_points") is None and not zoo_doc.get("breakdown_raw"):
+        return None
     known = {p["name"].lower() for p in zoo_doc["pets"]}
     now_iso = datetime.utcnow().isoformat()
     first_time = []
@@ -1321,6 +1367,21 @@ async def _hub_weapon_shards(now):
     if not doc:
         return None
     return _with_age({"amount": doc.get("amount"), **resolve_emoji("weaponshard")}, doc.get("updated_at"), now)
+
+
+async def _hub_event(now):
+    counters = await mdb[COL_EVENT].find({"type": "counter"}).sort("updated_at", -1).to_list(length=20)
+    if not counters:
+        return None
+    logs = await mdb[COL_EVENT].find({"type": "log"}).sort("updated_at", -1).to_list(length=10)
+
+    def pack(r):
+        d = {"kind": r.get("kind"), "current": r.get("current"), "max": r.get("max"),
+             "text": r.get("text"), "rewards": r.get("rewards") or []}
+        return _with_age(d, r.get("updated_at"), now)
+
+    return _with_age({"counters": [pack(r) for r in counters], "recent": [pack(r) for r in logs]},
+                     counters[0].get("updated_at"), now)
 
 
 async def _hub_team(now):
@@ -1858,6 +1919,7 @@ async def build_hub(now=None):
         "daily": await _hub_daily(now),
         "cowoncy": await _hub_cowoncy(now),
         "weapon_shards": await _hub_weapon_shards(now),
+        "event": await _hub_event(now),
         "gems": await _hub_gems(now),
         "huntbot": await _hub_huntbot(now),
         "quest": await _hub_quest(now),
@@ -2036,6 +2098,27 @@ async def save_weapon_shards(c, source_id=None):
     )
 
 
+EVENT_LOG_KEEP = 40
+
+
+async def save_event_hunt(events, message_id=None, source_id=None):
+    """Moi loai su kien (theo bieu tuong dau dong) giu 1 bo dem moi nhat `counter:` + nhat ky `log:`
+    (giu EVENT_LOG_KEEP dong gan nhat)."""
+    now_iso = datetime.utcnow().isoformat()
+    for i, ev in enumerate(events):
+        base = {"kind": ev["kind"], "current": ev["current"], "max": ev["max"], "text": ev["text"],
+                "rewards": ev["rewards"], "updated_at": now_iso, "updated_by": source_id}
+        await mdb[COL_EVENT].update_one({"_id": f"counter:{ev['kind']}"},
+                                        {"$set": {**base, "type": "counter"}}, upsert=True)
+        await mdb[COL_EVENT].update_one({"_id": f"log:{message_id or now_iso}:{i}"},
+                                        {"$set": {**base, "type": "log"}}, upsert=True)
+    logs = await mdb[COL_EVENT].find({"type": "log"}).sort("updated_at", -1).to_list(length=500)
+    for old in logs[EVENT_LOG_KEEP:]:
+        await mdb[COL_EVENT].delete_one({"_id": old["_id"]})
+    cutoff = (datetime.utcnow() - timedelta(days=3)).isoformat()
+    await mdb[COL_EVENT].delete_many({"type": "counter", "updated_at": {"$lt": cutoff}})
+
+
 async def save_cowoncy(c, source_id=None):
     await mdb[COL_COWONCY].update_one(
         {"_id": "latest"},
@@ -2176,6 +2259,11 @@ async def on_message(message: discord.Message):
             # trong cung kenh se bi tinh la cua ban (gem, tien, zoo cua nguoi do lan vao du lieu).
             farm_watch["last_reply_at"] = time.time()
             await handle_owo_response(message, tracked_id)
+        elif tracked_channel_id:
+            # v29: da chon kenh farm (,setchannel) -> doc MOI tin OwO trong kenh, khong can cho lenh
+            # (tin su kien tu bung ra, lenh go tat nhu Oah/Oq...). Tin cua nguoi khac van bi loc
+            # theo ten/<@id>/reply.
+            await handle_owo_response(message, tracked_id)
         elif _continuation_open(message.channel.id):
             await handle_continuation_only(message, tracked_id)
 
@@ -2239,6 +2327,7 @@ RAW_EXPECTED = {
     "huntbot": "owo hb",
     "cowoncy": "owo cash",
     "weapon_shards": "owo ws",
+    "event_hunt": "owo hunt (khi dang co su kien — dong [x/10])",
     "weapon": "owo weapon <ID vu khi cua ban>",
 }
 
@@ -2298,6 +2387,12 @@ async def handle_owo_response(message: discord.Message, source_id):
 
     await remember_emojis(text)
     recognized = False  # co loai nao nhan ra tin nay khong (neu khong -> ghi vao "unrecognized")
+
+    event_lines = parse_event_hunt(text, source_id)
+    if event_lines:
+        await save_event_hunt(event_lines, getattr(message, "id", None), source_id)
+        await record_raw("event_hunt", text, {"events": event_lines}, message)
+        recognized = True
 
     pet = parse_owodex(text)
     if pet:
