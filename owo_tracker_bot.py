@@ -76,6 +76,7 @@ COL_INVENTORY = "owot_inventory_items"
 COL_GEM_STATUS = "owot_gem_status"
 COL_DAILY = "owot_daily_status"
 COL_COWONCY = "owot_cowoncy"
+COL_WEAPON_SHARDS = "owot_weapon_shards"  # v29: so weapon shards (owo ws)
 COL_EMOJI = "owot_emoji_registry"
 COL_RAW = "owot_raw_samples"
 COL_BATTLE = "owot_battle_status"      # v17: chuoi battle moi nhat
@@ -639,6 +640,14 @@ def parse_daily(text: str, command: str = ""):
 def parse_cowoncy(text: str):
     """owo money / owo cash — "Ruby, you currently have 2,061,145 cowoncy!" """
     m = re.search(r"you currently have\s*([\d,]+)\s*cowoncy", _plain(text), re.I)
+    if not m:
+        return None
+    return {"amount": int(m.group(1).replace(",", ""))}
+
+
+def parse_weapon_shards(text: str):
+    """owo ws — mau that: \"weaponshard | Ruby, you currently have 1,174 Weapon Shards!\" """
+    m = re.search(r"you currently have\s*([\d,]+)\s*weapon\s*shards?", _plain(text), re.I)
     if not m:
         return None
     return {"amount": int(m.group(1).replace(",", ""))}
@@ -1307,6 +1316,13 @@ async def _hub_cowoncy(now):
     return _with_age({"amount": doc.get("amount"), **resolve_emoji("cowoncy")}, doc.get("updated_at"), now)
 
 
+async def _hub_weapon_shards(now):
+    doc = await mdb[COL_WEAPON_SHARDS].find_one({"_id": "latest"})
+    if not doc:
+        return None
+    return _with_age({"amount": doc.get("amount"), **resolve_emoji("weaponshard")}, doc.get("updated_at"), now)
+
+
 async def _hub_team(now):
     rows = await mdb[COL_TEAM].find().sort("_id", 1).to_list(length=10)
     if not rows:
@@ -1841,6 +1857,7 @@ async def build_hub(now=None):
         "server_time": now.isoformat() + "Z",
         "daily": await _hub_daily(now),
         "cowoncy": await _hub_cowoncy(now),
+        "weapon_shards": await _hub_weapon_shards(now),
         "gems": await _hub_gems(now),
         "huntbot": await _hub_huntbot(now),
         "quest": await _hub_quest(now),
@@ -2008,6 +2025,15 @@ async def save_daily(d):
     if d.get("reward") is not None:
         fields["last_reward"] = d["reward"]
     await mdb[COL_DAILY].update_one({"_id": "latest"}, {"$set": fields}, upsert=True)
+
+
+async def save_weapon_shards(c, source_id=None):
+    await mdb[COL_WEAPON_SHARDS].update_one(
+        {"_id": "latest"},
+        {"$set": {"amount": c["amount"], "updated_at": datetime.utcnow().isoformat(),
+                  "updated_by": source_id}},
+        upsert=True,
+    )
 
 
 async def save_cowoncy(c, source_id=None):
@@ -2212,6 +2238,7 @@ RAW_EXPECTED = {
     "daily": "owo daily",
     "huntbot": "owo hb",
     "cowoncy": "owo cash",
+    "weapon_shards": "owo ws",
     "weapon": "owo weapon <ID vu khi cua ban>",
 }
 
@@ -2336,6 +2363,12 @@ async def handle_owo_response(message: discord.Message, source_id):
     if cash:
         await save_cowoncy(cash, source_id)
         await record_raw("cowoncy", text, cash, message)
+        recognized = True
+
+    shards = parse_weapon_shards(text)
+    if shards:
+        await save_weapon_shards(shards, source_id)
+        await record_raw("weapon_shards", text, shards, message)
         recognized = True
 
     zoo_kind, zoo_result = await handle_zoo_text(message.channel.id, text, source_id)
