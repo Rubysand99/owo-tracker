@@ -100,3 +100,20 @@ asyncio.run(run())
 if fails:
     print("\n❌ %d bài lỗi" % len(fails)); sys.exit(1)
 print("\n✅ Toàn bộ test v29 pass.")
+
+# --- ten loai gem
+print()
+check("tên loại gem", [b.gem_type_name(x) for x in ("1", "3", "4", "star")], ["Hunting", "Empowering", "Lucky", "Special"])
+async def run_gem_names():
+    b.mdb = AsyncMongoMockClient()["v29_gem"]
+    await b.load_emoji_cache()
+    await b.save_gem_status(b.parse_hunt_gem_status(HUNT_STAR), "u1")
+    await b.mdb[b.COL_INVENTORY].insert_one({"_id": "079", "is_gem": True, "gem_slot": "star", "gem_tier": "Common",
+                                             "gem_tier_rank": 1, "count": 2, "name": "cstar"})
+    g = await b._hub_gems(datetime.utcnow())
+    check("hub gem: gem đang dùng có tên loại", sorted(e["type_name"] for e in g["equipped"]), ["Empowering", "Hunting", "Special"])
+    check("hub gem: gem dự phòng có tên loại", [e["type_name"] for e in g["spare"]], ["Special"])
+asyncio.run(run_gem_names())
+if fails:
+    print("\n❌ %d bài lỗi" % len(fails)); sys.exit(1)
+print("✅ Test tên loại gem pass.")

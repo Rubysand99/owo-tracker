@@ -761,6 +761,14 @@ _GEM_TIER_RANK = {"Common": 1, "Uncommon": 2, "Rare": 3, "Epic": 4,
                    "Mythical": 5, "Legendary": 6, "Fabled": 7}
 
 
+# 4 loai gem cua OwO (slot -> ten). Lenh dung gem van la ID so: `owo use 51 65 72 79`.
+GEM_TYPE_NAMES = {"1": "Hunting", "3": "Empowering", "4": "Lucky", "star": "Special"}
+
+
+def gem_type_name(slot):
+    return GEM_TYPE_NAMES.get(str(slot), f"Slot {slot}")
+
+
 def parse_gem_name(emoji_name: str):
     """'cgem1' -> {'tier':'Common','slot':'1'}; 'cstar' (gem đặc biệt, sự kiện) -> slot 'star'. None nếu không phải gem."""
     m = re.match(r"^([curelmf])(?:gem(\d+)|(star))$", emoji_name)
@@ -1277,11 +1285,12 @@ async def _hub_gems(now):
         pct = round(r["current"] / mx * 100) if mx else 0
         icon = {"emoji_id": r["emoji_id"], "emoji_animated": r.get("emoji_animated", False)} if r.get("emoji_id") else {}
         equipped.append(_with_age({
-            "slot": r["_id"], "tier": r.get("tier"),
+            "slot": r["_id"], "type_name": gem_type_name(r["_id"]), "tier": r.get("tier"),
             "current": r.get("current"), "max": mx, "percent": pct, **icon,
         }, r.get("updated_at"), now))
     spare = sorted(
-        ({"code": r["_id"], "slot": r.get("gem_slot"), "tier": r.get("gem_tier"),
+        ({"code": r["_id"], "slot": r.get("gem_slot"), "type_name": gem_type_name(r.get("gem_slot")),
+          "tier": r.get("gem_tier"),
           "count": r.get("count"), "tier_rank": r.get("gem_tier_rank") or 0,
           **({"emoji_id": r["emoji_id"], "emoji_animated": r.get("emoji_animated", False)} if r.get("emoji_id") else {})}
          for r in spare_rows),
@@ -2561,6 +2570,12 @@ async def remind_gem_replacements(message: discord.Message, slots, source_id):
         cooling |= {x for x in str((c.get("params") or {}).get("slots") or (c.get("params") or {}).get("slot") or "").split(",") if x}
 
     todo = (set(slots) | pending_slots) - (cooling - set(pending_slots))
+    if "star" in todo:
+        # Gem Special chi dung duoc khi dang co su kien -> khong thay neu khong thay tin su kien nao gan day
+        ev_cut = (now - timedelta(hours=12)).isoformat()
+        if not await mdb[COL_EVENT].find_one({"type": "counter", "updated_at": {"$gte": ev_cut}}):
+            todo.discard("star")
+            print("[tracker][gem] bo qua gem Special: khong thay su kien nao trong 12 gio qua")
     if not todo:
         print(f"[tracker][gem] bo qua nhac slot {sorted(slots)}: vua co lenh thay trong {SWAP_COOLDOWN_SECONDS}s")
         return
@@ -2573,12 +2588,12 @@ async def remind_gem_replacements(message: discord.Message, slots, source_id):
         if slot in slots:  # chi nhac trong kenh cho slot MOI het, khong nhac lai slot cu
             if not options:
                 await message.channel.send(
-                    f"<@{source_id}> ⚠️ Gem slot {slot} vừa hết, và trong kho không còn viên nào cùng slot để thay. "
+                    f"<@{source_id}> ⚠️ Gem {gem_type_name(slot)} vừa hết, và trong kho không còn viên nào cùng loại để thay. "
                     f"Cần farm/mua thêm.")
             else:
                 lines = [f"`owo use {o['_id']}` — {o['gem_tier']} (còn {o['count']})" for o in options]
                 await message.channel.send(
-                    f"<@{source_id}> ⚠️ Gem slot {slot} vừa hết độ bền! Chọn 1 trong các lựa chọn còn lại:\n" + "\n".join(lines))
+                    f"<@{source_id}> ⚠️ Gem {gem_type_name(slot)} vừa hết độ bền! Chọn 1 trong các lựa chọn còn lại:\n" + "\n".join(lines))
         if options:
             # options da sap xep: tier CAO nhat dung dau. Tier chi con rat it vien thi giu lai (neu con tier khac)
             usable = [o for o in options if (o.get("count") or 0) > GEM_KEEP_IF_COUNT_AT_MOST] or options
