@@ -184,6 +184,16 @@ async def set_config(key, value):
     await mdb[COL_CONFIG].update_one({"_id": key}, {"$set": {"value": value}}, upsert=True)
 
 
+async def get_event_mode() -> bool:
+    """v29: cong tat Event do Ruby bat/tat (app hoac `,eventmode`). BAT = dang co su kien, duoc dung
+    slot thu 4 = gem Special (`star`). TAT = khong bao gio tu dat gem Special."""
+    return (await get_config("event_mode")) == "on"
+
+
+async def set_event_mode(on: bool):
+    await set_config("event_mode", "on" if on else "off")
+
+
 async def next_note_id():
     doc = await mdb[COL_CONFIG].find_one_and_update(
         {"_id": "notes_counter"},
@@ -1076,6 +1086,11 @@ async def save_gem_status(gs, source_id=None):
     prev_docs = await prev_cursor.to_list(length=10)
     prev_slots = {d["_id"] for d in prev_docs}
     missing_now = prev_slots - seen_slots
+    # v29: Event BAT, chua thay gem Special dang dung, ma kho con gem Special -> thieu slot star (xac nhan
+    # sau GEM_MISSING_CONFIRM tin hunt nhu cac slot khac roi moi dat lenh dung)
+    if "star" not in seen_slots and await get_event_mode():
+        if await mdb[COL_INVENTORY].find_one({"is_gem": True, "gem_slot": "star", "count": {"$gt": 0}}):
+            missing_now = missing_now | {"star"}
 
     for slot in seen_slots:
         gem_missing_streak.pop(slot, None)
@@ -1647,6 +1662,20 @@ async def handle_post_notify(request: web.Request):
     return web.json_response({"ok": bool(ok)})
 
 
+async def handle_post_event_mode(request: web.Request):
+    """App bat/tat che do Event. Body: {"enabled": true|false}"""
+    if not _check_api_token(request):
+        return web.json_response({"error": "unauthorized"}, status=401)
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    if not isinstance(body, dict) or not isinstance(body.get("enabled"), bool):
+        return web.json_response({"error": "enabled phai la true/false"}, status=400)
+    await set_event_mode(body["enabled"])
+    return web.json_response({"event_mode": body["enabled"]})
+
+
 async def farm_watchdog():
     """Chay nen: canh chung khi app dang farm. Bao Ruby neu dien thoai mat ket noi hoac OwO im lang."""
     while True:
@@ -1933,6 +1962,7 @@ async def build_hub(now=None):
         "cowoncy": await _hub_cowoncy(now),
         "weapon_shards": await _hub_weapon_shards(now),
         "event": await _hub_event(now),
+        "event_mode": await get_event_mode(),
         "gems": await _hub_gems(now),
         "huntbot": await _hub_huntbot(now),
         "quest": await _hub_quest(now),
@@ -1967,6 +1997,7 @@ async def start_automacro_api_server():
     app.router.add_get("/hub", handle_get_hub)
     app.router.add_get("/alerts", handle_get_alerts)
     app.router.add_post("/notify", handle_post_notify)
+    app.router.add_post("/event-mode", handle_post_event_mode)
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, "0.0.0.0", AUTOMACRO_API_PORT)
@@ -2579,12 +2610,10 @@ async def remind_gem_replacements(message: discord.Message, slots, source_id):
         cooling |= {x for x in str((c.get("params") or {}).get("slots") or (c.get("params") or {}).get("slot") or "").split(",") if x}
 
     todo = (set(slots) | pending_slots) - (cooling - set(pending_slots))
-    if "star" in todo:
-        # Gem Special chi dung duoc khi dang co su kien -> khong thay neu khong thay tin su kien nao gan day
-        ev_cut = (now - timedelta(hours=12)).isoformat()
-        if not await mdb[COL_EVENT].find_one({"type": "counter", "updated_at": {"$gte": ev_cut}}):
-            todo.discard("star")
-            print("[tracker][gem] bo qua gem Special: khong thay su kien nao trong 12 gio qua")
+    if "star" in todo and not await get_event_mode():
+        # Gem Special chi dung duoc khi dang co su kien -> chi khi Ruby da BAT che do Event
+        todo.discard("star")
+        print("[tracker][gem] bo qua gem Special: che do Event dang TAT")
     if not todo:
         print(f"[tracker][gem] bo qua nhac slot {sorted(slots)}: vua co lenh thay trong {SWAP_COOLDOWN_SECONDS}s")
         return
@@ -3009,6 +3038,24 @@ async def testalt_cmd(ctx):
     else:
         await ctx.send(f"❌ Không DM được `{alt_id}`. Acc phụ phải **chung server** với bot và bật "
                        f"\"Cho phép tin nhắn trực tiếp từ thành viên máy chủ\" (Cài đặt Quyền riêng tư).")
+
+
+@bot.command(name="eventmode")
+@is_owner()
+async def eventmode_cmd(ctx, state: str = ""):
+    """Bat/tat che do Event (cung nut trong app). BAT = dang co su kien, duoc dung slot thu 4 (gem Special).
+    Dung: ,eventmode on | ,eventmode off | ,eventmode (xem trang thai)"""
+    st = state.strip().lower()
+    if st in ("on", "bat", "bật", "1"):
+        await set_event_mode(True)
+    elif st in ("off", "tat", "tắt", "0"):
+        await set_event_mode(False)
+    elif st:
+        await ctx.send("Dùng: `,eventmode on` | `,eventmode off` | `,eventmode` (xem trạng thái)")
+        return
+    on = await get_event_mode()
+    await ctx.send("🎉 Chế độ Event: **BẬT** — được dùng slot thứ 4 (gem Special)." if on
+                   else "🎉 Chế độ Event: **TẮT** — bot không tự dùng gem Special.")
 
 
 @bot.command(name="captcha")

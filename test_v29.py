@@ -196,3 +196,66 @@ asyncio.run(run_hb())
 if fails:
     print("\n❌ %d bài lỗi" % len(fails)); sys.exit(1)
 print("✅ Test huntbot gộp pass.")
+
+# --- chế độ Event: slot thứ 4 = gem Special
+async def run_event_mode():
+    from types import SimpleNamespace as NS
+    from unittest.mock import AsyncMock
+    b.mdb = AsyncMongoMockClient()["v29_evmode"]
+    await b.load_emoji_cache()
+    b.gem_missing_streak.clear()
+    check("event mode: mặc định TẮT", await b.get_event_mode(), False)
+    # kho có gem Special (cstar) + đang dùng 3 gem thường
+    await b.mdb[b.COL_INVENTORY].insert_many([
+        {"_id": "079", "is_gem": True, "gem_slot": "star", "gem_tier": "Common", "gem_tier_rank": 1, "count": 2, "name": "cstar"}])
+    three = ("**🌱 | Ruby**, hunt is empowered by <:cgem1:492572122120585240>`[57/100]` "
+             "<:rgem3:510366792653340674>`[20/50]` <:ugem4:510366764249382922>`[9/30]`  !\n"
+             "**<:blank:427371936482328596> |** You found:  :bee:")
+    gs = b.parse_hunt_gem_status(three)
+    await b.save_gem_status(gs, "u1"); await b.save_gem_status(gs, "u1")
+    out = await b.save_gem_status(gs, "u1")
+    check("event TẮT: không bao giờ coi thiếu slot star", "star" in out, False)
+    # BẬT
+    await b.set_event_mode(True)
+    check("event mode: bật được", await b.get_event_mode(), True)
+    r1 = await b.save_gem_status(gs, "u1")
+    check("event BẬT: tin hunt 1 chưa xác nhận (chờ tin thứ 2)", "star" in r1, False)
+    r2 = await b.save_gem_status(gs, "u1")
+    check("event BẬT: sau 2 tin hunt thiếu gem Special -> xác nhận thiếu slot star", "star" in r2, True)
+    msg = NS(channel=NS(send=AsyncMock()))
+    await b.remind_gem_replacements(msg, {"star"}, "u1")
+    cmd = await b.mdb[b.COL_AUTOMACRO_COMMANDS].find_one({"action": "swap_gem", "status": "pending"})
+    check("event BẬT: tạo lệnh dùng gem Special", cmd and cmd["params"]["command_text"], "owo use 079")
+    # TẮT lại: không tạo lệnh cho star dù slot star báo thiếu
+    await b.mdb[b.COL_AUTOMACRO_COMMANDS].delete_many({})
+    await b.set_event_mode(False)
+    await b.remind_gem_replacements(msg, {"star"}, "u1")
+    n = await b.mdb[b.COL_AUTOMACRO_COMMANDS].count_documents({"action": "swap_gem"})
+    check("event TẮT: không tạo lệnh gem Special", n, 0)
+    # đã đang dùng star thì không coi là thiếu
+    await b.set_event_mode(True)
+    four = three.replace("`[9/30]`  !", "`[9/30]` <:cstar:1101731000721096744>`[5/10]`  !")
+    out = await b.save_gem_status(b.parse_hunt_gem_status(four), "u1")
+    check("event BẬT + đang dùng star -> không thiếu", "star" in out, False)
+
+    # API
+    b.AUTOMACRO_API_TOKEN = "tok"
+    class Req:
+        def __init__(self, body, token="tok"):
+            self.headers = {"Authorization": f"Bearer {token}"}; self._b = body
+        async def json(self):
+            return self._b
+    ok = await b.handle_post_event_mode(Req({"enabled": False}))
+    check("API /event-mode: tắt được", (ok.status, await b.get_event_mode()), (200, False))
+    ok = await b.handle_post_event_mode(Req({"enabled": True}))
+    check("API /event-mode: bật được", (ok.status, await b.get_event_mode()), (200, True))
+    bad = await b.handle_post_event_mode(Req({"enabled": "yes"}))
+    check("API /event-mode: giá trị sai -> 400", bad.status, 400)
+    noauth = await b.handle_post_event_mode(Req({"enabled": False}, token="sai"))
+    check("API /event-mode: sai token -> 401 và không đổi", (noauth.status, await b.get_event_mode()), (401, True))
+    hub = await b.build_hub()
+    check("hub có khóa event_mode", hub.get("event_mode"), True)
+asyncio.run(run_event_mode())
+if fails:
+    print("\n❌ %d bài lỗi" % len(fails)); sys.exit(1)
+print("✅ Test chế độ Event pass.")
