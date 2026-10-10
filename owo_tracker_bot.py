@@ -458,9 +458,13 @@ def parse_huntbot_status(text: str):
             r"\*\*[^*\n]*?\b(Efficiency|Duration|Cost|Gain|Experience|Radar)\b[^*\n]*\*\*\s*`?\s*Lvl\s*(\d+)",
             text, re.I):
         traits[name.lower()] = int(lvl)
+    # v29: OwO nay gop thong tin + trang thai vao 1 tin. Co chu trang thai thi "status_seen" = True
+    status_seen = any(k in up for k in ("STILL HUNTING", "I WILL BE BACK IN", "ANIMALS CAPTURED",
+                                        "I AM BACK WITH", "CURRENTLY HUNTING"))
     return {
         "traits": traits or None,
         "essence": int(essence_m.group(1).replace(",", "")) if essence_m else None,
+        "status_seen": status_seen,
         "hunting": hunting,
         "progress_pct": float(progress_m.group(1)) if progress_m else None,
         "animals_captured": int(animals_m.group(1).replace(",", "")) if animals_m else None,
@@ -2068,9 +2072,12 @@ async def save_huntbot(h):
     traits = h.get("traits")
     if h.get("essence") is not None:
         row["essence"] = h["essence"]
-    if traits:                       # trang thong tin: chi cap nhat chi so + essence
+    if traits:                       # trang thong tin: cap nhat chi so + essence
         row["traits"] = traits
-    else:                            # tin trang thai: cap nhat dang san / tien do / thoi gian con lai
+    # Tin trang thai: cap nhat dang san / tien do / thoi gian con lai. Truoc day OwO tach 2 tin nen tin co
+    # chi so (traits) khong co trang thai; nay OwO GOP 1 tin -> neu tin co traits MA co ca phan trang thai
+    # (status_seen) thi van phai cap nhat trang thai, neu khong Hub cu bao "khong chay" khi huntbot dang san.
+    if (not traits) or h.get("status_seen"):
         for k in ("hunting", "progress_pct", "animals_captured", "time_remaining"):
             row[k] = h.get(k)
         row["status_at"] = now_iso   # thoi diem QUAN SAT trang thai (de tinh gio xong cho dung)
@@ -2268,10 +2275,12 @@ async def on_message(message: discord.Message):
             # trong cung kenh se bi tinh la cua ban (gem, tien, zoo cua nguoi do lan vao du lieu).
             farm_watch["last_reply_at"] = time.time()
             await handle_owo_response(message, tracked_id)
-        elif tracked_channel_id:
+        elif tracked_channel_id and await tracked_name_set(tracked_id):
             # v29: da chon kenh farm (,setchannel) -> doc MOI tin OwO trong kenh, khong can cho lenh
             # (tin su kien tu bung ra, lenh go tat nhu Oah/Oq...). Tin cua nguoi khac van bi loc
-            # theo ten/<@id>/reply.
+            # theo ten/<@id>/reply. CHI khi bot da biet ten cua ban (tracked_names nam trong RAM,
+            # mat sau moi lan khoi dong lai): chua biet ten thi khong loc duoc tin nguoi khac,
+            # nen quay ve cach cu (chi doc trong cua so sau lenh) cho den khi ban nhan tin 1 lan.
             await handle_owo_response(message, tracked_id)
         elif _continuation_open(message.channel.id):
             await handle_continuation_only(message, tracked_id)

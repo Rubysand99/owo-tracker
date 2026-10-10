@@ -117,3 +117,82 @@ asyncio.run(run_gem_names())
 if fails:
     print("\n❌ %d bài lỗi" % len(fails)); sys.exit(1)
 print("✅ Test tên loại gem pass.")
+
+# --- cong chan: chi doc MOI tin OwO khi da biet ten nguoi theo doi
+async def run_gate():
+    from types import SimpleNamespace as NS
+    seen = []
+    async def fake_handle(message, tid):
+        seen.append(message.content)
+    async def noop(*a, **k):
+        return None
+    old_h, old_p = b.handle_owo_response, b.bot.process_commands
+    b.handle_owo_response, b.bot.process_commands = fake_handle, noop
+    try:
+        b.mdb = AsyncMongoMockClient()["v29_gate"]
+        await b.set_config("tracked_channel_id", "77"); await b.set_config("tracked_user_id", "1")
+        b.tracked_names.clear(); b.pending_commands.clear()
+        owo = NS(content="tin OwO", embeds=[], components=[], author=NS(id=b.OWO_BOT_ID, bot=True),
+                 channel=NS(id=77), guild=object(), reference=None, id=5)
+        await b.on_message(owo)
+        check("vừa khởi động (chưa biết tên) + không có lệnh -> KHÔNG đọc tin OwO", seen, [])
+        b.tracked_names["1"] = {"ruby"}
+        await b.on_message(owo)
+        check("đã biết tên + kênh farm -> đọc mọi tin OwO", seen, ["tin OwO"])
+        other = NS(**{**owo.__dict__, "channel": NS(id=99)})
+        await b.on_message(other)
+        check("kênh khác kênh farm -> bỏ qua", len(seen), 1)
+    finally:
+        b.handle_owo_response, b.bot.process_commands = old_h, old_p
+asyncio.run(run_gate())
+if fails:
+    print("\n❌ %d bài lỗi" % len(fails)); sys.exit(1)
+print("✅ Test cổng đọc tin OwO pass.")
+
+# --- huntbot: OwO GỘP thông tin + trạng thái vào 1 tin (đúng như màn hình thật của Ruby)
+def _hb_text(status_block):
+    f = [("<:eff:1> Efficiency - `218/H`", "`Lvl 193 [17866/99787]` `[■■■□□□□□□□□□□□□□]`"),
+         ("<:dur:2> Duration - `21.9H`", "`Lvl 214 [0/92288]` `[□□□□□□□□□□□□□□□□]`"),
+         ("<:cost:3> Cost - `5 cowoncy`", "`Lvl 5 [MAX]` `[■■■■■■■■■■■■■■■■]`"),
+         ("<:gain:4> Gain - `4350 essence/H`", "`Lvl 174 [38399/109010]` `[■■■■■■□□□□□□□□□□]`"),
+         ("<:xp:5> Experience - `2380 xp/H`", "`Lvl 68 [0/20414]` `[□□□□□□□□□□□□□□□□]`"),
+         ("<:radar:6> Radar - `0.00013 %`", "`Lvl 32 [21692/312791]` `[■■□□□□□□□□□□□□□□]`"),
+         ("<:essence:7> Animal Essence - `0`", "`Current Max Autohunt: 4,774 animals, 95,265 essence, and 52,122 xp for 23,870 cowoncy`")]
+    t = "**BEEP. BOOP. I AM HUNTBOT. I WILL HUNT FOR YOU MASTER.**\nUse the command `owo autohunt {cowoncy}` to get started."
+    for n, v in f:
+        t += f"\n**{n}:** {v}"
+    return t + status_block
+HB_RUNNING = "\n**HUNTBOT is currently hunting!:** `BEEP BOOP. I AM STILL HUNTING. I WILL BE BACK IN 9H 51M`\n`55.02% DONE | 2626 ANIMALS CAPTURED`"
+HB_IDLE_INFO_ONLY = ""
+
+async def run_hb():
+    b.mdb = AsyncMongoMockClient()["v29_hb"]
+    await b.load_emoji_cache()
+    now = datetime.utcnow()
+    # 1) trước đó Hub tưởng huntbot KHÔNG chạy (tin thông tin cũ, không có trạng thái)
+    await b.save_huntbot(b.parse_huntbot_status(_hb_text(HB_IDLE_INFO_ONLY)))
+    h = await b._hub_huntbot(now)
+    check("hb: tin chỉ có thông tin -> chưa kết luận đang săn", h["hunting"], False)
+    # 2) tin GỘP đang săn: PHẢI cập nhật trạng thái, không chỉ chỉ số
+    await b.save_huntbot(b.parse_huntbot_status(_hb_text(HB_RUNNING)))
+    h = await b._hub_huntbot(datetime.utcnow())
+    check("hb gộp: đang săn = True", h["hunting"], True)
+    check("hb gộp: tiến độ 55.02% và 2626 con", (h["progress_pct"], h["animals_captured"]), (55.02, 2626))
+    check("hb gộp: còn 9H 51M -> seconds_left ~ 9h51m", 35400 <= h["seconds_left"] <= 35460, True)
+    check("hb gộp: vẫn có đủ 6 chỉ số", sorted(h["traits"]), ["cost", "duration", "efficiency", "experience", "gain", "radar"])
+    # 3) tin thông tin cũ (không có trạng thái) đến sau KHÔNG được xóa trạng thái đang săn
+    await b.save_huntbot(b.parse_huntbot_status(_hb_text(HB_IDLE_INFO_ONLY)))
+    h = await b._hub_huntbot(datetime.utcnow())
+    check("hb: tin chỉ-thông-tin đến sau không làm mất 'đang săn'", h["hunting"], True)
+    # 4) tin trạng thái riêng (kiểu 2 tin cũ) vẫn chạy
+    await b.save_huntbot(b.parse_huntbot_status("**BEEP BOOP. I AM STILL HUNTING. I WILL BE BACK IN 1H 12M**\n94.52% DONE | 4512 ANIMALS CAPTURED"))
+    h = await b._hub_huntbot(datetime.utcnow())
+    check("hb: tin trạng thái riêng vẫn cập nhật", (h["hunting"], h["animals_captured"]), (True, 4512))
+    # 5) huntbot về: tin gộp có 'I AM BACK WITH' -> hunting False
+    await b.save_huntbot(b.parse_huntbot_status(_hb_text("\n**BEEP BOOP. I AM BACK WITH 4512 ANIMALS, 95265 ESSENCE**")))
+    h = await b._hub_huntbot(datetime.utcnow())
+    check("hb gộp: tin 'I AM BACK WITH' -> không còn săn", h["hunting"], False)
+asyncio.run(run_hb())
+if fails:
+    print("\n❌ %d bài lỗi" % len(fails)); sys.exit(1)
+print("✅ Test huntbot gộp pass.")
