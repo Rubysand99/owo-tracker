@@ -912,59 +912,82 @@ zoo_session = {}  # channel_id -> {"ts": thoi diem tin zoo gan nhat, "data": zoo
 
 
 def merge_zoo_parts(first, part):
-    """Ghep 2 phan cua cung 1 bang zoo: cong danh sach pet; Zoo Points / breakdown
-    lay tu phan nao co (thuong nam o tin cuoi cung)."""
+    """Ghep 2 phan cua cung 1 bang zoo: cong danh sach pet (moi loai chi 1 dong; trung ten thi lay
+    so luong cua phan MOI hon); Zoo Points / breakdown lay tu phan nao co."""
+    by_name = {}
+    for p in list(first["pets"]) + list(part["pets"]):
+        by_name[str(p.get("name")).lower()] = p
     return {
-        "pets": first["pets"] + part["pets"],
+        "pets": list(by_name.values()),
         "zoo_points": part["zoo_points"] if part.get("zoo_points") is not None else first.get("zoo_points"),
         "breakdown_raw": part.get("breakdown_raw") or first.get("breakdown_raw"),
     }
 
 
+ZOO_ASSEMBLE_WINDOW = 30   # giay: cac tin cua CUNG 1 lan go zoo den cach nhau vai giay
+ZOO_SETTLE_SECONDS = 10    # bang zoo vua cap nhat < 10 giay: con dang ghep, chua dung de ket luan "pet moi"
+
+
 async def handle_zoo_text(channel_id, text, source_id=None):
-    """Xu ly 1 tin nhan co the thuoc bang zoo. Tin co tieu de -> bat dau bang zoo
-    moi. Tin khong tieu de nhung toi ngay sau tin zoo (cung kenh, trong vong
-    ZOO_PART_WINDOW giay) -> ghep vao bang dang doc."""
+    """Xu ly 1 tin nhan co the thuoc bang zoo. OwO nay chia zoo thanh 3 tin va thu tu DEN KHONG CO DINH:
+    thuc te tin co tieu de ("'s zoo") den CUOI, sau 2 tin con lai (xem owo_raw.json 2026-10-10). Nen ghep
+    khong phu thuoc thu tu: tin nao giong zoo cung duoc nhan, tin tieu de den sau van ghep vao phien dang
+    mo (khong xoa trang). Tin tieu de den khi phien da cu (>30s) = lan go zoo moi -> bat dau lai."""
     is_header = "'s zoo" in text or "zoo!" in text.lower()
+    now = time.time()
     session = zoo_session.get(channel_id)
+    age = (now - session["ts"]) if session else None
+    fresh = session is not None and age < ZOO_ASSEMBLE_WINDOW      # cung 1 lan go zoo
+    open_long = session is not None and age < ZOO_PART_WINDOW      # cho tin noi tiep den tre
     merged = None
     kind = None
+    has_header = False
     if is_header:
-        merged = parse_zoo(text)
-        kind = "zoo_1" if merged else None
-        print(f"[tracker][zoo] tin co tieu de, {len(merged['pets']) if merged else 0} pet, "
-              f"zoo_points={merged.get('zoo_points') if merged else None}")
-    elif session:
-        age = time.time() - session["ts"]
-        if age < ZOO_PART_WINDOW:
-            pets_so_far = session["data"]["pets"]
-            part = parse_zoo(text, continuation=True, start_tier=pets_so_far[-1]["tier"] if pets_so_far else None)
-            if part:
+        part = parse_zoo(text)
+        if part:
+            if fresh:
+                # Tieu de den sau cac tin con lai (thu tu that cua OwO), hoac go zoo lan 2 ngay sau lan 1
+                # (<30s): ghep chu khong xoa trang — so luong pet gan nhu khong doi trong vai giay.
                 merged = merge_zoo_parts(session["data"], part)
-                kind = "zoo_2"
-                print(f"[tracker][zoo] tin noi tiep (cach {age:.1f}s), ghep xong -> "
-                      f"{len(merged['pets'])} pet, zoo_points={merged.get('zoo_points')}")
             else:
-                # Chi bao khi tin nay TRONG GIONG zoo (co "Zoo Points" hoac dong pet co so mu) —
-                # cua so cho la 30 phut nen moi tin owo khac (cash, daily...) cung roi vao day,
-                # neu khong loc se spam log.
-                looks_zoo = "Zoo Points" in text or bool(re.search(r"(?<!`)<a?:\w+:\d+>[⁰¹²³⁴⁵⁶⁷⁸⁹]", text))
-                if looks_zoo:
-                    print(f"[tracker][zoo] tin giong zoo toi trong cua so ({age:.1f}s) nhung parse_zoo khong "
-                          f"nhan dien duoc dong dau la tier tag — bo qua. Dong dau: {text.splitlines()[:1]!r}")
-        else:
-            # Qua han cho — xoa phien de KHONG bao tin nay va moi tin owo khac sau do la
-            # "toi qua muon" nua (tranh spam log). Chi in 1 lan luc dong phien.
-            zoo_session.pop(channel_id, None)
-            print(f"[tracker][zoo] phien cho tin noi tiep da qua {ZOO_PART_WINDOW}s ma khong "
-                  f"thay tin nao hop le — dong phien (khong ghep duoc Zoo Points lan nay).")
+                merged = part
+            has_header = True
+            kind = "zoo_1"
+        print(f"[tracker][zoo] tin co tieu de, {len(part['pets']) if part else 0} pet, "
+              f"ghep -> {len(merged['pets']) if merged else 0} pet, zoo_points={merged.get('zoo_points') if merged else None}")
     else:
-        # Khong phai tieu de, cung khong co phien zoo nao dang cho — binh thuong (tin khac).
-        pass
+        pets_so_far = session["data"]["pets"] if session else []
+        start_tier = pets_so_far[-1]["tier"] if pets_so_far else None
+        part = parse_zoo(text, continuation=True, start_tier=start_tier) if (open_long or _looks_like_zoo(text)) else None
+        if part:
+            if open_long:
+                merged = merge_zoo_parts(session["data"], part)
+                has_header = bool(session.get("has_header"))
+            else:
+                merged = part                                       # tin dau tien cua 1 lan go zoo, chua co tieu de
+            kind = "zoo_2"
+            print(f"[tracker][zoo] tin noi tiep, ghep -> {len(merged['pets'])} pet, "
+                  f"zoo_points={merged.get('zoo_points')}, da_co_tieu_de={has_header}")
+        elif session and age >= ZOO_PART_WINDOW:
+            zoo_session.pop(channel_id, None)
+            print(f"[tracker][zoo] phien zoo da qua {ZOO_PART_WINDOW}s — dong phien.")
+        elif session and _looks_like_zoo(text):
+            print(f"[tracker][zoo] tin giong zoo nhung parse_zoo khong nhan ra dong tier dau — bo qua. "
+                  f"Dong dau: {text.splitlines()[:1]!r}")
     if merged:
-        zoo_session[channel_id] = {"ts": time.time(), "data": merged}
-        await save_zoo(merged, source_id)
+        merged["has_header"] = has_header
+        zoo_session[channel_id] = {"ts": now, "data": merged, "has_header": has_header}
+        # Chi LUU khi da co tin tieu de. Cac tin khong tieu de den truoc chi duoc giu tam trong bo nho,
+        # cho tin tieu de den cuoi roi moi ghep + luu — neu khong tin tieu de khong den thi bang zoo cu
+        # (day du) khong bi ghi de bang ban thieu.
+        if has_header:
+            await save_zoo(merged, source_id)
     return kind, merged
+
+
+def _looks_like_zoo(text):
+    """Tin co ve la 1 phan cua bang zoo: co 'Zoo Points' hoac dong pet co so luong chu so mu."""
+    return "Zoo Points" in text or bool(re.search(r"(?<!`)<a?:\w+:\d+>[⁰¹²³⁴⁵⁶⁷⁸⁹]", text))
 
 
 async def save_zoo(z, source_id=None):
@@ -973,7 +996,7 @@ async def save_zoo(z, source_id=None):
     await mdb[COL_ZOO].update_one(
         {"_id": "latest"},
         {"$set": {"pets": z["pets"], "zoo_points": z.get("zoo_points"),
-                  "breakdown_raw": z.get("breakdown_raw"),
+                  "breakdown_raw": z.get("breakdown_raw"), "has_header": z.get("has_header", True),
                   "updated_at": datetime.utcnow().isoformat(), "updated_by": source_id}},
         upsert=True,
     )
@@ -1142,6 +1165,14 @@ async def record_new_pets(found, source_id=None):
     # -> pet nam o nua con lai se bi bao nham la "moi". Khong du co so thi khong ket luan.
     if zoo_doc.get("zoo_points") is None and not zoo_doc.get("breakdown_raw"):
         return None
+    if zoo_doc.get("has_header") is False:
+        return None   # moi ghep duoc cac tin khong tieu de, chua thay tin dau bang
+    try:
+        upd = datetime.fromisoformat(zoo_doc.get("updated_at"))
+        if (datetime.utcnow() - upd).total_seconds() < ZOO_SETTLE_SECONDS:
+            return None   # bang zoo vua cap nhat, cac tin con lai co the dang den
+    except Exception:
+        pass
     known = {p["name"].lower() for p in zoo_doc["pets"]}
     now_iso = datetime.utcnow().isoformat()
     first_time = []

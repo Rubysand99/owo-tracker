@@ -259,3 +259,50 @@ asyncio.run(run_event_mode())
 if fails:
     print("\n❌ %d bài lỗi" % len(fails)); sys.exit(1)
 print("✅ Test chế độ Event pass.")
+
+# --- zoo: OwO chia 3 tin, tin có tiêu đề đến CUỐI (mẫu thật rawdump 2026-10-10)
+import json as _json, os as _os
+_FX = _json.load(open(_os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "fixtures_zoo_2026-10-10.json"), encoding="utf-8"))
+
+async def run_zoo():
+    b.mdb = AsyncMongoMockClient()["v29_zoo"]
+    await b.load_emoji_cache()
+    async def feed(order, ch=1):
+        out = None
+        for k in order:
+            _, out = await b.handle_zoo_text(ch, _FX[k], "u")
+        return out
+    # A) thứ tự thật: tin điểm -> tin giữa -> tin tiêu đề
+    mg = await feed(["points_part", "middle_part", "header"], ch=1)
+    names = [p["name"] for p in mg["pets"]]
+    check("zoo (thứ tự thật, tiêu đề đến cuối): đủ 89 loài", len(mg["pets"]), 89)
+    check("zoo: có Zoo Points 16,284,290", mg["zoo_points"], 16284290)
+    check("zoo: không trùng tên", len(names), len(set(n.lower() for n in names)))
+    check("zoo: đã thấy tin tiêu đề", mg["has_header"], True)
+    # B) thứ tự cũ: tiêu đề trước
+    mg2 = await feed(["header", "middle_part", "points_part"], ch=2)
+    check("zoo (thứ tự cũ, tiêu đề trước): vẫn đủ 89 loài + points", (len(mg2["pets"]), mg2["zoo_points"]), (89, 16284290))
+    # C) gõ zoo lần 2 ngay sau lần 1: bắt đầu lại, không nhân đôi
+    mg3 = await feed(["points_part", "middle_part", "header"], ch=1)
+    check("zoo gõ lần 2: vẫn 89 loài, không nhân đôi", len(mg3["pets"]), 89)
+    # D) pet mới: chỉ tiêu đề (thiếu 2 tin còn lại) -> KHÔNG kết luận (trước đây báo nhầm 35 loài)
+    b.zoo_session.clear()
+    await b.mdb[b.COL_ZOO].delete_many({})
+    await feed(["header"], ch=3)
+    mid_pet = next(p["name"] for p in (await b.handle_zoo_text(99, _FX["middle_part"], "u"))[1]["pets"] if p["count"] >= 0)
+    await b.mdb[b.COL_ZOO].delete_many({}); b.zoo_session.clear()
+    await feed(["header"], ch=3)
+    old = (datetime.utcnow().replace(microsecond=0)).isoformat()
+    await b.mdb[b.COL_ZOO].update_one({"_id": "latest"}, {"$set": {"updated_at": "2000-01-01T00:00:00"}})
+    check("zoo chỉ có tin tiêu đề -> không kết luận pet mới", await b.record_new_pets({"animals": [{"name": mid_pet}]}, "u"), None)
+    # E) đủ 3 tin + đã ổn định: pet có trong tin giữa KHÔNG bị báo mới; pet lạ thì báo
+    b.zoo_session.clear(); await b.mdb[b.COL_ZOO].delete_many({})
+    await feed(["points_part", "middle_part", "header"], ch=4)
+    check("zoo vừa cập nhật (<10s) -> chưa kết luận", await b.record_new_pets({"animals": [{"name": mid_pet}]}, "u"), None)
+    await b.mdb[b.COL_ZOO].update_one({"_id": "latest"}, {"$set": {"updated_at": "2000-01-01T00:00:00"}})
+    check("zoo đủ: pet cũ ở tin giữa KHÔNG báo nhầm", await b.record_new_pets({"animals": [{"name": mid_pet}]}, "u"), [])
+    check("zoo đủ: pet thật sự lạ vẫn được báo", await b.record_new_pets({"animals": [{"name": "pet_chua_tung_co"}]}, "u"), ["pet_chua_tung_co"])
+asyncio.run(run_zoo())
+if fails:
+    print("\n❌ %d bài lỗi" % len(fails)); sys.exit(1)
+print("✅ Test ghép zoo pass.")

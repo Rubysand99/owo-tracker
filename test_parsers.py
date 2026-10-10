@@ -15,6 +15,14 @@ from mongomock_motor import AsyncMongoMockClient
 
 import owo_tracker_bot as bot_mod
 
+# Tin Discord THAT luon co thuoc tinh .guild; tin gia trong test thi hay thieu -> them mac dinh de on_message khong sap
+_orig_on_message = bot_mod.on_message
+async def _on_message_with_guild(msg):
+    if not hasattr(msg, "guild"):
+        msg.guild = object()
+    return await _orig_on_message(msg)
+bot_mod.on_message = _on_message_with_guild
+
 PASS = "✅"
 FAIL = "❌"
 failures = []
@@ -39,7 +47,7 @@ Animal Essence - 0
 HUNTBOT is currently hunting!
 BEEP BOOP. I AM STILL HUNTING. I WILL BE BACK IN 9H 41M
 55.58% DONE | 2580 ANIMALS CAPTURED"""), {
-    "essence": 0, "hunting": True, "progress_pct": 55.58,
+    "traits": None, "essence": 0, "status_seen": True, "hunting": True, "progress_pct": 55.58,
     "animals_captured": 2580, "time_remaining": "9H 41M",
 })
 
@@ -265,6 +273,9 @@ async def run_gem_reminder_scenario():
     gs2 = bot_mod.parse_hunt_gem_status(
         "hunt is empowered by <:rgem3:510366792653340674>[295/525] !"
     )
+    # Slot phải vắng ở 2 tin hunt LIÊN TIẾP (GEM_MISSING_CONFIRM=2) mới tính là hết — tránh báo nhầm
+    vanished_once = await bot_mod.save_gem_status(gs2, "u1")
+    check("gem reminder: vắng lần 1 -> chưa xác nhận", vanished_once, set())
     vanished2 = await bot_mod.save_gem_status(gs2, "u1")
     check("gem reminder: phát hiện đúng slot 1 vừa biến mất", vanished2, {"1"})
 
@@ -643,19 +654,19 @@ async def run_zoo_split_tests():
     bot_mod.mdb = db
     bot_mod.zoo_session.clear()
 
-    # Tin 2 toi 1 minh (chua co tin 1) -> bo qua
+    # Tin 2 (khong tieu de) toi TRUOC tin 1: chi giu tam trong bo nho, chua luu gi
     await bot_mod.handle_owo_response(zoo_msg(ZOO_MSG2), "u1")
-    check("luong that: tin 2 toi 1 minh -> khong luu gi", await db[bot_mod.COL_ZOO].find_one({"_id": "latest"}), None)
+    check("luong that: tin 2 toi 1 minh -> chua luu gi (cho tin co tieu de)", await db[bot_mod.COL_ZOO].find_one({"_id": "latest"}), None)
 
-    # Tin 1 -> luu tam (chua co diem)
+    # Tin 1 (co tieu de) toi SAU (thu tu that cua OwO) -> ghep voi tin 2 dang giu va luu du
     await bot_mod.handle_owo_response(zoo_msg(ZOO_MSG1), "u1")
     doc = await db[bot_mod.COL_ZOO].find_one({"_id": "latest"})
-    check("luong that: sau tin 1 -> 53 pet, chua co diem", (len(doc["pets"]), doc["zoo_points"]), (53, None))
+    check("luong that: tin co tieu de toi sau tin 2 -> ghep du 76 pet + diem", (len(doc["pets"]), doc["zoo_points"]), (76, 13559875))
 
     # Tin khong lien quan trong luc cho -> khong lam hong
     await bot_mod.handle_owo_response(zoo_msg("Ruby, you currently have 5 cowoncy!"), "u1")
     check("luong that: tin khac chen giua khong anh huong",
-          len((await db[bot_mod.COL_ZOO].find_one({"_id": "latest"}))["pets"]), 53)
+          len((await db[bot_mod.COL_ZOO].find_one({"_id": "latest"}))["pets"]), 76)
 
     # Tin 2 -> ghep du
     await bot_mod.handle_owo_response(zoo_msg(ZOO_MSG2), "u1")
@@ -670,27 +681,33 @@ async def run_zoo_split_tests():
     check("hub: tung tier — dang co o 'total', da bat o 'caught' (common 439,810; epic 7,448; fabled 3)",
           (z["by_tier"]["common"]["caught"], z["by_tier"]["epic"]["caught"], z["by_tier"]["fabled"]["caught"]),
           (439810, 7448, 3))
-    check("hub: so loai (species) van dem tu bang (common 5 loai, mythic 1 loai)",
-          (z["by_tier"]["common"]["species"], z["by_tier"]["mythic"]["species"]), (5, 1))
+    # Loài số lượng 0 (đã bắt rồi hiến tế) vẫn là loài đã MỞ KHÓA nên được đếm (mythic: 1 còn + 4 số lượng 0)
+    check("hub: so loai (species) dem ca loai so luong 0 (common 5 loai, mythic 5 loai)",
+          (z["by_tier"]["common"]["species"], z["by_tier"]["mythic"]["species"]), (5, 5))
     check("hub: chi liet ke pet co so luong > 0", len(z["pets"]), 26)
     check("hub: JSON hop le", isinstance(json.dumps(hub), str), True)
 
-    # Go lai owo zoo -> tin co tieu de bat dau lai tu dau (khong cong don)
+    # Go lai owo zoo NGAY (<30s): ghep chu khong nhan doi, so luong van 76 (khong trung ten)
     await bot_mod.handle_owo_response(zoo_msg(ZOO_MSG1), "u1")
     doc = await db[bot_mod.COL_ZOO].find_one({"_id": "latest"})
-    check("luong that: go lai owo zoo -> bat dau ban moi, khong cong don", (len(doc["pets"]), doc["zoo_points"]), (53, None))
+    check("luong that: go lai owo zoo ngay -> ghep, khong nhan doi", (len(doc["pets"]), doc["zoo_points"]), (76, 13559875))
 
-    # Tin 2 toi qua muon (qua cua so) -> bo qua
+    # Go lai owo zoo SAU KHI phien da cu (>30s): tin co tieu de bat dau ban moi, khong cong don
+    bot_mod.zoo_session[77]["ts"] -= bot_mod.ZOO_ASSEMBLE_WINDOW + 5
+    await bot_mod.handle_owo_response(zoo_msg(ZOO_MSG1), "u1")
+    doc = await db[bot_mod.COL_ZOO].find_one({"_id": "latest"})
+    check("luong that: go lai owo zoo sau >30s -> bat dau ban moi, khong cong don", (len(doc["pets"]), doc["zoo_points"]), (53, None))
+
+    # Tin 2 toi qua muon (qua cua so 30 phut): KHONG ghep vao ban cu, chi giu tam, khong ghi de zoo da luu
     bot_mod.zoo_session[77]["ts"] -= bot_mod.ZOO_PART_WINDOW + 5
     await bot_mod.handle_owo_response(zoo_msg(ZOO_MSG2), "u1")
     doc = await db[bot_mod.COL_ZOO].find_one({"_id": "latest"})
-    check("luong that: tin 2 toi qua muon -> khong ghep", len(doc["pets"]), 53)
-    check("luong that: phien het han bi XOA, khong con luu lai", 77 in bot_mod.zoo_session, False)
+    check("luong that: tin 2 toi qua muon -> khong ghep, khong ghi de", len(doc["pets"]), 53)
+    check("luong that: phien cu bi thay bang phien chua co tieu de (khong luu)", bot_mod.zoo_session[77]["has_header"], False)
 
-    # Sau khi phien het han, mot tin owo KHAC hoan toan (khong lien quan zoo) toi
-    # sau do -> KHONG con bi bao "toi qua muon" nua (vi phien da bi xoa that su)
+    # Tin owo KHAC hoan toan (khong lien quan zoo) toi sau do -> khong dinh vao zoo
     await bot_mod.handle_owo_response(zoo_msg("Ruby, you currently have 999 cowoncy!"), "u1")
-    check("luong that: sau khi phien dong, tin khac khong dinh vao zoo nua",
+    check("luong that: tin khac khong dinh vao zoo",
           len((await db[bot_mod.COL_ZOO].find_one({"_id": "latest"}))["pets"]), 53)
 
     # Zoo ngan (vua 1 tin) van chay nhu cu
@@ -862,10 +879,10 @@ async def run_setchannel_tests():
     me = SimpleNamespace(id=555, display_name="Ruby", global_name="Ruby", nick=None, name="ruby")
 
     def cmd(text, ch):
-        return SimpleNamespace(content=text, author=me, channel=SimpleNamespace(id=ch))
+        return SimpleNamespace(content=text, author=me, guild=object(), channel=SimpleNamespace(id=ch))
 
     def owo_msg(text, ch):
-        return SimpleNamespace(content=text, embeds=[], components=[],
+        return SimpleNamespace(content=text, embeds=[], components=[], guild=object(),
                                 author=SimpleNamespace(id=bot_mod.OWO_BOT_ID), channel=SimpleNamespace(id=ch))
 
     try:
