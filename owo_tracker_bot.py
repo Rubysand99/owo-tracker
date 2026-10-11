@@ -78,6 +78,7 @@ COL_DAILY = "owot_daily_status"
 COL_COWONCY = "owot_cowoncy"
 COL_WEAPON_SHARDS = "owot_weapon_shards"  # v29: so weapon shards (owo ws)
 COL_EVENT = "owot_event_hunt"              # v29: tin san thuong su kien [x/10]
+COL_WEAPON_ADVICE = "owot_weapon_advice"   # v29: loi khuyen `?tag <vu khi>` do app thu thap trong server OwO
 COL_EMOJI = "owot_emoji_registry"
 COL_RAW = "owot_raw_samples"
 COL_BATTLE = "owot_battle_status"      # v17: chuoi battle moi nhat
@@ -666,6 +667,131 @@ def parse_weapon_shards(text: str):
     if not m:
         return None
     return {"amount": int(m.group(1).replace(",", ""))}
+
+
+# --- Loi khuyen vu khi: app go `?tag <vu khi>` trong server OwO roi gui NGUYEN CHU tren man hinh len day.
+# Tin tra loi dang: "`105`<:105shield:..> — Defender's Aegis (Shield)\nLook for stats close to:\nWP Cost: 150-160 ...
+# Recommended Passives: <:PShgen:..><:PSkaze:..> (<:PSsacrifice:..> only with <:114rstaff:..>)\nIdeal pets: ..."
+# Tren man hinh ten emoji passive hien dang `PShgen`, cac emoji sat nhau co the dinh lien: "PShgenPSkazePSthorns".
+_KNOWN_PASSIVES = {"hgen", "kaze", "thorns", "sprout", "farmor", "sacrifice", "wgen", "mtap", "crit", "mag",
+                   "gslayer", "sguard", "lifesteal", "str", "discharge", "snail", "pr", "swarm", "dstrike",
+                   "absolute"}
+
+
+def _split_passive_token(tok: str):
+    """'sacrificeonly' -> ('sacrifice', 'only') neu bat dau bang 1 passive da biet; khong thi giu nguyen."""
+    if tok in _KNOWN_PASSIVES:
+        return tok, ""
+    best = ""
+    for k in _KNOWN_PASSIVES:
+        if tok.startswith(k) and len(k) > len(best):
+            best = k
+    return (best, tok[len(best):]) if best else (tok, "")
+
+
+def _passives_in(text: str):
+    out = []
+    for m in re.finditer(r"PS([a-z0-9]+)", text or ""):
+        key, _rest = _split_passive_token(m.group(1))
+        if key and key not in out:
+            out.append(key)
+    return out
+
+
+def slice_advice_reply(tag: str, screen: str) -> str:
+    """Lay phan tin tra loi SAU dong lenh `?tag <tag>` cuoi cung tren man hinh (khong thay thi lay ca man hinh)."""
+    lines = (screen or "").split("\n")
+    want = f"?tag {tag}".lower()
+    idx = -1
+    for i, ln in enumerate(lines):
+        if ln.strip().lower() == want:
+            idx = i
+    return "\n".join(lines[idx + 1:]) if idx >= 0 else "\n".join(lines)
+
+
+def parse_weapon_advice(reply: str):
+    """Rut ra: ma + ten vu khi, WP cost, passive khuyen dung (recommended), passive co dieu kien (conditional,
+    nam trong ngoac), canh bao. KHONG doan: thieu thi de None / rong; nguyen van luon nam o raw_reply."""
+    text = reply or ""
+    flat = re.sub(r"\s+", " ", text)
+    code = name = None
+    for ln in text.split("\n"):
+        if ("—" in ln or "–" in ln) and re.search(r"\b1\d\d\b", ln):
+            code = re.search(r"\b(1\d\d)\b", ln).group(1)
+            name = re.split(r"[—–]", ln, maxsplit=1)[1].strip()
+            break
+    wp = re.search(r"WP Cost:\s*([^A-Za-z]*?\d[\d\-– ]*)", flat)
+    sec = None
+    m = re.search(r"Recommended Passives:?(.*?)(?:Ideal pets|Ideal Pets|⚠|$)", flat, re.S)
+    if m:
+        sec = m.group(1)
+    recommended, conditional = [], []
+    if sec is not None:
+        for g in re.finditer(r"\(([^)]*)\)", sec):
+            ps = _passives_in(g.group(1))
+            note = re.sub(r"PS[a-z0-9]+", "", g.group(1)).strip()
+            if ps:
+                conditional.append({"passives": ps, "dieu_kien": note})
+        outside = re.sub(r"\([^)]*\)", " ", sec)
+        recommended = _passives_in(outside)
+    warnings = [w.strip() for w in re.findall(r"⚠️?([^⚠]*?)(?=⚠|\[|$)", flat) if w.strip()]
+    return {"code": code, "name": name, "wp_cost": wp.group(1).strip() if wp else None,
+            "recommended": recommended, "conditional": conditional, "warnings": warnings,
+            "co_muc_passive": sec is not None}
+
+
+async def store_weapon_advice(tags: dict):
+    """tags: {tag: nguyen chu man hinh}. Tra ve danh sach doc da luu."""
+    docs = []
+    now_iso = datetime.utcnow().isoformat()
+    for tag, screen in tags.items():
+        tag = str(tag).strip().lower()[:30]
+        if not tag or not isinstance(screen, str):
+            continue
+        reply = slice_advice_reply(tag, screen)
+        doc = {"tag": tag, "raw_reply": reply[:12000], "raw_screen": screen[:20000],
+               "parsed": parse_weapon_advice(reply), "updated_at": now_iso}
+        await mdb[COL_WEAPON_ADVICE].update_one({"_id": tag}, {"$set": doc}, upsert=True)
+        docs.append(doc)
+    return docs
+
+
+def weapon_advice_payload(docs):
+    return {"tao_luc": datetime.utcnow().isoformat(), "so_tag": len(docs),
+            "tags": {d["tag"]: {"parsed": d["parsed"], "raw_reply": d["raw_reply"], "raw_screen": d.get("raw_screen")}
+                     for d in docs}}
+
+
+async def send_file_to_owner(text: str, filename: str, data: bytes):
+    """Gui 1 file kem loi nhan: vao kenh theo doi (tag ban) va DM, giong notify_owner."""
+    tid = await get_config("tracked_user_id")
+    cid = await get_config("tracked_channel_id")
+    sent = False
+    if cid:
+        try:
+            ch = bot.get_channel(int(cid)) or await bot.fetch_channel(int(cid))
+            mention = f"<@{tid}> " if tid else ""
+            await ch.send(f"{mention}{text}", file=discord.File(io.BytesIO(data), filename=filename))
+            sent = True
+        except Exception as e:
+            print(f"[tracker][file] Khong gui file vao kenh: {e!r}")
+    if tid:
+        try:
+            user = bot.get_user(int(tid)) or await bot.fetch_user(int(tid))
+            await user.send(text, file=discord.File(io.BytesIO(data), filename=filename))
+            sent = True
+        except Exception as e:
+            print(f"[tracker][file] Khong DM duoc file (bo qua): {e!r}")
+    return sent
+
+
+async def send_weapon_advice_file(docs):
+    payload = weapon_advice_payload(docs)
+    data = json.dumps(payload, ensure_ascii=False, indent=1).encode("utf-8")
+    ok = sum(1 for d in docs if d["parsed"].get("co_muc_passive"))
+    text = (f"📚 App đã học xong lời khuyên vũ khí: **{len(docs)}** loại, đọc được mục passive ở **{ok}** loại. "
+            f"Gửi file này cho Claude để làm bộ lọc vũ khí.")
+    return await send_file_to_owner(text, "weapon_advice.json", data)
 
 
 # --- Su kien: tin thuong khi hunt, vd
@@ -1693,6 +1819,24 @@ async def handle_post_notify(request: web.Request):
     return web.json_response({"ok": bool(ok)})
 
 
+async def handle_post_weapon_advice(request: web.Request):
+    """App gui ket qua go `?tag <vu khi>`. Body: {"tags": {"orb": "<chu tren man hinh>", ...}}"""
+    if not _check_api_token(request):
+        return web.json_response({"error": "unauthorized"}, status=401)
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    tags = body.get("tags") if isinstance(body, dict) else None
+    if not isinstance(tags, dict) or not tags or len(tags) > 80:
+        return web.json_response({"error": "tags phai la object khong rong, toi da 80 muc"}, status=400)
+    docs = await store_weapon_advice(tags)
+    if not docs:
+        return web.json_response({"error": "khong co muc hop le"}, status=400)
+    asyncio.create_task(send_weapon_advice_file(docs))
+    return web.json_response({"stored": len(docs)})
+
+
 async def handle_post_event_mode(request: web.Request):
     """App bat/tat che do Event. Body: {"enabled": true|false}"""
     if not _check_api_token(request):
@@ -2029,6 +2173,7 @@ async def start_automacro_api_server():
     app.router.add_get("/alerts", handle_get_alerts)
     app.router.add_post("/notify", handle_post_notify)
     app.router.add_post("/event-mode", handle_post_event_mode)
+    app.router.add_post("/weapon-advice", handle_post_weapon_advice)
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, "0.0.0.0", AUTOMACRO_API_PORT)
@@ -3069,6 +3214,18 @@ async def testalt_cmd(ctx):
     else:
         await ctx.send(f"❌ Không DM được `{alt_id}`. Acc phụ phải **chung server** với bot và bật "
                        f"\"Cho phép tin nhắn trực tiếp từ thành viên máy chủ\" (Cài đặt Quyền riêng tư).")
+
+
+@bot.command(name="weaponadvice")
+@is_owner()
+async def weaponadvice_cmd(ctx):
+    """Gui lai file loi khuyen vu khi da luu (neu lan truoc khong nhan duoc)."""
+    rows = await mdb[COL_WEAPON_ADVICE].find({}).to_list(length=200)
+    if not rows:
+        await ctx.send("Chưa có lời khuyên vũ khí nào. Bấm 📚 trong Hub nổi của app để app tự học.")
+        return
+    await send_weapon_advice_file(rows)
+    await ctx.send(f"Đã gửi lại file ({len(rows)} loại).")
 
 
 @bot.command(name="eventmode")

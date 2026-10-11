@@ -306,3 +306,72 @@ asyncio.run(run_zoo())
 if fails:
     print("\n❌ %d bài lỗi" % len(fails)); sys.exit(1)
 print("✅ Test ghép zoo pass.")
+
+# --- loi khuyen vu khi: app gui nguyen chu man hinh sau khi go `?tag <vu khi>` trong server OwO
+def _screen(tag, reply_lines, noise_before=("Ruby, 20:01", "Oah", "OwO, 20:01")):
+    return "\n".join(list(noise_before) + [f"?tag {tag}", "OwO, Ứng Dụng Đã Xác Minh, 20:02"] + reply_lines)
+
+SHIELD = ["105 105shield — Defender's Aegis (Shield)", "Look for stats close to:", "WP Cost: 150-160 stat3wp",
+          "Taunt: 47-50% ABtaunt",
+          "Recommended Passives: PShgenPSkazePSthornsPSsproutPSfarmor (PSsacrifice only with 114rstaff)",
+          "Ideal pets:", "Pure Tanks: high stat6hp and stat1mr/stat4pr - bot2lobster", "more"]
+DAGGER = ["108 108pdagger — Poison Dagger", "WP Cost: 100-120 stat3wp",
+          "Recommended Passives: PSmtapPScritPSmag(PSsacrifice only with 114rstaff) (PSgslayerPSsguardPSlifesteal only against bosses)",
+          "Ideal pets:", "MAG Attackers: high stat2mag"]
+HEAL = ["102 102hstaff — Healing Staff", "WP Cost: 150-160 stat3wp", "Recommended Passives: PSwgen",
+        "Ideal pets:", "⚠️ This weapon has very limited viability and is not relevant in many setups.",
+        "⚠️ This weapon is not recommended for beginners."]
+GLUED = ["114 114rstaff — Resurrection Staff", "Recommended Passives: PShgenPSdischarge(PSsacrificeonly with high stat3wp pets)", "Ideal pets:"]
+
+pa = b.parse_weapon_advice(b.slice_advice_reply("shield", _screen("shield", SHIELD)))
+check("advice shield: mã + tên", (pa["code"], pa["name"]), ("105", "Defender's Aegis (Shield)"))
+check("advice shield: WP cost", pa["wp_cost"], "150-160")
+check("advice shield: passive khuyên dùng (emoji dính liền vẫn tách đúng)", pa["recommended"], ["hgen", "kaze", "thorns", "sprout", "farmor"])
+check("advice shield: sacrifice là passive có điều kiện (chỉ với rstaff)", (pa["conditional"][0]["passives"], "only with" in pa["conditional"][0]["dieu_kien"]), (["sacrifice"], True))
+pd = b.parse_weapon_advice(b.slice_advice_reply("dagger", _screen("dagger", DAGGER)))
+check("advice dagger: khuyên dùng mtap/crit/mag", pd["recommended"], ["mtap", "crit", "mag"])
+check("advice dagger: 2 nhóm điều kiện (rstaff, đánh boss)", [c["passives"] for c in pd["conditional"]], [["sacrifice"], ["gslayer", "sguard", "lifesteal"]])
+ph = b.parse_weapon_advice(b.slice_advice_reply("hstaff", _screen("hstaff", HEAL)))
+check("advice healstaff: wgen + 2 cảnh báo", (ph["recommended"], len(ph["warnings"])), (["wgen"], 2))
+pg = b.parse_weapon_advice(b.slice_advice_reply("rstaff", _screen("rstaff", GLUED)))
+check("advice: chữ dính 'PSsacrificeonly' vẫn tách đúng passive", pg["conditional"][0]["passives"], ["sacrifice"])
+check("advice: lấy đúng phần SAU dòng `?tag` cuối (bỏ nhiễu phía trên)",
+      b.slice_advice_reply("shield", _screen("shield", SHIELD)).startswith("OwO, Ứng Dụng"), True)
+check("advice: không có dòng ?tag -> lấy cả màn hình", b.slice_advice_reply("zzz", "a\nb"), "a\nb")
+none = b.parse_weapon_advice("Không có gì ở đây")
+check("advice: tin lạ -> không bịa passive", (none["recommended"], none["co_muc_passive"]), ([], False))
+
+async def run_advice():
+    from datetime import datetime
+    b.mdb = AsyncMongoMockClient()["v29_advice"]
+    b.AUTOMACRO_API_TOKEN = "tok"
+    sent = {}
+    async def fake_send(text, filename, data):
+        sent["text"], sent["filename"], sent["data"] = text, filename, data
+        return True
+    old = b.send_file_to_owner
+    b.send_file_to_owner = fake_send
+    try:
+        class Req:
+            def __init__(self, body, token="tok"):
+                self.headers = {"Authorization": f"Bearer {token}"}; self._b = body
+            async def json(self):
+                return self._b
+        r = await b.handle_post_weapon_advice(Req({"tags": {"Shield": _screen("shield", SHIELD), "dagger": _screen("dagger", DAGGER)}}))
+        check("API /weapon-advice: lưu 2 loại", (r.status, await b.mdb[b.COL_WEAPON_ADVICE].count_documents({})), (200, 2))
+        await asyncio.sleep(0.05)
+        import json as _j
+        payload = _j.loads(sent["data"].decode("utf-8"))
+        check("bot gửi file weapon_advice.json cho Ruby", (sent["filename"], payload["so_tag"]), ("weapon_advice.json", 2))
+        check("file có passive đã tách + chữ gốc", (payload["tags"]["shield"]["parsed"]["recommended"][:2], "Defender" in payload["tags"]["shield"]["raw_reply"]), (["hgen", "kaze"], True))
+        check("tên tag được chuẩn hóa chữ thường", sorted(payload["tags"]), ["dagger", "shield"])
+        bad = await b.handle_post_weapon_advice(Req({"tags": {}}))
+        check("API /weapon-advice: rỗng -> 400", bad.status, 400)
+        no = await b.handle_post_weapon_advice(Req({"tags": {"a": "b"}}, token="sai"))
+        check("API /weapon-advice: sai token -> 401", no.status, 401)
+    finally:
+        b.send_file_to_owner = old
+asyncio.run(run_advice())
+if fails:
+    print("\n❌ %d bài lỗi" % len(fails)); sys.exit(1)
+print("✅ Test lời khuyên vũ khí pass.")
