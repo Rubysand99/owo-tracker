@@ -376,7 +376,16 @@ def parse_weapon_detail(text: str):
         roll_passive = {"name": blocks[-1][0].strip(), "desc": blocks[-1][1].strip()}
         inherent_effects = [{"name": n.strip(), "desc": d.strip()} for n, d in blocks[:-1]]
 
+    cost_m = re.search(r"\*\*Weapon Cost:\*\*\s*(\d+)", text)
+    sell_m = re.search(r"\*\*Sell Value:\*\*\s*<[^>]+>\s*([\d,]+)\s*/\s*<[^>]+>\s*([\d,]+)", text)
+    rar_m = re.search(r"\*\*Quality:\*\*\s*<a?:(\w+):\d+>", text)
+    wear_m = re.search(r"\*\*Wear:\*\*\s*`?(\w+)`?", text)
     return {
+        "wp_cost": int(cost_m.group(1)) if cost_m else None,
+        "sell_cowoncy": int(sell_m.group(1).replace(",", "")) if sell_m else None,
+        "sell_ws": int(sell_m.group(2).replace(",", "")) if sell_m else None,   # so ws nhan duoc khi dismantle
+        "rarity": rar_m.group(1) if rar_m else None,
+        "wear": wear_m.group(1) if wear_m else None,
         "type_name": type_name,
         # Chu so huu ghi o tieu de ("## Ruby's Culling Scythe") — bo emoji/ky hieu, chi lay ten
         "owner": clean_owner_name(owner_m.group(1)) if owner_m else None,
@@ -424,7 +433,16 @@ def parse_team(text: str):
         emoji_m = re.match(r"\s*<(a)?:(\w+):(\d+)>", block)
         if emoji_m:
             pet_animated, pet_name, pet_id = bool(emoji_m.group(1)), emoji_m.group(2), emoji_m.group(3)
+        # dong vu khi: `ID` <:epic:..> <:eshield:..> <:rsac:..> 71.5% -> do hiem, loai (chu cai do hiem + ten loai), passive
+        wline = re.search(r"`[A-Z0-9]{6}`([^\n]*)", block)
+        wemojis = re.findall(r"<a?:(\w+):\d+>", wline.group(1)) if wline else []
+        entry_weapon = {
+            "weapon_rarity": wemojis[0] if len(wemojis) >= 1 else None,
+            "weapon_emoji": wemojis[1] if len(wemojis) >= 2 else None,
+            "passive_emojis": wemojis[2:],
+        }
         entry = {
+            **entry_weapon,
             "pos": i, "name": emoji_to_name(name_m.group(1)),
             "emoji_id": pet_id, "emoji_animated": pet_animated,
             "level": int(lvl_m.group(1)) if lvl_m else None,
@@ -675,7 +693,7 @@ def parse_weapon_shards(text: str):
 # Tren man hinh ten emoji passive hien dang `PShgen`, cac emoji sat nhau co the dinh lien: "PShgenPSkazePSthorns".
 _KNOWN_PASSIVES = {"hgen", "kaze", "thorns", "sprout", "farmor", "sacrifice", "wgen", "mtap", "crit", "mag",
                    "gslayer", "sguard", "lifesteal", "str", "discharge", "snail", "pr", "swarm", "dstrike",
-                   "absolute"}
+                   "absolute", "enrage", "lhive"}
 
 
 def _split_passive_token(tok: str):
@@ -687,6 +705,12 @@ def _split_passive_token(tok: str):
         if tok.startswith(k) and len(k) > len(best):
             best = k
     return (best, tok[len(best):]) if best else (tok, "")
+
+
+def _passives_before_condition(text: str):
+    """'PSsacrificePSkaze not with PShgen, and only work with rstaff' -> ['sacrifice','kaze'] (passive sau 'not with' chi la ghi chu)."""
+    left = re.split(r"\b(?:not with|only)\b", text or "", maxsplit=1)[0]
+    return _passives_in(left)
 
 
 def _passives_in(text: str):
@@ -709,35 +733,242 @@ def slice_advice_reply(tag: str, screen: str) -> str:
     return "\n".join(lines[idx + 1:]) if idx >= 0 else "\n".join(lines)
 
 
+_STAT_LABELS = {"stat5pa": "STR", "stat2mag": "MAG", "stat6hp": "HP", "stat3wp": "WP", "stat4pr": "PR", "stat1mr": "MR"}
+_STAT_TOKEN_RE = re.compile(r"\b(stat\d[a-z]+)\b")
+_ABILITY_NOISE_RE = re.compile(r"\bAB[A-Za-z]+\b")
+
+
+def _clean_advice_line(ln: str) -> str:
+    ln = _STAT_TOKEN_RE.sub(lambda m: _STAT_LABELS.get(m.group(1), ""), ln)
+    return re.sub(r"\s+", " ", _ABILITY_NOISE_RE.sub("", ln)).strip()
+
+
 def parse_weapon_advice(reply: str):
-    """Rut ra: ma + ten vu khi, WP cost, passive khuyen dung (recommended), passive co dieu kien (conditional,
-    nam trong ngoac), canh bao. KHONG doan: thieu thi de None / rong; nguyen van luon nam o raw_reply."""
-    text = reply or ""
-    flat = re.sub(r"\s+", " ", text)
+    """Rut ra tu tin tra loi `?tag <vu khi>`: ma + ten, cac dong CHI SO (Look for stats close to), passive khuyen dung
+    (recommended), passive co dieu kien (trong ngoac), passive theo VAI TRO (STR Attacker / HP Tank...), pet ly tuong,
+    canh bao. KHONG doan: thieu thi de None / rong; nguyen van luon nam o raw_reply."""
+    lines = [ln.strip() for ln in (reply or "").split("\n")]
     code = name = None
-    for ln in text.split("\n"):
-        if ("—" in ln or "–" in ln) and re.search(r"\b1\d\d\b", ln):
-            code = re.search(r"\b(1\d\d)\b", ln).group(1)
+    for ln in lines:
+        if re.search(r"[—–]", ln) and re.search(r"1\d\d", ln):
+            code = re.search(r"1\d\d", ln).group(0)
             name = re.split(r"[—–]", ln, maxsplit=1)[1].strip()
             break
-    wp = re.search(r"WP Cost:\s*([^A-Za-z]*?\d[\d\-– ]*)", flat)
-    sec = None
-    m = re.search(r"Recommended Passives:?(.*?)(?:Ideal pets|Ideal Pets|⚠|$)", flat, re.S)
-    if m:
-        sec = m.group(1)
-    recommended, conditional = [], []
-    if sec is not None:
-        for g in re.finditer(r"\(([^)]*)\)", sec):
-            ps = _passives_in(g.group(1))
-            note = re.sub(r"PS[a-z0-9]+", "", g.group(1)).strip()
-            if ps:
-                conditional.append({"passives": ps, "dieu_kien": note})
-        outside = re.sub(r"\([^)]*\)", " ", sec)
-        recommended = _passives_in(outside)
-    warnings = [w.strip() for w in re.findall(r"⚠️?([^⚠]*?)(?=⚠|\[|$)", flat) if w.strip()]
-    return {"code": code, "name": name, "wp_cost": wp.group(1).strip() if wp else None,
-            "recommended": recommended, "conditional": conditional, "warnings": warnings,
-            "co_muc_passive": sec is not None}
+    flat = re.sub(r"\s+", " ", " ".join(lines))
+
+    # --- chi so can nham toi: tu "Look for stats" den "Recommended passives"
+    stats, in_stats = [], False
+    for ln in lines:
+        if re.search(r"look for stats", ln, re.I):
+            in_stats = True
+            continue
+        if re.search(r"recommended passives?", ln, re.I):
+            break
+        if in_stats and ln:
+            c = _clean_advice_line(ln)
+            if c:
+                stats.append(c)
+    wp = None
+    for x in stats:
+        if x.lower().startswith("wp cost"):
+            m = re.search(r"\d[\d\-– ]*", x)
+            wp = m.group(0).strip() if m else None
+
+    # --- passive
+    idx = next((i for i, ln in enumerate(lines) if re.search(r"recommended passives?", ln, re.I)), None)
+    sec_lines = []
+    if idx is not None:
+        for j, ln in enumerate(lines[idx:]):
+            if re.match(r"ideal pets", ln, re.I) or ln.startswith("⚠"):
+                break
+            if j == 0:
+                ln = re.sub(r"^.*?recommended passives?:?\s*", "", ln, flags=re.I)
+            if ln:
+                sec_lines.append(ln)
+    sec = " ".join(sec_lines)
+    recommended, conditional, roles = [], [], []
+    for g in re.finditer(r"\(([^)]*)\)", sec):
+        ps = _passives_before_condition(g.group(1))
+        if ps:
+            conditional.append({"passives": ps, "dieu_kien": re.sub(r"PS[a-z0-9]+", "", g.group(1)).strip()})
+    recommended = _passives_in(re.sub(r"\([^)]*\)", " ", sec))
+    for ln in sec_lines:
+        m = re.match(r"^([A-Za-z][A-Za-z ]{1,24}):\s*(.*)$", ln)
+        if m and _passives_in(m.group(2)):
+            roles.append({"role": m.group(1).strip(),
+                          "passives": _passives_in(re.sub(r"\([^)]*\)", " ", m.group(2))),
+                          "ghi_chu": re.sub(r"PS[a-z0-9]+", "", " ".join(re.findall(r"\(([^)]*)\)", m.group(2)))).strip()})
+
+    # --- pet ly tuong + canh bao
+    ideal, in_ideal = [], False
+    for ln in lines:
+        if re.match(r"ideal pets", ln, re.I):
+            in_ideal = True
+            continue
+        if in_ideal:
+            if ln.startswith("⚠") or ln.lower() == "more":
+                break
+            c = _clean_advice_line(ln)
+            if c:
+                ideal.append(c)
+    warnings = [w.strip() for w in re.findall(r"⚠️?([^⚠]*?)(?=⚠|\bmore\b|$)", flat) if w.strip()]
+    return {"code": code, "name": name, "wp_cost": wp, "stats": stats,
+            "recommended": recommended, "conditional": conditional, "roles": roles,
+            "ideal_pets": ideal, "warnings": warnings,
+            "limited": "very limited viability" in flat.lower(),
+            "tbd": bool(re.search(r"\bTBD\b", sec)),
+            "co_muc_passive": bool(recommended or conditional)}
+
+
+# ===================== Bo luat vu khi + cham diem DOI HINH (2 yeu to: chi so/co che vu khi va passive) =====================
+_RULES_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "weapon_rules.json")
+_RARITY_LETTERS = "curemlf"
+_rules_cache = {"data": None}
+
+
+def load_weapon_rules(force: bool = False):
+    """Doc weapon_rules.json (cung thu muc voi bot). Khong co file -> bo rong (teamcheck se bao thieu)."""
+    if _rules_cache["data"] is None or force:
+        try:
+            with open(_RULES_PATH, encoding="utf-8") as f:
+                _rules_cache["data"] = json.load(f)
+        except Exception as e:
+            print(f"[tracker][rules] Khong doc duoc weapon_rules.json: {e!r}")
+            _rules_cache["data"] = {"types": {}, "emoji_to_code": {}, "passive_alias": {}, "ruby": {}}
+    return _rules_cache["data"]
+
+
+def strip_rarity(emoji_name, table=None):
+    """'mrstaff' -> 'rstaff'; 'msac' -> 'sac'. Ten emoji = 1 chu cai do hiem (c/u/r/e/m/l/f) + ten that."""
+    if not emoji_name:
+        return None
+    if table is not None and emoji_name in table:
+        return emoji_name
+    if emoji_name[0] in _RARITY_LETTERS and len(emoji_name) > 1:
+        return emoji_name[1:]
+    return emoji_name
+
+
+def quality_grade(q):
+    if q is None:
+        return "❔", "chưa rõ"
+    if q >= 80:
+        return "🟢", "xuất sắc"
+    if q >= 60:
+        return "🟡", "khá"
+    if q >= 40:
+        return "🟠", "trung bình"
+    return "🔴", "yếu"
+
+
+def evaluate_team_member(member, instance, rules, team_weapon_keys=()):
+    """Cham 1 thanh vien doi hinh theo 2 yeu to: (1) CHI SO / CO CHE vu khi, (2) PASSIVE. Tra ve dict + cac dong chu.
+    Khong doan: khong map duoc passive/loai vu khi -> ❓ (khong coi la sai)."""
+    types = rules.get("types", {})
+    e2c = rules.get("emoji_to_code", {})
+    alias = rules.get("passive_alias", {})
+    ruby = rules.get("ruby", {})
+    base = strip_rarity(member.get("weapon_emoji"), e2c)
+    code = e2c.get(base)
+    rule = types.get(code) if code else None
+    out = {"pos": member.get("pos"), "pet": member.get("name"), "weapon_code": code,
+           "weapon_key": rule.get("key") if rule else None, "passive": None, "passive_verdict": "unknown",
+           "quality": member.get("quality"), "lines": []}
+    pet_line = (f"**{member.get('pos')}. {member.get('name')}** Lv{member.get('level')} — "
+                f"HP {member.get('hp')} · WP {member.get('wp')} · STR {member.get('att')} · MAG {member.get('mag')} · "
+                f"PR {member.get('pr')}% · MR {member.get('mr')}%")
+    out["lines"].append(pet_line)
+    if not member.get("weapon_emoji"):
+        out["lines"].append("🗡️ Chưa biết loại vũ khí (gõ `owo team` lại để bot đọc loại vũ khí).")
+        return out
+    wname = rule["name"] if rule else (base or "?")
+    icon, grade = quality_grade(member.get("quality"))
+    out["lines"].append(f"🗡️ {wname} ({member.get('weapon_rarity') or '?'}) — chất lượng {member.get('quality')}% → {icon} {grade}")
+    # --- yeu to 1: chi so / co che
+    if rule:
+        if rule.get("stats"):
+            out["lines"].append("📏 Chỉ số lý tưởng: " + "; ".join(rule["stats"][:4]))
+        if rule.get("limited"):
+            out["lines"].append("⚠️ Server ghi: vũ khí này ít dùng được trong nhiều đội.")
+    cost = (instance or {}).get("wp_cost")
+    pet_wp = member.get("wp")
+    if cost and pet_wp:
+        out["lines"].append(f"⚙️ Vũ khí tốn {cost} WP, pet có {pet_wp} WP → đủ khoảng {pet_wp // cost} lượt dùng.")
+    elif rule and rule.get("wp_cost") and pet_wp:
+        nums = [int(x) for x in re.findall(r"\d+", str(rule["wp_cost"]))]
+        if nums:
+            lo, hi = min(nums), max(nums)
+            out["lines"].append(f"⚙️ Chi phí WP điển hình {rule['wp_cost']}, pet có {pet_wp} WP → khoảng {pet_wp // hi}–{pet_wp // lo} lượt "
+                                f"(chưa có chi tiết cây này: gõ `owo weapon {member.get('weaponId')}`).")
+    # --- yeu to 2: passive
+    pe = (member.get("passive_emojis") or [None])[0]
+    pbase = strip_rarity(pe)
+    pkey = alias.get(pbase, pbase)
+    out["passive"] = pkey
+    if not pe:
+        out["lines"].append("✨ Chưa đọc được passive của cây này.")
+        return out
+    if not rule:
+        out["lines"].append(f"✨ Passive: {pkey} — ❓ chưa có lời khuyên cho loại vũ khí này.")
+        return out
+    rec = set(rule.get("recommended", []))
+    for r in rule.get("roles", []):
+        rec |= set(r.get("passives", []))
+    conds = {}
+    for c in rule.get("conditional", []):
+        for ps in c.get("passives", []):
+            conds[ps] = c.get("dieu_kien", "")
+    ruby_picks = set(rule.get("ruby_them", []))
+    if pkey == "sacrifice" and rule.get("key") in set(ruby.get("sacrifice_hop_voi", [])):
+        ruby_picks.add("sacrifice")
+    if pkey in rec:
+        out["passive_verdict"] = "ok"
+        out["lines"].append(f"✨ Passive: {pkey} — ✅ nằm trong danh sách server khuyên.")
+    elif pkey in ruby_picks:
+        out["passive_verdict"] = "ruby"
+        extra = f" ({conds[pkey]})" if pkey in conds else ""
+        out["lines"].append(f"✨ Passive: {pkey} — ✅ bạn chọn cho loại này{extra}.")
+    elif pkey in conds:
+        cond = conds[pkey]
+        need_rstaff = "rstaff" in cond.lower()
+        if need_rstaff and "rstaff" in set(team_weapon_keys):
+            out["passive_verdict"] = "cond_ok"
+            out["lines"].append(f"✨ Passive: {pkey} — ✅ có điều kiện, đội có rstaff nên hợp ({cond}).")
+        else:
+            out["passive_verdict"] = "cond"
+            out["lines"].append(f"✨ Passive: {pkey} — ⚠️ chỉ hợp khi: {cond}.")
+    elif pkey not in (set(rules.get("known_passives", [])) | _KNOWN_PASSIVES):
+        out["passive_verdict"] = "unknown"
+        out["lines"].append(f"✨ Passive: {pkey} — ❓ chưa biết tên này ứng với passive nào trong lời khuyên.")
+    else:
+        out["passive_verdict"] = "no"
+        out["lines"].append(f"✨ Passive: {pkey} — ❌ không có trong khuyên ({', '.join(sorted(rec)) or 'chưa có'}).")
+    return out
+
+
+async def build_team_check():
+    """Doc doi hinh dang luu, ghep chi tiet vu khi (neu co), cham diem. Tra ve (van ban, danh sach ket qua)."""
+    rules = load_weapon_rules()
+    members = await mdb[COL_TEAM].find().sort("_id", 1).to_list(length=10)
+    if not members:
+        return "Chưa có đội hình. Gõ `owo team` (hoặc `owo setteam 1`) trong kênh farm để bot đọc.", []
+    ids = [m.get("weaponId") for m in members if m.get("weaponId")]
+    inst = {}
+    if ids:
+        for d in await mdb[COL_WEAPON_INSTANCES].find({"_id": {"$in": ids}}).to_list(length=20):
+            inst[d["_id"]] = d
+    e2c = rules.get("emoji_to_code", {})
+    team_keys = []
+    for m in members:
+        code = e2c.get(strip_rarity(m.get("weapon_emoji"), e2c))
+        if code and code in rules.get("types", {}):
+            team_keys.append(rules["types"][code].get("key"))
+    results = [evaluate_team_member(m, inst.get(m.get("weaponId")), rules, team_keys) for m in members]
+    ok = sum(1 for r in results if r["passive_verdict"] in ("ok", "ruby", "cond_ok"))
+    bad = [r["pet"] for r in results if r["passive_verdict"] == "no"]
+    head = f"🛡️ **Chấm đội hình** — passive hợp: {ok}/{len(results)}" + (f" · cần xem lại: {', '.join(bad)}" if bad else "")
+    text = head + "\n\n" + "\n\n".join("\n".join(r["lines"]) for r in results)
+    return text, results
 
 
 async def store_weapon_advice(tags: dict):
@@ -2236,6 +2467,8 @@ async def save_weapon_instance(w, source_id=None):
             "type_name": w["type_name"], "quality": w["quality"],
             "passive_name": passive.get("name"), "passive_desc": passive.get("desc"),
             "passive_desc_vi": passive_desc_vi,
+            "wp_cost": w.get("wp_cost"), "sell_cowoncy": w.get("sell_cowoncy"), "sell_ws": w.get("sell_ws"),
+            "rarity": w.get("rarity"), "wear": w.get("wear"),
             "owner_id": source_id, "updated_at": datetime.utcnow().isoformat(),
         }},
         upsert=True,
@@ -2284,12 +2517,48 @@ async def save_huntbot(h):
     # Tin trang thai: cap nhat dang san / tien do / thoi gian con lai. Truoc day OwO tach 2 tin nen tin co
     # chi so (traits) khong co trang thai; nay OwO GOP 1 tin -> neu tin co traits MA co ca phan trang thai
     # (status_seen) thi van phai cap nhat trang thai, neu khong Hub cu bao "khong chay" khi huntbot dang san.
-    if (not traits) or h.get("status_seen"):
+    # v29: huntbot DA XONG / RANH: (a) tin co chu "I AM BACK WITH" (hunting=False + status_seen), hoac (b) trang
+    # thong tin KHONG con chu trang thai nao trong khi truoc do dang san va da qua gio xong (OwO gop 1 tin: khi
+    # huntbot khong san thi khong con muc "currently hunting"). Dung (b) chi khi truoc do bao dang san + da qua gio.
+    finished_prev = False
+    if prev.get("hunting"):
+        obs = _parse_utc(prev.get("status_at") or prev.get("created_at"))
+        secs = duration_to_seconds(prev.get("time_remaining"))
+        finished_prev = obs is not None and secs is not None and datetime.utcnow() >= obs + timedelta(seconds=secs)
+    idle_by_absence = bool(traits) and not h.get("status_seen") and finished_prev
+    idle = idle_by_absence or (bool(h.get("status_seen")) and h.get("hunting") is False)
+    if (not traits) or h.get("status_seen") or idle_by_absence:
         for k in ("hunting", "progress_pct", "animals_captured", "time_remaining"):
-            row[k] = h.get(k)
+            row[k] = h.get(k) if not idle_by_absence else (False if k == "hunting" else None)
         row["status_at"] = now_iso   # thoi diem QUAN SAT trang thai (de tinh gio xong cho dung)
     row["created_at"] = now_iso
     await mdb[COL_HUNTBOT].insert_one(row)
+    return "idle" if idle else None
+
+
+HB_AUTO_MIN_GAP = 1800   # giay: toi thieu giua 2 lan TU nho app chay lai huntbot
+
+
+async def maybe_auto_hb_restart(source_id=None):
+    """Huntbot vua ve/ranh -> tu nho app go `owo hb <thoi gian>` de OwO dua mat khau, bot chuyen anh sang acc phu,
+    Ruby chi viec doc ma va nhan lai (khong tu giai). Bat/tat: `,hbauto on|off` (mac dinh BAT)."""
+    if (await get_config("hb_auto", "on")) != "on":
+        return False
+    now = time.time()
+    try:
+        last = float(await get_config("hb_auto_last", "0") or 0)
+    except ValueError:
+        last = 0.0
+    if now - last < HB_AUTO_MIN_GAP or (now - hb_pending["at"]) <= HB_PENDING_SECONDS:
+        return False
+    amount = await get_config("hb_last_amount", "24h")
+    await set_config("hb_auto_last", str(now))
+    open_hb_window(amount)
+    await queue_automacro_command("hb_start", {"command_text": f"owo hb {amount}"})
+    await notify_owner(
+        f"🤖 Huntbot vừa về. Mình đã nhờ app gõ `owo hb {amount}`. OwO sẽ đưa mật khẩu — mình chuyển ảnh sang acc phụ, "
+        f"bạn đọc rồi nhắn lại đúng mã (tắt tự động: `,hbauto off`).", target="alt", min_gap=60)
+    return True
 
 
 async def save_quest(q):
@@ -2657,8 +2926,13 @@ async def handle_owo_response(message: discord.Message, source_id):
 
     hunt = parse_huntbot_status(text)
     if hunt:
-        await save_huntbot(hunt)
+        hb_state = await save_huntbot(hunt)
         await record_raw("huntbot", text, hunt, message)
+        if hb_state == "idle":
+            try:
+                await maybe_auto_hb_restart(source_id)
+            except Exception as e:
+                print(f"[tracker][hb] Loi tu chay lai huntbot: {e!r}")
         recognized = True
 
     quest = parse_quest_status(text)
@@ -3159,6 +3433,32 @@ async def hbstart_cmd(ctx, amount: str = ""):
     open_hb_window(amount)
     await queue_automacro_command("hb_start", {"command_text": f"owo hb {amount}"})
     await ctx.send(f"✅ Đã nhờ app gõ `owo hb {amount}`. OwO sẽ đưa mật khẩu — mình chuyển ảnh sang acc phụ, bạn đọc rồi nhắn lại đúng mã.")
+
+
+@bot.command(name="teamcheck")
+@is_owner()
+async def teamcheck_cmd(ctx):
+    """Cham doi hinh dang dung theo 2 yeu to: chi so/co che vu khi va passive (dua tren loi khuyen server OwO)."""
+    text, _ = await build_team_check()
+    for i in range(0, len(text), 1900):
+        await ctx.send(text[i:i + 1900])
+
+
+@bot.command(name="hbauto")
+@is_owner()
+async def hbauto_cmd(ctx, state: str = ""):
+    """,hbauto on|off = bat/tat viec TU nho app chay lai huntbot (xin mat khau) khi huntbot vua ve. Khong tham so = xem."""
+    st = state.strip().lower()
+    if st in ("on", "bat", "bật"):
+        await set_config("hb_auto", "on")
+    elif st in ("off", "tat", "tắt"):
+        await set_config("hb_auto", "off")
+    elif st:
+        await ctx.send("Dùng: `,hbauto on` | `,hbauto off`")
+        return
+    on = (await get_config("hb_auto", "on")) == "on"
+    await ctx.send("🤖 Tự chạy lại huntbot khi huntbot về: **BẬT** (app gõ `owo hb`, bạn chỉ nhắn lại mã)." if on
+                   else "🤖 Tự chạy lại huntbot: **TẮT**.")
 
 
 @bot.command(name="hbcode")

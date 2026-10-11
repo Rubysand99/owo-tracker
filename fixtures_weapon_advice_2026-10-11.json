@@ -1,0 +1,355 @@
+{
+ "tao_luc": "2026-10-11T09:33:42.775327",
+ "so_tag": 17,
+ "tags": {
+  "orb": {
+   "parsed": {
+    "code": null,
+    "name": null,
+    "wp_cost": null,
+    "recommended": [
+     "str",
+     "crit",
+     "enrage",
+     "sguard",
+     "hgen",
+     "thorns"
+    ],
+    "conditional": [
+     {
+      "passives": [
+       "sacrifice",
+       "kaze",
+       "hgen"
+      ],
+      "dieu_kien": "not with , and only work with 114rstaff"
+     }
+    ],
+    "warnings": [
+     "This weapon has very limited viability and is mostly just used for fun. more"
+    ],
+    "co_muc_passive": true
+   },
+   "raw_reply": "Snail, Ứng dụng, 16:28\nSnail\nAPP\n16:28\n106106orb — Orb of Potency\nLook for stats close to:\nWP Cost: none\nRecommended Passives:\nSTR Attacker: Any combination of PSstrPScritPSenragePSsguard\nHP Tank: Any combination of PShgenPSthorns(PSsacrificePSkaze not with PShgen, and only work with 114rstaff)\n\nIdeal pets:\nSTR Attackers: high stat5pa - g1spider🐍F4eagle\nHP Tanks: high stat6hp; stat1mr/stat4pr too if possible - bot2lobsterbot4giraffebot5trexL2owl\n⚠️ This weapon has very limited viability and is mostly just used for fun.\nmore",
+   "raw_screen": "tags\nSnail, Ứng dụng, 16:23\n105105shield — Defender's Aegis (Shield)\nLook for stats close to:\nWP Cost: 150-160 stat3wp\nTaunt: 47-50% ABtaunt\nRecommended Passives: PShgenPSkazePSthornsPSsproutPSfarmor (PSsacrifice only with 114rstaff)\n\nIdeal pets: \nPure Tanks: high stat6hp and stat1mr/stat4pr - bot2lobsterbot4giraffeL2owl\nWP Tanks: high stat6hp and a considerable amount of stat3wp - bot5trex (🐌 for starters)\nSTR hybrids: a mix of stat6hp and stat5pa - F2gorillaL3lion\nmore\nRuby, 16:28\nRuby\n16:28\n?tag Orb\nSnail, Ứng dụng, 16:28\nSnail\nAPP\n16:28\n106106orb — Orb of Potency\nLook for stats close to:\nWP Cost: none\nRecommended Passives:\nSTR Attacker: Any combination of PSstrPScritPSenragePSsguard\nHP Tank: Any combination of PShgenPSthorns(PSsacrificePSkaze not with PShgen, and only work with 114rstaff)\n\nIdeal pets:\nSTR Attackers: high stat5pa - g1spider🐍F4eagle\nHP Tanks: high stat6hp; stat1mr/stat4pr too if possible - bot2lobsterbot4giraffebot5trexL2owl\n⚠️ This weapon has very limited viability and is mostly just used for fun.\nmore"
+  },
+  "wand": {
+   "parsed": {
+    "code": null,
+    "name": null,
+    "wp_cost": "150-160",
+    "recommended": [
+     "mag",
+     "mtap",
+     "crit"
+    ],
+    "conditional": [
+     {
+      "passives": [
+       "sguard"
+      ],
+      "dieu_kien": "at higher level"
+     }
+    ],
+    "warnings": [],
+    "co_muc_passive": true
+   },
+   "raw_reply": "Snail, Ứng dụng, 16:28\nSnail\nAPP\n16:28\n109109wand — Wand of Absorption\nLook for stats close to:\nWP Cost: 150-160 stat3wp\nMAG Damage: 110-115% stat2mag\nWP Restore: 37-40%\nRecommended Passives: PSmagPSmtapPScrit(PSsguard at higher level)\n\nIdeal pets:\nMAG Attackers: high stat2mag - 🦎g4fish",
+   "raw_screen": "tags\nSnail, Ứng dụng, 16:28\nSnail\nAPP\n16:28\n106106orb — Orb of Potency\nLook for stats close to:\nWP Cost: none\nRecommended Passives:\nSTR Attacker: Any combination of PSstrPScritPSenragePSsguard\nHP Tank: Any combination of PShgenPSthorns(PSsacrificePSkaze not with PShgen, and only work with 114rstaff)\n\nIdeal pets:\nSTR Attackers: high stat5pa - g1spider🐍F4eagle\nHP Tanks: high stat6hp; stat1mr/stat4pr too if possible - bot2lobsterbot4giraffebot5trexL2owl\n⚠️ This weapon has very limited viability and is mostly just used for fun.\nmore\nRuby, 16:28\nRuby\n16:28\n?tag Wand\nSnail, Ứng dụng, 16:28\nSnail\nAPP\n16:28\n109109wand — Wand of Absorption\nLook for stats close to:\nWP Cost: 150-160 stat3wp\nMAG Damage: 110-115% stat2mag\nWP Restore: 37-40%\nRecommended Passives: PSmagPSmtapPScrit(PSsguard at higher level)\n\nIdeal pets:\nMAG Attackers: high stat2mag - 🦎g4fish"
+  },
+  "estaff": {
+   "parsed": {
+    "code": null,
+    "name": null,
+    "wp_cost": "100-125",
+    "recommended": [
+     "mtap",
+     "mag",
+     "crit"
+    ],
+    "conditional": [
+     {
+      "passives": [
+       "gslayer"
+      ],
+      "dieu_kien": "only against bosses"
+     }
+    ],
+    "warnings": [],
+    "co_muc_passive": true
+   },
+   "raw_reply": "Snail, Ứng dụng, 16:29\nSnail\nAPP\n16:29\n111111estaff — Energy Staff\nLook for stats close to:\nWP Cost: 100-125 stat3wp\nMAG Damage: 63-65% stat2mag\nRecommended Passives: PSmtapPSmagPScrit(PSgslayer only against bosses)\n\nIdeal pets:\nMAG Attackers: high stat2mag - g4fish🦎\nmore",
+   "raw_screen": "tags\nRuby, 16:28\n?tag Wand\nSnail, Ứng dụng, 16:28\nSnail\nAPP\n16:28\n109109wand — Wand of Absorption\nLook for stats close to:\nWP Cost: 150-160 stat3wp\nMAG Damage: 110-115% stat2mag\nWP Restore: 37-40%\nRecommended Passives: PSmagPSmtapPScrit(PSsguard at higher level)\n\nIdeal pets:\nMAG Attackers: high stat2mag - 🦎g4fish\nRuby, 16:29\nRuby\n16:29\n?tag Estaff\nSnail, Ứng dụng, 16:29\nSnail\nAPP\n16:29\n111111estaff — Energy Staff\nLook for stats close to:\nWP Cost: 100-125 stat3wp\nMAG Damage: 63-65% stat2mag\nRecommended Passives: PSmtapPSmagPScrit(PSgslayer only against bosses)\n\nIdeal pets:\nMAG Attackers: high stat2mag - g4fish🦎\nmore"
+  },
+  "sstaff": {
+   "parsed": {
+    "code": null,
+    "name": null,
+    "wp_cost": "150-160",
+    "recommended": [
+     "thorns",
+     "discharge",
+     "wgen"
+    ],
+    "conditional": [],
+    "warnings": [],
+    "co_muc_passive": true
+   },
+   "raw_reply": "Snail, Ứng dụng, 16:29\nSnail\nAPP\n16:29\n112112sstaff — Spirit Staff\nLook for stats close to:\nWP Cost: 150-160 (170-220 only with PSdischarge) stat3wp\nHealth Restored: 45-50% stat2mag(mostly ignored if 0-1 stat2mag)\nDefense Up: 28-30% ABdfup\nRecommended Passives: PSthornsPSdischargePSwgen\n\nIdeal pets:\nPure Tanks: high stat6hp and stat1mr/stat4pr - bot2lobsterbot4giraffeL2owl\nMAG Hybrids: a mix of stat6hp and stat2mag - 9-10stat6hp 2stat4pr 5-6stat2mag",
+   "raw_screen": "tags\nRuby, 16:29\n?tag Estaff\nSnail, Ứng dụng, 16:29\nSnail\nAPP\n16:29\n111111estaff — Energy Staff\nLook for stats close to:\nWP Cost: 100-125 stat3wp\nMAG Damage: 63-65% stat2mag\nRecommended Passives: PSmtapPSmagPScrit(PSgslayer only against bosses)\n\nIdeal pets:\nMAG Attackers: high stat2mag - g4fish🦎\nmore\nRuby, 16:29\nRuby\n16:29\n?tag Sstaff\nSnail, Ứng dụng, 16:29\nSnail\nAPP\n16:29\n112112sstaff — Spirit Staff\nLook for stats close to:\nWP Cost: 150-160 (170-220 only with PSdischarge) stat3wp\nHealth Restored: 45-50% stat2mag(mostly ignored if 0-1 stat2mag)\nDefense Up: 28-30% ABdfup\nRecommended Passives: PSthornsPSdischargePSwgen\n\nIdeal pets:\nPure Tanks: high stat6hp and stat1mr/stat4pr - bot2lobsterbot4giraffeL2owl\nMAG Hybrids: a mix of stat6hp and stat2mag - 9-10stat6hp 2stat4pr 5-6stat2mag"
+  },
+  "scepter": {
+   "parsed": {
+    "code": null,
+    "name": null,
+    "wp_cost": "125-135",
+    "recommended": [
+     "discharge",
+     "mag"
+    ],
+    "conditional": [
+     {
+      "passives": [
+       "hgen"
+      ],
+      "dieu_kien": "only against 121ffish bosses"
+     }
+    ],
+    "warnings": [
+     "This weapon has very limited viability and is not relevant in many setups."
+    ],
+    "co_muc_passive": true
+   },
+   "raw_reply": "Snail, Ứng dụng, 16:29\nSnail\nAPP\n16:29\n113113scept — Arcane Scepter\nLook for stats close to:\nWP Cost: 125-135 stat3wp (140-170 only when using PSdischarge)\nWP Restore: 90-95% stat2mag\nRecommended Passives: PSdischargePSmag(PShgen only against 121ffish bosses)\n\nIdeal pets:\nMAG Attackers: high stat2mag - 🦎 🐙\nMAG hybrids: a mix of stat6hp and stat2mag - 9stat6hp 6stat2mag\n⚠️ This weapon has very limited viability and is not relevant in many setups.",
+   "raw_screen": "tags\nRuby, 16:29\nSnail, Ứng dụng, 16:29\nSnail\nAPP\n16:29\n112112sstaff — Spirit Staff\nLook for stats close to:\nWP Cost: 150-160 (170-220 only with PSdischarge) stat3wp\nHealth Restored: 45-50% stat2mag(mostly ignored if 0-1 stat2mag)\nDefense Up: 28-30% ABdfup\nRecommended Passives: PSthornsPSdischargePSwgen\n\nIdeal pets:\nPure Tanks: high stat6hp and stat1mr/stat4pr - bot2lobsterbot4giraffeL2owl\nMAG Hybrids: a mix of stat6hp and stat2mag - 9-10stat6hp 2stat4pr 5-6stat2mag\nRuby, 16:29\nRuby\n16:29\n?tag Scepter\nSnail, Ứng dụng, 16:29\nSnail\nAPP\n16:29\n113113scept — Arcane Scepter\nLook for stats close to:\nWP Cost: 125-135 stat3wp (140-170 only when using PSdischarge)\nWP Restore: 90-95% stat2mag\nRecommended Passives: PSdischargePSmag(PShgen only against 121ffish bosses)\n\nIdeal pets:\nMAG Attackers: high stat2mag - 🦎 🐙\nMAG hybrids: a mix of stat6hp and stat2mag - 9stat6hp 6stat2mag\n⚠️ This weapon has very limited viability and is not relevant in many setups."
+  },
+  "axe": {
+   "parsed": {
+    "code": null,
+    "name": null,
+    "wp_cost": "160-170",
+    "recommended": [
+     "mtap",
+     "dstrike",
+     "wgen",
+     "lhive"
+    ],
+    "conditional": [
+     {
+      "passives": [
+       "hgen"
+      ],
+      "dieu_kien": "with bot1sloth"
+     }
+    ],
+    "warnings": [],
+    "co_muc_passive": true
+   },
+   "raw_reply": "Snail, Ứng dụng, 16:30\nSnail\nAPP\n16:30\n115115axe — Axe\nLook for stats close to:\nWP Cost: 160-170 stat3wp\nSTR Damage: Unimportant\nRecommended Passives:PSmtapPSdstrikePSwgenPSlhive(PShgen with bot1sloth)\n\nIdeal Pets:\nSTR Attackers: high stat5pa - g1spider🐍F4eagle\nWP Tanks: high stat6hp and stat3wp - bot1sloth",
+   "raw_screen": "tags\nSnail, Ứng dụng, 16:29\n118118crune — Rune of Celebration\nLook for stats close to:\nWP Cost: 100-125 stat3wp\nHP Restored with PR stat4pr: 40-45%\nWP Restored with MR stat1mr: 30-35%\nRecommended Passives: \nBalanced holders: PSprPSthornsPSdischargePShgen\nHigh stat4pr holders: PSwgen\n\nIdeal Pets:\nBalanced stat6hp and stat4pr/stat1mr - bot3hedgehog4m_owobot4giraffe\nHigh stat4pr and some stat6hp - 4-6stat6hp, 9-10stat4pr, 3stat1mr\n⚠️ This weapon is only available from some event items, you can't get it from regular crates. It’s worth keeping all the Crunes 118crune you get, as they can be stat rerolled later.\nRuby, 16:30\nRuby\n16:30\n?tag Axe\nSnail, Ứng dụng, 16:30\nSnail\nAPP\n16:30\n115115axe — Axe\nLook for stats close to:\nWP Cost: 160-170 stat3wp\nSTR Damage: Unimportant\nRecommended Passives:PSmtapPSdstrikePSwgenPSlhive(PShgen with bot1sloth)\n\nIdeal Pets:\nSTR Attackers: high stat5pa - g1spider🐍F4eagle\nWP Tanks: high stat6hp and stat3wp - bot1sloth"
+  },
+  "banner": {
+   "parsed": {
+    "code": null,
+    "name": null,
+    "wp_cost": "235-245",
+    "recommended": [
+     "mtap",
+     "wgen",
+     "str",
+     "hgen",
+     "thorns"
+    ],
+    "conditional": [],
+    "warnings": [],
+    "co_muc_passive": true
+   },
+   "raw_reply": "Snail, Ứng dụng, 16:30\nSnail\nAPP\n16:30\n116116banner — Vanguard's Banner\nLook for stats close to:\nWP Cost: 235-245 stat3wp \nAttack Buff: 23-25%\nAttack+ Buff: 33-35%\nAttack++ Buff: 48-50%\nIf your team intends to kill in the very first turn then you care more about the first boost, otherwise the last boost is most important.\nRecommended Passives: PSmtapPSwgenPSstr(Attacker)PShgenPSthorns(Defensive)\n\nIdeal pets:\nAttacker Banner: balanced stat6hp/stat3wp and higher stat5pa - L4foxdistorted2flamingo\nDefensive Banner: high stat6hp - bot5trexbot2lobsterF5boar",
+   "raw_screen": "tags\nSnail, Ứng dụng, 16:30\nSnail\nAPP\n16:30\n115115axe — Axe\nLook for stats close to:\nWP Cost: 160-170 stat3wp\nSTR Damage: Unimportant\nRecommended Passives:PSmtapPSdstrikePSwgenPSlhive(PShgen with bot1sloth)\n\nIdeal Pets:\nSTR Attackers: high stat5pa - g1spider🐍F4eagle\nWP Tanks: high stat6hp and stat3wp - bot1sloth\nRuby, 16:30\nRuby\n16:30\n?tag Banner\nSnail, Ứng dụng, 16:30\nSnail\nAPP\n16:30\n116116banner — Vanguard's Banner\nLook for stats close to:\nWP Cost: 235-245 stat3wp \nAttack Buff: 23-25%\nAttack+ Buff: 33-35%\nAttack++ Buff: 48-50%\nIf your team intends to kill in the very first turn then you care more about the first boost, otherwise the last boost is most important.\nRecommended Passives: PSmtapPSwgenPSstr(Attacker)PShgenPSthorns(Defensive)\n\nIdeal pets:\nAttacker Banner: balanced stat6hp/stat3wp and higher stat5pa - L4foxdistorted2flamingo\nDefensive Banner: high stat6hp - bot5trexbot2lobsterF5boar"
+  },
+  "pstaff": {
+   "parsed": {
+    "code": null,
+    "name": null,
+    "wp_cost": "150-160",
+    "recommended": [
+     "thorns",
+     "wgen"
+    ],
+    "conditional": [
+     {
+      "passives": [
+       "sacrifice",
+       "sguard"
+      ],
+      "dieu_kien": "only with 114rstaff"
+     }
+    ],
+    "warnings": [],
+    "co_muc_passive": true
+   },
+   "raw_reply": "Snail, Ứng dụng, 16:30\nSnail\nAPP\n16:30\n119119pstaff — Staff of Purity\nLook for stats close to:\nWP Cost: 150-160 stat3wp\nMAG heal: Unimportant\nSacred Ward: Unimportant\nRecommended Passives: PSthornsPSwgen(PSsacrificePSsguard only with 114rstaff)\n\nIdeal Pets:\nPure Tanks: high stat6hp and stat1mr/stat4pr - bot2lobsterbot4giraffeL2owl\nWP Tanks: high stat6hp and a considerable amount of stat3wp - bot5trex, 11-12stat6hp and 4-5stat3wp\nHybrid tanks: a mix of stat6hp and stat5pa - F5boarF2gorillaL3lion",
+   "raw_screen": "tags\nSnail, Ứng dụng, 16:30\n116116banner — Vanguard's Banner\nLook for stats close to:\nWP Cost: 235-245 stat3wp \nAttack Buff: 23-25%\nAttack+ Buff: 33-35%\nAttack++ Buff: 48-50%\nIf your team intends to kill in the very first turn then you care more about the first boost, otherwise the last boost is most important.\nRecommended Passives: PSmtapPSwgenPSstr(Attacker)PShgenPSthorns(Defensive)\n\nIdeal pets:\nAttacker Banner: balanced stat6hp/stat3wp and higher stat5pa - L4foxdistorted2flamingo\nDefensive Banner: high stat6hp - bot5trexbot2lobsterF5boar\nRuby, 16:30\nRuby\n16:30\n?tag Pstaff\nSnail, Ứng dụng, 16:30\nSnail\nAPP\n16:30\n119119pstaff — Staff of Purity\nLook for stats close to:\nWP Cost: 150-160 stat3wp\nMAG heal: Unimportant\nSacred Ward: Unimportant\nRecommended Passives: PSthornsPSwgen(PSsacrificePSsguard only with 114rstaff)\n\nIdeal Pets:\nPure Tanks: high stat6hp and stat1mr/stat4pr - bot2lobsterbot4giraffeL2owl\nWP Tanks: high stat6hp and a considerable amount of stat3wp - bot5trex, 11-12stat6hp and 4-5stat3wp\nHybrid tanks: a mix of stat6hp and stat5pa - F5boarF2gorillaL3lion"
+  },
+  "ffish": {
+   "parsed": {
+    "code": null,
+    "name": null,
+    "wp_cost": "180-215",
+    "recommended": [
+     "str",
+     "discharge",
+     "sguard"
+    ],
+    "conditional": [
+     {
+      "passives": [
+       "lhive"
+      ],
+      "dieu_kien": "with stat2mag attackers"
+     }
+    ],
+    "warnings": [],
+    "co_muc_passive": true
+   },
+   "raw_reply": "Snail, Ứng dụng, 16:31\nSnail\nAPP\n16:31\n121121ffish — Foul Fish\nLook for stats close to:\nWP Cost: 180-215 stat3wp\nSTR Damage: 65-80% stat5pa (unimportant on stat2mag attackers)\nStinky Damage: 45-50% stat2mag (unimportant on stat5pa attackers)\nRecommended Passives: PSstrPSdischargePSsguard(PSlhive with stat2mag attackers)\n\nIdeal pets:\nSTR attackers: Pets with stat5pa - hidden2snakeF4eagledistorted2flamingog1spiderF2gorilla\nMAG Attackers: high stat2mag - 🦎\nmore",
+   "raw_screen": "tags\nSnail, Ứng dụng, 16:30\nSnail\nAPP\n16:30\n119119pstaff — Staff of Purity\nLook for stats close to:\nWP Cost: 150-160 stat3wp\nMAG heal: Unimportant\nSacred Ward: Unimportant\nRecommended Passives: PSthornsPSwgen(PSsacrificePSsguard only with 114rstaff)\n\nIdeal Pets:\nPure Tanks: high stat6hp and stat1mr/stat4pr - bot2lobsterbot4giraffeL2owl\nWP Tanks: high stat6hp and a considerable amount of stat3wp - bot5trex, 11-12stat6hp and 4-5stat3wp\nHybrid tanks: a mix of stat6hp and stat5pa - F5boarF2gorillaL3lion\nRuby, 16:31\nRuby\n16:31\n?tag Ffish\nSnail, Ứng dụng, 16:31\nSnail\nAPP\n16:31\n121121ffish — Foul Fish\nLook for stats close to:\nWP Cost: 180-215 stat3wp\nSTR Damage: 65-80% stat5pa (unimportant on stat2mag attackers)\nStinky Damage: 45-50% stat2mag (unimportant on stat5pa attackers)\nRecommended Passives: PSstrPSdischargePSsguard(PSlhive with stat2mag attackers)\n\nIdeal pets:\nSTR attackers: Pets with stat5pa - hidden2snakeF4eagledistorted2flamingog1spiderF2gorilla\nMAG Attackers: high stat2mag - 🦎\nmore"
+  },
+  "lrune": {
+   "parsed": {
+    "code": null,
+    "name": null,
+    "wp_cost": "100-135",
+    "recommended": [
+     "mtap",
+     "crit"
+    ],
+    "conditional": [
+     {
+      "passives": [
+       "lhive"
+      ],
+      "dieu_kien": "on stat2mag attackers"
+     }
+    ],
+    "warnings": [
+     "This weapon has very limited viability and is not relevant in many setups.",
+     "This weapon is only available from some event items, you can't get it from regular crates."
+    ],
+    "co_muc_passive": true
+   },
+   "raw_reply": "Snail, Ứng dụng, 16:31\nSnail\nAPP\n16:31\n122122lrune — Rune of Luck\nLook for stats close to:\nWP Cost: 100-135 stat3wp\nTotal of all punches added together: 175-200%\nRecommended Passives: PSmtapPScrit(PSlhive on stat2mag attackers)\n\nIdeal pets: high combined stat2mag and stat5pa - g1spiderg4fish🐍🐒🦎\n⚠️ This weapon has very limited viability and is not relevant in many setups.\n⚠️ This weapon is only available from some event items, you can't get it from regular crates.",
+   "raw_screen": "tags\nSnail, Ứng dụng, 16:31\nSnail\nAPP\n16:31\n121121ffish — Foul Fish\nLook for stats close to:\nWP Cost: 180-215 stat3wp\nSTR Damage: 65-80% stat5pa (unimportant on stat2mag attackers)\nStinky Damage: 45-50% stat2mag (unimportant on stat5pa attackers)\nRecommended Passives: PSstrPSdischargePSsguard(PSlhive with stat2mag attackers)\n\nIdeal pets:\nSTR attackers: Pets with stat5pa - hidden2snakeF4eagledistorted2flamingog1spiderF2gorilla\nMAG Attackers: high stat2mag - 🦎\nmore\nRuby, 16:31\nRuby\n16:31\n?tag Lrune\nSnail, Ứng dụng, 16:31\nSnail\nAPP\n16:31\n122122lrune — Rune of Luck\nLook for stats close to:\nWP Cost: 100-135 stat3wp\nTotal of all punches added together: 175-200%\nRecommended Passives: PSmtapPScrit(PSlhive on stat2mag attackers)\n\nIdeal pets: high combined stat2mag and stat5pa - g1spiderg4fish🐍🐒🦎\n⚠️ This weapon has very limited viability and is not relevant in many setups.\n⚠️ This weapon is only available from some event items, you can't get it from regular crates."
+  },
+  "cstaff": {
+   "parsed": {
+    "code": null,
+    "name": null,
+    "wp_cost": "150-160",
+    "recommended": [],
+    "conditional": [],
+    "warnings": [
+     "This weapon has very limited viability and is not relevant in many setups."
+    ],
+    "co_muc_passive": false
+   },
+   "raw_reply": "Snail, Ứng dụng, 16:31\nSnail\nAPP\n16:31\n123123cstaff — Staff of Corruption\nLook for stats close to:\nWP Cost: 150-160 stat3wp\nReduce Effectiveness: 50-60% (50% best)\nSTR Damage: 110-120%\nRecommended passives: TBD\n\nIdeal pets:\nSTR Attackers: high stat5pa - g1spider🐍F4eagle\n⚠️ This weapon has very limited viability and is not relevant in many setups.",
+   "raw_screen": "tags\nRuby, 16:31\nSnail, Ứng dụng, 16:31\nSnail\nAPP\n16:31\n122122lrune — Rune of Luck\nLook for stats close to:\nWP Cost: 100-135 stat3wp\nTotal of all punches added together: 175-200%\nRecommended Passives: PSmtapPScrit(PSlhive on stat2mag attackers)\n\nIdeal pets: high combined stat2mag and stat5pa - g1spiderg4fish🐍🐒🦎\n⚠️ This weapon has very limited viability and is not relevant in many setups.\n⚠️ This weapon is only available from some event items, you can't get it from regular crates.\nRuby, 16:31\nRuby\n16:31\n?tag Cstaff\nSnail, Ứng dụng, 16:31\nSnail\nAPP\n16:31\n123123cstaff — Staff of Corruption\nLook for stats close to:\nWP Cost: 150-160 stat3wp\nReduce Effectiveness: 50-60% (50% best)\nSTR Damage: 110-120%\nRecommended passives: TBD\n\nIdeal pets:\nSTR Attackers: high stat5pa - g1spider🐍F4eagle\n⚠️ This weapon has very limited viability and is not relevant in many setups."
+  },
+  "stithe": {
+   "parsed": {
+    "code": null,
+    "name": null,
+    "wp_cost": "50-70",
+    "recommended": [
+     "mag",
+     "crit"
+    ],
+    "conditional": [],
+    "warnings": [
+     "This weapon has very limited viability and is not relevant in many setups."
+    ],
+    "co_muc_passive": true
+   },
+   "raw_reply": "Snail, Ứng dụng, 16:32\nSnail\nAPP\n16:32\n124124stithe — Soul tithe\nLook for stats close to:\nWP Cost: 50-70 stat3wp\nWP absorbed: 22-25% \nMag damage: 0.42-0.45% stat2mag\nRecommended Passives: PSmagPScrit\n\nIdeal pets:\nMAG Attackers: high stat2mag - g4fish🦎\n⚠️ This weapon has very limited viability and is not relevant in many setups.",
+   "raw_screen": "tags\nRuby, 16:31\nSnail, Ứng dụng, 16:31\nSnail\nAPP\n16:31\n123123cstaff — Staff of Corruption\nLook for stats close to:\nWP Cost: 150-160 stat3wp\nReduce Effectiveness: 50-60% (50% best)\nSTR Damage: 110-120%\nRecommended passives: TBD\n\nIdeal pets:\nSTR Attackers: high stat5pa - g1spider🐍F4eagle\n⚠️ This weapon has very limited viability and is not relevant in many setups.\nRuby, 16:32\nRuby\n16:32\n?tag Stithe\nSnail, Ứng dụng, 16:32\nSnail\nAPP\n16:32\n124124stithe — Soul tithe\nLook for stats close to:\nWP Cost: 50-70 stat3wp\nWP absorbed: 22-25% \nMag damage: 0.42-0.45% stat2mag\nRecommended Passives: PSmagPScrit\n\nIdeal pets:\nMAG Attackers: high stat2mag - g4fish🦎\n⚠️ This weapon has very limited viability and is not relevant in many setups."
+  },
+  "bhstaff": {
+   "parsed": {
+    "code": null,
+    "name": null,
+    "wp_cost": "140-160",
+    "recommended": [
+     "sacrifice"
+    ],
+    "conditional": [],
+    "warnings": [
+     "This weapon has very limited viability and is not relevant in many setups."
+    ],
+    "co_muc_passive": true
+   },
+   "raw_reply": "Snail, Ứng dụng, 16:32\nSnail\nAPP\n16:32\n125125bhstaff — Briar-Heart Staff\nLook for stats close to:\nWP Cost: 140-160 stat3wp\nDMG absorption: 45-50%\nHealing absorption: 20-23%\nReplenish absorption: 20-23%\nRecommended Passives: PSsacrifice\n\nIdeal pets:\nWP tanks: balanced :stat6hp: and :stat3wp: - 6-10stat6hp 6-10stat3wp\n⚠️ This weapon has very limited viability and is not relevant in many setups.",
+   "raw_screen": "tags\nSnail, Ứng dụng, 16:32\nSnail\nAPP\n16:32\n124124stithe — Soul tithe\nLook for stats close to:\nWP Cost: 50-70 stat3wp\nWP absorbed: 22-25% \nMag damage: 0.42-0.45% stat2mag\nRecommended Passives: PSmagPScrit\n\nIdeal pets:\nMAG Attackers: high stat2mag - g4fish🦎\n⚠️ This weapon has very limited viability and is not relevant in many setups.\nRuby, 16:32\nRuby\n16:32\n?tag BHstaff\nSnail, Ứng dụng, 16:32\nSnail\nAPP\n16:32\n125125bhstaff — Briar-Heart Staff\nLook for stats close to:\nWP Cost: 140-160 stat3wp\nDMG absorption: 45-50%\nHealing absorption: 20-23%\nReplenish absorption: 20-23%\nRecommended Passives: PSsacrifice\n\nIdeal pets:\nWP tanks: balanced :stat6hp: and :stat3wp: - 6-10stat6hp 6-10stat3wp\n⚠️ This weapon has very limited viability and is not relevant in many setups."
+  },
+  "aedge": {
+   "parsed": {
+    "code": null,
+    "name": null,
+    "wp_cost": "125-140",
+    "recommended": [
+     "crit",
+     "mtap",
+     "snail"
+    ],
+    "conditional": [],
+    "warnings": [
+     "This weapon has very limited viability and is not relevant in many setups."
+    ],
+    "co_muc_passive": true
+   },
+   "raw_reply": "Snail, Ứng dụng, 16:32\nSnail\nAPP\n16:32\n126126aedge — Arbiter's Edge\nLook for stats close to:\nWP Cost: 125-140 stat3wp\nSin: 17-20% ABsin (if maxing sin stacks)\nVirtue: 27-30% ABvirtue (if maxing virtue stacks) \nRecommended Passives: PScritPSmtapPSsnail\n\nIdeal pets:\nWhen maxing ABsin stacks: high stat2mag or stat5pa - 🦎g4fish🐍g1spider \nWhen maxing ABvirtue stacks: equal stat2mag and stat5pa - 🐒 \n⚠️ This weapon has very limited viability and is not relevant in many setups.",
+   "raw_screen": "tags\nSnail, Ứng dụng, 16:32\nSnail\nAPP\n16:32\n125125bhstaff — Briar-Heart Staff\nLook for stats close to:\nWP Cost: 140-160 stat3wp\nDMG absorption: 45-50%\nHealing absorption: 20-23%\nReplenish absorption: 20-23%\nRecommended Passives: PSsacrifice\n\nIdeal pets:\nWP tanks: balanced :stat6hp: and :stat3wp: - 6-10stat6hp 6-10stat3wp\n⚠️ This weapon has very limited viability and is not relevant in many setups.\nRuby, 16:32\nRuby\n16:32\n?tag Aedge\nSnail, Ứng dụng, 16:32\nSnail\nAPP\n16:32\n126126aedge — Arbiter's Edge\nLook for stats close to:\nWP Cost: 125-140 stat3wp\nSin: 17-20% ABsin (if maxing sin stacks)\nVirtue: 27-30% ABvirtue (if maxing virtue stacks) \nRecommended Passives: PScritPSmtapPSsnail\n\nIdeal pets:\nWhen maxing ABsin stacks: high stat2mag or stat5pa - 🦎g4fish🐍g1spider \nWhen maxing ABvirtue stacks: equal stat2mag and stat5pa - 🐒 \n⚠️ This weapon has very limited viability and is not relevant in many setups."
+  },
+  "wbow": {
+   "parsed": {
+    "code": null,
+    "name": null,
+    "wp_cost": "280-300",
+    "recommended": [],
+    "conditional": [],
+    "warnings": [],
+    "co_muc_passive": false
+   },
+   "raw_reply": "Snail, Ứng dụng, 16:32\nSnail\nAPP\n16:32\n127127wcross — Wounding Crossbow\nLook for stats close to:\nWP Cost: 280-300 stat3wp\nSTR Damage: 290-300% stat5pa\nExposed stacks: 21-25 ABexposed\nRecommended passives: PSstrPScrit\n\nIdeal pets:\nSTR Attackers: high stat5pa - g1spider🐍F4eagle",
+   "raw_screen": "tags\nRuby, 16:32\nSnail, Ứng dụng, 16:32\nSnail\nAPP\n16:32\n126126aedge — Arbiter's Edge\nLook for stats close to:\nWP Cost: 125-140 stat3wp\nSin: 17-20% ABsin (if maxing sin stacks)\nVirtue: 27-30% ABvirtue (if maxing virtue stacks) \nRecommended Passives: PScritPSmtapPSsnail\n\nIdeal pets:\nWhen maxing ABsin stacks: high stat2mag or stat5pa - 🦎g4fish🐍g1spider \nWhen maxing ABvirtue stacks: equal stat2mag and stat5pa - 🐒 \n⚠️ This weapon has very limited viability and is not relevant in many setups.\nRuby, 16:32\nRuby\n16:32\n?tag Wbow\nSnail, Ứng dụng, 16:32\nSnail\nAPP\n16:32\n127127wcross — Wounding Crossbow\nLook for stats close to:\nWP Cost: 280-300 stat3wp\nSTR Damage: 290-300% stat5pa\nExposed stacks: 21-25 ABexposed\nRecommended passives: PSstrPScrit\n\nIdeal pets:\nSTR Attackers: high stat5pa - g1spider🐍F4eagle"
+  },
+  "gaze": {
+   "parsed": {
+    "code": null,
+    "name": null,
+    "wp_cost": null,
+    "recommended": [],
+    "conditional": [],
+    "warnings": [
+     "This weapon has very limited viability and is not relevant in many setups."
+    ],
+    "co_muc_passive": false
+   },
+   "raw_reply": "Snail, Ứng dụng, 16:33\nSnail\nAPP\n16:33\n128128bgaze — Bleeding Gaze\nLook for stats close to:\nHP Cost: 10-12% stat6hp\nWeapon Effectiveness: 37-40%\nCost reduction: 20-25%\nMAG Damage: 190-200% stat2mag (Unimportant unless going specifically for single target damage)\nRecommended passives: PShgen (PSgslayer for specific boss teams)\n\nIdeal pets:\nPure Tanks: high stat6hp and stat1mr/stat4pr - bot2lobsterbot4giraffeL2owl\nMAG Attackers: high stat2mag - 🦎g4fish\n⚠️ This weapon has very limited viability and is not relevant in many setups.",
+   "raw_screen": "tags\nSnail, Ứng dụng, 16:32\nSnail\nAPP\n16:32\n127127wcross — Wounding Crossbow\nLook for stats close to:\nWP Cost: 280-300 stat3wp\nSTR Damage: 290-300% stat5pa\nExposed stacks: 21-25 ABexposed\nRecommended passives: PSstrPScrit\n\nIdeal pets:\nSTR Attackers: high stat5pa - g1spider🐍F4eagle\nRuby, 16:33\nRuby\n16:33\n?tag Gaze\nSnail, Ứng dụng, 16:33\nSnail\nAPP\n16:33\n128128bgaze — Bleeding Gaze\nLook for stats close to:\nHP Cost: 10-12% stat6hp\nWeapon Effectiveness: 37-40%\nCost reduction: 20-25%\nMAG Damage: 190-200% stat2mag (Unimportant unless going specifically for single target damage)\nRecommended passives: PShgen (PSgslayer for specific boss teams)\n\nIdeal pets:\nPure Tanks: high stat6hp and stat1mr/stat4pr - bot2lobsterbot4giraffeL2owl\nMAG Attackers: high stat2mag - 🦎g4fish\n⚠️ This weapon has very limited viability and is not relevant in many setups."
+  },
+  "claw": {
+   "parsed": {
+    "code": null,
+    "name": null,
+    "wp_cost": "100-110",
+    "recommended": [],
+    "conditional": [],
+    "warnings": [],
+    "co_muc_passive": false
+   },
+   "raw_reply": "Snail, Ứng dụng, 16:33\nSnail\nAPP\n16:33\n129129cclaw — Conduit Claw\nLook for stats close to:\nWP Cost: 100-110 stat3wp\nReduce Effectiveness: Matters a little, but can mostly be ignored\nMAG Damage: 165-170% stat2mag\nRecommended passives: PSmagPScritPSmtapPSsguard\n\nIdeal pets:\nMAG Attackers: high stat2mag - 🦎g4fishL5deer",
+   "raw_screen": "tags\nSnail, Ứng dụng, 16:33\nSnail\nAPP\n16:33\n128128bgaze — Bleeding Gaze\nLook for stats close to:\nHP Cost: 10-12% stat6hp\nWeapon Effectiveness: 37-40%\nCost reduction: 20-25%\nMAG Damage: 190-200% stat2mag (Unimportant unless going specifically for single target damage)\nRecommended passives: PShgen (PSgslayer for specific boss teams)\n\nIdeal pets:\nPure Tanks: high stat6hp and stat1mr/stat4pr - bot2lobsterbot4giraffeL2owl\nMAG Attackers: high stat2mag - 🦎g4fish\n⚠️ This weapon has very limited viability and is not relevant in many setups.\nRuby, 16:33\nRuby\n16:33\n?tag Claw\nSnail, Ứng dụng, 16:33\nSnail\nAPP\n16:33\n129129cclaw — Conduit Claw\nLook for stats close to:\nWP Cost: 100-110 stat3wp\nReduce Effectiveness: Matters a little, but can mostly be ignored\nMAG Damage: 165-170% stat2mag\nRecommended passives: PSmagPScritPSmtapPSsguard\n\nIdeal pets:\nMAG Attackers: high stat2mag - 🦎g4fishL5deer"
+  }
+ }
+}

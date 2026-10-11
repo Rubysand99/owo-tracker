@@ -1,0 +1,886 @@
+{
+ "version": 2,
+ "ghi_chu": "Bộ luật vũ khí cho ,teamcheck / (sau này) lọc dismantle. Nguồn: lời khuyên ?tag của server OwO + ý riêng của Ruby. Khóa passive = tên emoji passive trong server (PSxxx bỏ 'PS'). passive_alias: tên emoji passive TRONG GAME (bỏ chữ cái độ hiếm) -> khóa trong lời khuyên.",
+ "types": {
+  "101": {
+   "key": "greatsword",
+   "name": "Great Sword",
+   "wp_cost": "không quan trọng",
+   "stats": [
+    "WP Cost: không quan trọng",
+    "STR 53-55%"
+   ],
+   "recommended": [
+    "str",
+    "crit"
+   ],
+   "conditional": [],
+   "roles": [],
+   "ideal_pets": [],
+   "limited": true,
+   "special": false,
+   "ruby_them": [],
+   "nguon": "?tag do Ruby dán tay (2026-10-10)",
+   "tag": "greatsword"
+  },
+  "102": {
+   "key": "healstaff",
+   "name": "Healing Staff",
+   "wp_cost": "150-160",
+   "stats": [
+    "WP Cost: 150-160",
+    "Healing 155-160%"
+   ],
+   "recommended": [
+    "wgen"
+   ],
+   "conditional": [],
+   "roles": [],
+   "ideal_pets": [],
+   "limited": true,
+   "special": false,
+   "ruby_them": [],
+   "nguon": "?tag do Ruby dán tay (2026-10-10)",
+   "tag": "healstaff"
+  },
+  "103": {
+   "key": "bow",
+   "name": "Bow",
+   "wp_cost": "120-140",
+   "stats": [
+    "WP Cost: 120-140",
+    "STR 157-160%"
+   ],
+   "recommended": [
+    "str",
+    "crit",
+    "snail"
+   ],
+   "conditional": [],
+   "roles": [],
+   "ideal_pets": [],
+   "limited": false,
+   "special": false,
+   "ruby_them": [],
+   "nguon": "?tag do Ruby dán tay (2026-10-10)",
+   "tag": "bow"
+  },
+  "105": {
+   "key": "shield",
+   "name": "Defender's Aegis",
+   "wp_cost": "150-160",
+   "stats": [
+    "WP Cost: 150-160",
+    "Taunt 47-50%"
+   ],
+   "recommended": [
+    "hgen",
+    "kaze",
+    "thorns",
+    "sprout",
+    "farmor"
+   ],
+   "conditional": [
+    {
+     "passives": [
+      "sacrifice"
+     ],
+     "dieu_kien": "chỉ khi dùng chung rstaff (114)"
+    }
+   ],
+   "roles": [],
+   "ideal_pets": [],
+   "limited": false,
+   "special": false,
+   "ruby_them": [
+    "sacrifice"
+   ],
+   "nguon": "?tag do Ruby dán tay (2026-10-10)",
+   "tag": "shield"
+  },
+  "106": {
+   "key": "orb",
+   "tag": "orb",
+   "name": "Orb of Potency",
+   "wp_cost": null,
+   "stats": [
+    "WP Cost: none"
+   ],
+   "recommended": [
+    "str",
+    "crit",
+    "enrage",
+    "sguard",
+    "hgen",
+    "thorns"
+   ],
+   "conditional": [
+    {
+     "passives": [
+      "sacrifice",
+      "kaze"
+     ],
+     "dieu_kien": "not with , and only work with 114rstaff"
+    }
+   ],
+   "roles": [
+    {
+     "role": "STR Attacker",
+     "passives": [
+      "str",
+      "crit",
+      "enrage",
+      "sguard"
+     ],
+     "ghi_chu": ""
+    },
+    {
+     "role": "HP Tank",
+     "passives": [
+      "hgen",
+      "thorns"
+     ],
+     "ghi_chu": "not with , and only work with 114rstaff"
+    }
+   ],
+   "ideal_pets": [
+    "STR Attackers: high STR - g1spider🐍F4eagle",
+    "HP Tanks: high HP; MR/PR too if possible - bot2lobsterbot4giraffebot5trexL2owl"
+   ],
+   "limited": true,
+   "special": false,
+   "ruby_them": [],
+   "nguon": "?tag do app tự học (2026-10-11)"
+  },
+  "107": {
+   "key": "vampstaff",
+   "name": "Vampiric Staff",
+   "wp_cost": "90-105",
+   "stats": [
+    "WP Cost: 90-105",
+    "MAG 43-45%"
+   ],
+   "recommended": [
+    "mtap"
+   ],
+   "conditional": [],
+   "roles": [],
+   "ideal_pets": [],
+   "limited": true,
+   "special": false,
+   "ruby_them": [],
+   "nguon": "?tag do Ruby dán tay (2026-10-10)",
+   "tag": "vampstaff"
+  },
+  "108": {
+   "key": "pdagger",
+   "name": "Poison Dagger",
+   "wp_cost": "100-120",
+   "stats": [
+    "WP Cost: 100-120",
+    "Poison 48-50%"
+   ],
+   "recommended": [
+    "mtap",
+    "crit",
+    "mag"
+   ],
+   "conditional": [
+    {
+     "passives": [
+      "sacrifice"
+     ],
+     "dieu_kien": "chỉ khi dùng chung rstaff (114)"
+    },
+    {
+     "passives": [
+      "gslayer"
+     ],
+     "dieu_kien": "chỉ đánh boss"
+    },
+    {
+     "passives": [
+      "sguard"
+     ],
+     "dieu_kien": "chỉ đánh boss"
+    },
+    {
+     "passives": [
+      "lifesteal"
+     ],
+     "dieu_kien": "chỉ đánh boss"
+    }
+   ],
+   "roles": [],
+   "ideal_pets": [],
+   "limited": false,
+   "special": false,
+   "ruby_them": [],
+   "nguon": "?tag do Ruby dán tay (2026-10-10)",
+   "tag": "pdagger"
+  },
+  "109": {
+   "key": "awand",
+   "tag": "wand",
+   "name": "Wand of Absorption",
+   "wp_cost": "150-160",
+   "stats": [
+    "WP Cost: 150-160 WP",
+    "MAG Damage: 110-115% MAG",
+    "WP Restore: 37-40%"
+   ],
+   "recommended": [
+    "mag",
+    "mtap",
+    "crit"
+   ],
+   "conditional": [
+    {
+     "passives": [
+      "sguard"
+     ],
+     "dieu_kien": "at higher level"
+    }
+   ],
+   "roles": [],
+   "ideal_pets": [
+    "MAG Attackers: high MAG - 🦎g4fish"
+   ],
+   "limited": false,
+   "special": false,
+   "ruby_them": [],
+   "nguon": "?tag do app tự học (2026-10-11)"
+  },
+  "110": {
+   "key": "fstaff",
+   "name": "Flame Staff",
+   "wp_cost": "100-120",
+   "stats": [
+    "WP Cost: 100-120",
+    "MAG 90-95%, Flame 36-40%"
+   ],
+   "recommended": [
+    "mtap",
+    "mag",
+    "crit"
+   ],
+   "conditional": [
+    {
+     "passives": [
+      "gslayer"
+     ],
+     "dieu_kien": "chỉ khi đánh boss 1 mục tiêu"
+    }
+   ],
+   "roles": [],
+   "ideal_pets": [],
+   "limited": false,
+   "special": false,
+   "ruby_them": [],
+   "nguon": "?tag do Ruby dán tay (2026-10-10)",
+   "tag": "fstaff"
+  },
+  "111": {
+   "key": "estaff",
+   "tag": "estaff",
+   "name": "Energy Staff",
+   "wp_cost": "100-125",
+   "stats": [
+    "WP Cost: 100-125 WP",
+    "MAG Damage: 63-65% MAG"
+   ],
+   "recommended": [
+    "mtap",
+    "mag",
+    "crit"
+   ],
+   "conditional": [
+    {
+     "passives": [
+      "gslayer"
+     ],
+     "dieu_kien": "only against bosses"
+    }
+   ],
+   "roles": [],
+   "ideal_pets": [
+    "MAG Attackers: high MAG - g4fish🦎"
+   ],
+   "limited": false,
+   "special": false,
+   "ruby_them": [],
+   "nguon": "?tag do app tự học (2026-10-11)"
+  },
+  "112": {
+   "key": "sstaff",
+   "tag": "sstaff",
+   "name": "Spirit Staff",
+   "wp_cost": "150-160",
+   "stats": [
+    "WP Cost: 150-160 (170-220 only with PSdischarge) WP",
+    "Health Restored: 45-50% MAG(mostly ignored if 0-1 MAG)",
+    "Defense Up: 28-30%"
+   ],
+   "recommended": [
+    "thorns",
+    "discharge",
+    "wgen"
+   ],
+   "conditional": [],
+   "roles": [],
+   "ideal_pets": [
+    "Pure Tanks: high HP and MR/PR - bot2lobsterbot4giraffeL2owl",
+    "MAG Hybrids: a mix of HP and MAG - 9-10stat6hp 2stat4pr 5-6stat2mag"
+   ],
+   "limited": false,
+   "special": false,
+   "ruby_them": [],
+   "nguon": "?tag do app tự học (2026-10-11)"
+  },
+  "113": {
+   "key": "ascept",
+   "tag": "scepter",
+   "name": "Arcane Scepter",
+   "wp_cost": "125-135",
+   "stats": [
+    "WP Cost: 125-135 WP (140-170 only when using PSdischarge)",
+    "WP Restore: 90-95% MAG"
+   ],
+   "recommended": [
+    "discharge",
+    "mag"
+   ],
+   "conditional": [
+    {
+     "passives": [
+      "hgen"
+     ],
+     "dieu_kien": "only against 121ffish bosses"
+    }
+   ],
+   "roles": [],
+   "ideal_pets": [
+    "MAG Attackers: high MAG - 🦎 🐙",
+    "MAG hybrids: a mix of HP and MAG - 9stat6hp 6stat2mag"
+   ],
+   "limited": true,
+   "special": false,
+   "ruby_them": [],
+   "nguon": "?tag do app tự học (2026-10-11)"
+  },
+  "114": {
+   "key": "rstaff",
+   "name": "Resurrection Staff",
+   "wp_cost": "300-315",
+   "stats": [
+    "WP Cost: 300-315",
+    "Health Restored: không quan trọng"
+   ],
+   "recommended": [
+    "hgen",
+    "discharge"
+   ],
+   "conditional": [
+    {
+     "passives": [
+      "sacrifice"
+     ],
+     "dieu_kien": "chỉ khi dùng với pet có WP cao"
+    }
+   ],
+   "roles": [],
+   "ideal_pets": [],
+   "limited": false,
+   "special": false,
+   "ruby_them": [
+    "sacrifice"
+   ],
+   "nguon": "?tag do Ruby dán tay (2026-10-10)",
+   "tag": "rstaff"
+  },
+  "115": {
+   "key": "gaxe",
+   "tag": "axe",
+   "name": "Axe",
+   "wp_cost": "160-170",
+   "stats": [
+    "WP Cost: 160-170 WP",
+    "STR Damage: Unimportant"
+   ],
+   "recommended": [
+    "mtap",
+    "dstrike",
+    "wgen",
+    "lhive"
+   ],
+   "conditional": [
+    {
+     "passives": [
+      "hgen"
+     ],
+     "dieu_kien": "with bot1sloth"
+    }
+   ],
+   "roles": [],
+   "ideal_pets": [
+    "STR Attackers: high STR - g1spider🐍F4eagle",
+    "WP Tanks: high HP and WP - bot1sloth"
+   ],
+   "limited": false,
+   "special": false,
+   "ruby_them": [],
+   "nguon": "?tag do app tự học (2026-10-11)"
+  },
+  "116": {
+   "key": "vban",
+   "tag": "banner",
+   "name": "Vanguard's Banner",
+   "wp_cost": "235-245",
+   "stats": [
+    "WP Cost: 235-245 WP",
+    "Attack Buff: 23-25%",
+    "Attack+ Buff: 33-35%",
+    "Attack++ Buff: 48-50%",
+    "If your team intends to kill in the very first turn then you care more about the first boost, otherwise the last boost is most important."
+   ],
+   "recommended": [
+    "mtap",
+    "wgen",
+    "str",
+    "hgen",
+    "thorns"
+   ],
+   "conditional": [],
+   "roles": [],
+   "ideal_pets": [
+    "Attacker Banner: balanced HP/WP and higher STR - L4foxdistorted2flamingo",
+    "Defensive Banner: high HP - bot5trexbot2lobsterF5boar"
+   ],
+   "limited": false,
+   "special": false,
+   "ruby_them": [],
+   "nguon": "?tag do app tự học (2026-10-11)"
+  },
+  "117": {
+   "key": "sythe",
+   "name": "Culling Scythe",
+   "wp_cost": "100-125",
+   "stats": [
+    "WP Cost: 100-125",
+    "STR 90-100%, Mortality 73-75%"
+   ],
+   "recommended": [
+    "mtap",
+    "str",
+    "crit",
+    "lifesteal"
+   ],
+   "conditional": [],
+   "roles": [],
+   "ideal_pets": [],
+   "limited": false,
+   "special": false,
+   "ruby_them": [],
+   "nguon": "?tag do Ruby dán tay (2026-10-10)",
+   "tag": "sythe"
+  },
+  "118": {
+   "key": "crune",
+   "name": "Rune of Celebration",
+   "wp_cost": "100-125",
+   "stats": [
+    "WP Cost: 100-125",
+    "PR 40-45% HP, MR 30-35% WP"
+   ],
+   "recommended": [
+    "pr",
+    "thorns",
+    "discharge",
+    "hgen"
+   ],
+   "conditional": [
+    {
+     "passives": [
+      "wgen"
+     ],
+     "dieu_kien": "chỉ khi người cầm có PR cao"
+    }
+   ],
+   "roles": [],
+   "ideal_pets": [],
+   "limited": false,
+   "special": true,
+   "ruby_them": [],
+   "nguon": "?tag do Ruby dán tay (2026-10-10)",
+   "tag": "crune"
+  },
+  "119": {
+   "key": "pstaff",
+   "tag": "pstaff",
+   "name": "Staff of Purity",
+   "wp_cost": "150-160",
+   "stats": [
+    "WP Cost: 150-160 WP",
+    "MAG heal: Unimportant",
+    "Sacred Ward: Unimportant"
+   ],
+   "recommended": [
+    "thorns",
+    "wgen"
+   ],
+   "conditional": [
+    {
+     "passives": [
+      "sacrifice",
+      "sguard"
+     ],
+     "dieu_kien": "only with 114rstaff"
+    }
+   ],
+   "roles": [],
+   "ideal_pets": [
+    "Pure Tanks: high HP and MR/PR - bot2lobsterbot4giraffeL2owl",
+    "WP Tanks: high HP and a considerable amount of WP - bot5trex, 11-12stat6hp and 4-5stat3wp",
+    "Hybrid tanks: a mix of HP and STR - F5boarF2gorillaL3lion"
+   ],
+   "limited": false,
+   "special": false,
+   "ruby_them": [],
+   "nguon": "?tag do app tự học (2026-10-11)"
+  },
+  "120": {
+   "key": "lsyth",
+   "name": "Leeching Scythe",
+   "wp_cost": "130-145",
+   "stats": [
+    "WP Cost: 130-145",
+    "STR 75-80%, Leech 45-60%"
+   ],
+   "recommended": [
+    "mtap",
+    "str",
+    "crit"
+   ],
+   "conditional": [],
+   "roles": [],
+   "ideal_pets": [],
+   "limited": false,
+   "special": false,
+   "ruby_them": [],
+   "nguon": "?tag do Ruby dán tay (2026-10-10)",
+   "tag": "lsyth"
+  },
+  "121": {
+   "key": "ffish",
+   "tag": "ffish",
+   "name": "Foul Fish",
+   "wp_cost": "180-215",
+   "stats": [
+    "WP Cost: 180-215 WP",
+    "STR Damage: 65-80% STR (unimportant on MAG attackers)",
+    "Stinky Damage: 45-50% MAG (unimportant on STR attackers)"
+   ],
+   "recommended": [
+    "str",
+    "discharge",
+    "sguard"
+   ],
+   "conditional": [
+    {
+     "passives": [
+      "lhive"
+     ],
+     "dieu_kien": "with stat2mag attackers"
+    }
+   ],
+   "roles": [],
+   "ideal_pets": [
+    "STR attackers: Pets with STR - hidden2snakeF4eagledistorted2flamingog1spiderF2gorilla",
+    "MAG Attackers: high MAG - 🦎"
+   ],
+   "limited": false,
+   "special": false,
+   "ruby_them": [],
+   "nguon": "?tag do app tự học (2026-10-11)"
+  },
+  "122": {
+   "key": "lrune",
+   "tag": "lrune",
+   "name": "Rune of Luck",
+   "wp_cost": "100-135",
+   "stats": [
+    "WP Cost: 100-135 WP",
+    "Total of all punches added together: 175-200%"
+   ],
+   "recommended": [
+    "mtap",
+    "crit"
+   ],
+   "conditional": [
+    {
+     "passives": [
+      "lhive"
+     ],
+     "dieu_kien": "on stat2mag attackers"
+    }
+   ],
+   "roles": [],
+   "ideal_pets": [],
+   "limited": true,
+   "special": true,
+   "ruby_them": [],
+   "nguon": "?tag do app tự học (2026-10-11)"
+  },
+  "123": {
+   "key": "cstaff",
+   "tag": "cstaff",
+   "name": "Staff of Corruption",
+   "wp_cost": "150-160",
+   "stats": [
+    "WP Cost: 150-160 WP",
+    "Reduce Effectiveness: 50-60% (50% best)",
+    "STR Damage: 110-120%"
+   ],
+   "recommended": [],
+   "conditional": [],
+   "roles": [],
+   "ideal_pets": [
+    "STR Attackers: high STR - g1spider🐍F4eagle"
+   ],
+   "limited": true,
+   "special": false,
+   "ruby_them": [],
+   "nguon": "?tag do app tự học (2026-10-11)",
+   "tbd": true
+  },
+  "124": {
+   "key": "stithe",
+   "tag": "stithe",
+   "name": "Soul tithe",
+   "wp_cost": "50-70",
+   "stats": [
+    "WP Cost: 50-70 WP",
+    "WP absorbed: 22-25%",
+    "Mag damage: 0.42-0.45% MAG"
+   ],
+   "recommended": [
+    "mag",
+    "crit"
+   ],
+   "conditional": [],
+   "roles": [],
+   "ideal_pets": [
+    "MAG Attackers: high MAG - g4fish🦎"
+   ],
+   "limited": true,
+   "special": false,
+   "ruby_them": [],
+   "nguon": "?tag do app tự học (2026-10-11)"
+  },
+  "125": {
+   "key": "bhstaff",
+   "tag": "bhstaff",
+   "name": "Briar-Heart Staff",
+   "wp_cost": "140-160",
+   "stats": [
+    "WP Cost: 140-160 WP",
+    "DMG absorption: 45-50%",
+    "Healing absorption: 20-23%",
+    "Replenish absorption: 20-23%"
+   ],
+   "recommended": [
+    "sacrifice"
+   ],
+   "conditional": [],
+   "roles": [],
+   "ideal_pets": [
+    "WP tanks: balanced :HP: and :WP: - 6-10stat6hp 6-10stat3wp"
+   ],
+   "limited": true,
+   "special": false,
+   "ruby_them": [],
+   "nguon": "?tag do app tự học (2026-10-11)"
+  },
+  "126": {
+   "key": "aedge",
+   "tag": "aedge",
+   "name": "Arbiter's Edge",
+   "wp_cost": "125-140",
+   "stats": [
+    "WP Cost: 125-140 WP",
+    "Sin: 17-20% (if maxing sin stacks)",
+    "Virtue: 27-30% (if maxing virtue stacks)"
+   ],
+   "recommended": [
+    "crit",
+    "mtap",
+    "snail"
+   ],
+   "conditional": [],
+   "roles": [],
+   "ideal_pets": [
+    "When maxing stacks: high MAG or STR - 🦎g4fish🐍g1spider",
+    "When maxing stacks: equal MAG and STR - 🐒"
+   ],
+   "limited": true,
+   "special": false,
+   "ruby_them": [],
+   "nguon": "?tag do app tự học (2026-10-11)"
+  },
+  "127": {
+   "key": "woundb",
+   "tag": "wbow",
+   "name": "Wounding Crossbow",
+   "wp_cost": "280-300",
+   "stats": [
+    "WP Cost: 280-300 WP",
+    "STR Damage: 290-300% STR",
+    "Exposed stacks: 21-25"
+   ],
+   "recommended": [
+    "str",
+    "crit"
+   ],
+   "conditional": [],
+   "roles": [],
+   "ideal_pets": [
+    "STR Attackers: high STR - g1spider🐍F4eagle"
+   ],
+   "limited": false,
+   "special": false,
+   "ruby_them": [],
+   "nguon": "?tag do app tự học (2026-10-11)"
+  },
+  "128": {
+   "key": "bgaz",
+   "tag": "gaze",
+   "name": "Bleeding Gaze",
+   "wp_cost": null,
+   "stats": [
+    "HP Cost: 10-12% HP",
+    "Weapon Effectiveness: 37-40%",
+    "Cost reduction: 20-25%",
+    "MAG Damage: 190-200% MAG (Unimportant unless going specifically for single target damage)"
+   ],
+   "recommended": [
+    "hgen"
+   ],
+   "conditional": [
+    {
+     "passives": [
+      "gslayer"
+     ],
+     "dieu_kien": "for specific boss teams"
+    }
+   ],
+   "roles": [],
+   "ideal_pets": [
+    "Pure Tanks: high HP and MR/PR - bot2lobsterbot4giraffeL2owl",
+    "MAG Attackers: high MAG - 🦎g4fish"
+   ],
+   "limited": true,
+   "special": false,
+   "ruby_them": [],
+   "nguon": "?tag do app tự học (2026-10-11)"
+  },
+  "129": {
+   "key": "cclaw",
+   "tag": "claw",
+   "name": "Conduit Claw",
+   "wp_cost": "100-110",
+   "stats": [
+    "WP Cost: 100-110 WP",
+    "Reduce Effectiveness: Matters a little, but can mostly be ignored",
+    "MAG Damage: 165-170% MAG"
+   ],
+   "recommended": [
+    "mag",
+    "crit",
+    "mtap",
+    "sguard"
+   ],
+   "conditional": [],
+   "roles": [],
+   "ideal_pets": [
+    "MAG Attackers: high MAG - 🦎g4fishL5deer"
+   ],
+   "limited": false,
+   "special": false,
+   "ruby_them": [],
+   "nguon": "?tag do app tự học (2026-10-11)"
+  }
+ },
+ "emoji_to_code": {
+  "greatsword": "101",
+  "healstaff": "102",
+  "bow": "103",
+  "shield": "105",
+  "orb": "106",
+  "vampstaff": "107",
+  "pdagger": "108",
+  "awand": "109",
+  "fstaff": "110",
+  "estaff": "111",
+  "sstaff": "112",
+  "ascept": "113",
+  "rstaff": "114",
+  "gaxe": "115",
+  "vban": "116",
+  "sythe": "117",
+  "crune": "118",
+  "pstaff": "119",
+  "lsyth": "120",
+  "ffish": "121",
+  "lrune": "122",
+  "cstaff": "123",
+  "stithe": "124",
+  "bhstaff": "125",
+  "aedge": "126",
+  "woundb": "127",
+  "bgaz": "128",
+  "cclaw": "129",
+  "wand": "109",
+  "scept": "113",
+  "axe": "115",
+  "banner": "116",
+  "wcross": "127",
+  "bgaze": "128"
+ },
+ "passive_alias": {
+  "sac": "sacrifice"
+ },
+ "known_passives": [
+  "crit",
+  "discharge",
+  "dstrike",
+  "enrage",
+  "farmor",
+  "gslayer",
+  "hgen",
+  "kaze",
+  "lhive",
+  "lifesteal",
+  "mag",
+  "mtap",
+  "pr",
+  "sacrifice",
+  "sguard",
+  "snail",
+  "sprout",
+  "str",
+  "thorns",
+  "wgen"
+ ],
+ "ruby": {
+  "sacrifice_hop_voi": [
+   "shield",
+   "rstaff"
+  ],
+  "passive_hoi_wp": "CHƯA RÕ — chờ Ruby nói rõ là những passive nào"
+ },
+ "never_dismantle": [
+  "118",
+  "122"
+ ],
+ "loai_chua_co_loi_khuyen": []
+}

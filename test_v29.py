@@ -375,3 +375,85 @@ asyncio.run(run_advice())
 if fails:
     print("\n❌ %d bài lỗi" % len(fails)); sys.exit(1)
 print("✅ Test lời khuyên vũ khí pass.")
+
+# --- chấm đội hình (2 yếu tố: chỉ số/cơ chế vũ khí + passive), huntbot xong tự chạy lại, chi tiết vũ khí
+_FX2 = _json.load(open(_os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "fixtures_team_weapon_2026-10-10.json"), encoding="utf-8"))
+
+tm = b.parse_team(_FX2["team_raw"])
+check("team: đọc 3 pet + loại vũ khí/độ hiếm/passive", [(m["weapon_emoji"], m["weapon_rarity"], m["passive_emojis"]) for m in tm],
+      [("mrstaff", "mythic", ["msac"]), ("erstaff", "epic", ["esac"]), ("eshield", "epic", ["rsac"])])
+check("team: vẫn đọc đúng chỉ số cũ", (tm[0]["hp"], tm[0]["wp"], tm[0]["weaponId"], tm[0]["quality"]), (1148, 1076, "C2PRPT", 82.7))
+wd = b.parse_weapon_detail(_FX2["weapon_raw"])
+check("vũ khí: chi phí WP, giá bán (cowoncy/ws), độ hiếm, wear", (wd["wp_cost"], wd["sell_cowoncy"], wd["sell_ws"], wd["rarity"], wd["wear"]), (125, 900, 37, "epic", "WORN"))
+orb = b.parse_weapon_advice(b.slice_advice_reply("orb", _json.load(open(_os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "fixtures_weapon_advice_2026-10-11.json"), encoding="utf-8"))["tags"]["orb"]["raw_screen"]))
+check("lời khuyên orb: passive sau 'not with' chỉ là ghi chú", orb["conditional"][0]["passives"], ["sacrifice", "kaze"])
+check("lời khuyên orb: mã/tên + 2 vai trò (STR Attacker, HP Tank)", (orb["code"], orb["name"], [r["role"] for r in orb["roles"]]), ("106", "Orb of Potency", ["STR Attacker", "HP Tank"]))
+rules = b.load_weapon_rules(force=True)
+check("bộ luật: 28 loại + Rune không bao giờ dismantle", (len(rules["types"]), rules["never_dismantle"]), (28, ["118", "122"]))
+
+async def run_team():
+    from datetime import datetime, timedelta
+    b.mdb = AsyncMongoMockClient()["v29_team"]
+    await b.load_emoji_cache()
+    await b.save_team(tm)
+    txt, res = await b.build_team_check()
+    check("teamcheck: cả 3 pet dùng sacrifice -> hợp 3/3 (bạn chọn cho shield/rstaff)", [r["passive_verdict"] for r in res], ["ruby", "ruby", "ruby"])
+    check("teamcheck: tiêu đề 3/3", "passive hợp: 3/3" in txt, True)
+    check("teamcheck: có chấm chất lượng 🟢 🟢 🟡", ("🟢 xuất sắc" in txt and "🟡 khá" in txt), True)
+    check("teamcheck: có số lượt dùng ước tính theo WP điển hình", "lượt" in txt, True)
+    check("teamcheck: không có ❌", "❌" not in txt, True)
+    # đổi passive pet 3 thành crit (không khuyên cho shield) -> báo cần xem lại
+    bad = [dict(m) for m in tm]; bad[2]["passive_emojis"] = ["rcrit"]
+    await b.save_team(bad)
+    txt2, res2 = await b.build_team_check()
+    check("teamcheck: passive crit trên shield -> ❌ + nêu tên pet cần xem lại", (res2[2]["passive_verdict"], "cần xem lại" in txt2), ("no", True))
+    # có chi tiết cây vũ khí -> dùng chi phí thật
+    await b.save_team(tm)
+    await b.mdb[b.COL_WEAPON_INSTANCES].insert_one({"_id": "C2PRPT", "wp_cost": 315, "quality": 82.7})
+    txt3, _ = await b.build_team_check()
+    check("teamcheck: có chi tiết cây -> 'tốn 315 WP, đủ khoảng 3 lượt'", "tốn 315 WP" in txt3 and "khoảng 3 lượt" in txt3, True)
+    # đội hình cũ chưa có loại vũ khí
+    old = [{k: v for k, v in m.items() if k not in ("weapon_emoji", "weapon_rarity", "passive_emojis")} for m in tm]
+    await b.save_team(old)
+    txt4, _ = await b.build_team_check()
+    check("teamcheck: dữ liệu cũ thiếu loại vũ khí -> nhắc gõ owo team lại, không sập", "owo team" in txt4, True)
+asyncio.run(run_team())
+
+async def run_hb_idle():
+    from datetime import datetime, timedelta
+    b.mdb = AsyncMongoMockClient()["v29_hbidle"]
+    await b.load_emoji_cache()
+    notes = []
+    async def fake_notify(text, **kw):
+        notes.append(text); return True
+    old_n = b.notify_owner
+    b.notify_owner = fake_notify
+    try:
+        # 1) đang săn, chưa tới giờ xong -> tin chỉ-thông-tin KHÔNG làm đổi trạng thái
+        now = datetime.utcnow()
+        await b.mdb[b.COL_HUNTBOT].insert_one({"hunting": True, "time_remaining": "1H 0M", "status_at": now.isoformat(), "created_at": now.isoformat(), "traits": {"cost": 5}})
+        r = await b.save_huntbot(b.parse_huntbot_status(_hb_text("")))
+        check("hb: chưa tới giờ xong, tin chỉ-thông-tin -> không coi là rảnh", r, None)
+        # 2) đã quá giờ xong + tin gộp KHÔNG còn chữ 'currently hunting' -> huntbot rảnh
+        old_t = (now - timedelta(hours=2)).isoformat()
+        await b.mdb[b.COL_HUNTBOT].insert_one({"hunting": True, "time_remaining": "1H 0M", "status_at": old_t, "created_at": old_t, "traits": {"cost": 5}})
+        r = await b.save_huntbot(b.parse_huntbot_status(_hb_text("")))
+        row = await b.mdb[b.COL_HUNTBOT].find_one(sort=[("_id", -1)])
+        check("hb: quá giờ xong + trang không còn trạng thái săn -> 'idle', hunting=False", (r, row["hunting"]), ("idle", False))
+        # 3) tin 'I AM BACK WITH' cũng là idle
+        r = await b.save_huntbot(b.parse_huntbot_status(_hb_text("\n**BEEP BOOP. I AM BACK WITH 4512 ANIMALS, 95265 ESSENCE**")))
+        check("hb: tin 'I AM BACK WITH' -> idle", r, "idle")
+        # 4) tự nhờ app chạy lại huntbot: lần 1 được, lần 2 trong 30 phút thì không, tắt thì không
+        b.hb_pending["at"] = 0.0
+        check("hb auto: lần 1 -> nhờ app gõ owo hb 24h", await b.maybe_auto_hb_restart("u"), True)
+        cmd = await b.mdb[b.COL_AUTOMACRO_COMMANDS].find_one({"action": "hb_start"})
+        check("hb auto: lệnh app = 'owo hb 24h' + nhắn acc phụ", (cmd["params"]["command_text"], bool(notes)), ("owo hb 24h", True))
+        check("hb auto: lần 2 trong 30 phút -> không lặp", await b.maybe_auto_hb_restart("u"), False)
+        await b.set_config("hb_auto_last", "0"); await b.set_config("hb_auto", "off")
+        check("hb auto: đã tắt (,hbauto off) -> không làm", await b.maybe_auto_hb_restart("u"), False)
+    finally:
+        b.notify_owner = old_n
+asyncio.run(run_hb_idle())
+if fails:
+    print("\n❌ %d bài lỗi" % len(fails)); sys.exit(1)
+print("✅ Test chấm đội hình + huntbot rảnh pass.")
