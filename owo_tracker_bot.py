@@ -1017,13 +1017,18 @@ def evaluate_team_member(member, instance, rules, team_weapon_keys=()):
     # --- yeu to 2: passive
     pe = (member.get("passive_emojis") or [None])[0]
     pbase = strip_rarity(pe)
-    pkey = alias.get(pbase, pbase)
+    info = (rules.get("passives", {}).get(pbase)) or {}
+    pkey = alias.get(pbase, pbase)           # khoa trong loi khuyen cua server
     out["passive"] = pkey
     if not pe:
         out["lines"].append("✨ Chưa đọc được passive của cây này.")
         return out
+    shown = f"{info['ten']} ({pbase})" if info.get("ten") else str(pbase)
+    summary = info.get("tom_tat_vi")
     if not rule:
-        out["lines"].append(f"✨ Passive: {pkey} — ❓ chưa có lời khuyên cho loại vũ khí này.")
+        out["lines"].append(f"✨ Passive: {shown} — ❓ chưa có lời khuyên cho loại vũ khí này.")
+        if summary:
+            out["lines"].append(f"   ↳ {summary}")
         return out
     rec = set(rule.get("recommended", []))
     for r in rule.get("roles", []):
@@ -1032,31 +1037,45 @@ def evaluate_team_member(member, instance, rules, team_weapon_keys=()):
     for c in rule.get("conditional", []):
         for ps in c.get("passives", []):
             conds[ps] = c.get("dieu_kien", "")
+    server_any = set()
+    for t in types.values():
+        server_any |= set(t.get("recommended", []))
+        for c in t.get("conditional", []):
+            server_any |= set(c.get("passives", []))
     ruby_picks = set(rule.get("ruby_them", []))
     if pkey == "sacrifice" and rule.get("key") in set(ruby.get("sacrifice_hop_voi", [])):
         ruby_picks.add("sacrifice")
+    hoi_wp = set(ruby.get("passive_hoi_wp", []))
     if pkey in rec:
         out["passive_verdict"] = "ok"
-        out["lines"].append(f"✨ Passive: {pkey} — ✅ nằm trong danh sách server khuyên.")
+        out["lines"].append(f"✨ Passive: {shown} — ✅ nằm trong danh sách server khuyên.")
     elif pkey in ruby_picks:
         out["passive_verdict"] = "ruby"
         extra = f" ({conds[pkey]})" if pkey in conds else ""
-        out["lines"].append(f"✨ Passive: {pkey} — ✅ bạn chọn cho loại này{extra}.")
+        out["lines"].append(f"✨ Passive: {shown} — ✅ bạn chọn cho loại này{extra}.")
+    elif pkey in hoi_wp:
+        out["passive_verdict"] = "ruby_wp"
+        out["lines"].append(f"✨ Passive: {shown} — ✅ passive hồi WP (bạn thích), server không liệt kê riêng cho loại này.")
     elif pkey in conds:
         cond = conds[pkey]
         need_rstaff = "rstaff" in cond.lower()
         if need_rstaff and "rstaff" in set(team_weapon_keys):
             out["passive_verdict"] = "cond_ok"
-            out["lines"].append(f"✨ Passive: {pkey} — ✅ có điều kiện, đội có rstaff nên hợp ({cond}).")
+            out["lines"].append(f"✨ Passive: {shown} — ✅ có điều kiện, đội có rstaff nên hợp ({cond}).")
         else:
             out["passive_verdict"] = "cond"
-            out["lines"].append(f"✨ Passive: {pkey} — ⚠️ chỉ hợp khi: {cond}.")
+            out["lines"].append(f"✨ Passive: {shown} — ⚠️ chỉ hợp khi: {cond}.")
     elif pkey not in (set(rules.get("known_passives", [])) | _KNOWN_PASSIVES):
         out["passive_verdict"] = "unknown"
-        out["lines"].append(f"✨ Passive: {pkey} — ❓ chưa biết tên này ứng với passive nào trong lời khuyên.")
+        out["lines"].append(f"✨ Passive: {shown} — ❓ chưa biết passive này.")
+    elif pkey not in server_any:
+        out["passive_verdict"] = "unlisted"
+        out["lines"].append(f"✨ Passive: {shown} — ⚪ server chưa có lời khuyên cho passive này (bạn tự đánh giá).")
     else:
         out["passive_verdict"] = "no"
-        out["lines"].append(f"✨ Passive: {pkey} — ❌ không có trong khuyên ({', '.join(sorted(rec)) or 'chưa có'}).")
+        out["lines"].append(f"✨ Passive: {shown} — ❌ không có trong khuyên ({', '.join(sorted(rec)) or 'chưa có'}).")
+    if summary:
+        out["lines"].append(f"   ↳ {summary}")
     return out
 
 
@@ -1078,9 +1097,12 @@ async def build_team_check():
         if code and code in rules.get("types", {}):
             team_keys.append(rules["types"][code].get("key"))
     results = [evaluate_team_member(m, inst.get(m.get("weaponId")), rules, team_keys) for m in members]
-    ok = sum(1 for r in results if r["passive_verdict"] in ("ok", "ruby", "cond_ok"))
+    ok = sum(1 for r in results if r["passive_verdict"] in ("ok", "ruby", "ruby_wp", "cond_ok"))
     bad = [r["pet"] for r in results if r["passive_verdict"] == "no"]
-    head = f"🛡️ **Chấm đội hình** — passive hợp: {ok}/{len(results)}" + (f" · cần xem lại: {', '.join(bad)}" if bad else "")
+    neutral = sum(1 for r in results if r["passive_verdict"] == "unlisted")
+    head = (f"🛡️ **Chấm đội hình** — passive hợp: {ok}/{len(results)}"
+            + (f" · server chưa có lời khuyên: {neutral}" if neutral else "")
+            + (f" · cần xem lại: {', '.join(bad)}" if bad else ""))
     text = head + "\n\n" + "\n\n".join("\n".join(r["lines"]) for r in results)
     return text, results
 

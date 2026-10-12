@@ -1,0 +1,1523 @@
+{
+ "tao_luc": "2026-10-12T06:52:40.314557",
+ "so_cay_trong_kho": 790,
+ "so_cay_da_xem_chi_tiet": 87,
+ "loai_vu_khi": [
+  {
+   "base": "orb",
+   "so_cay": 48
+  },
+  {
+   "base": "ascept",
+   "so_cay": 48
+  },
+  {
+   "base": "estaff",
+   "so_cay": 44
+  },
+  {
+   "base": "shield",
+   "so_cay": 41
+  },
+  {
+   "base": "bow",
+   "so_cay": 40
+  },
+  {
+   "base": "healstaff",
+   "so_cay": 40
+  },
+  {
+   "base": "rstaff",
+   "so_cay": 39
+  },
+  {
+   "base": "gaxe",
+   "so_cay": 34
+  },
+  {
+   "base": "sythe",
+   "so_cay": 33
+  },
+  {
+   "base": "awand",
+   "so_cay": 31
+  },
+  {
+   "base": "sstaff",
+   "so_cay": 30
+  },
+  {
+   "base": "pdagger",
+   "so_cay": 30
+  },
+  {
+   "base": "vban",
+   "so_cay": 29
+  },
+  {
+   "base": "lsyth",
+   "so_cay": 26
+  },
+  {
+   "base": "ffish",
+   "so_cay": 25
+  },
+  {
+   "base": "cclaw",
+   "so_cay": 25
+  },
+  {
+   "base": "cstaff",
+   "so_cay": 24
+  },
+  {
+   "base": "greatsword",
+   "so_cay": 24
+  },
+  {
+   "base": "fstaff",
+   "so_cay": 23
+  },
+  {
+   "base": "bhstaff",
+   "so_cay": 22
+  },
+  {
+   "base": "woundb",
+   "so_cay": 21
+  },
+  {
+   "base": "pstaff",
+   "so_cay": 21
+  },
+  {
+   "base": "vampstaff",
+   "so_cay": 21
+  },
+  {
+   "base": "bgaz",
+   "so_cay": 18
+  },
+  {
+   "base": "aedge",
+   "so_cay": 18
+  },
+  {
+   "base": "stithe",
+   "so_cay": 16
+  },
+  {
+   "base": "pesword",
+   "so_cay": 3
+  },
+  {
+   "base": "pepdag",
+   "so_cay": 3
+  },
+  {
+   "base": "pehstaff",
+   "so_cay": 3
+  },
+  {
+   "base": "pevstaff",
+   "so_cay": 3
+  },
+  {
+   "base": "prhstaff",
+   "so_cay": 2
+  },
+  {
+   "base": "puvstaff",
+   "so_cay": 1
+  },
+  {
+   "base": "prpdag",
+   "so_cay": 1
+  },
+  {
+   "base": "pupdag",
+   "so_cay": 1
+  },
+  {
+   "base": "puhstaff",
+   "so_cay": 1
+  },
+  {
+   "base": "lrune",
+   "so_cay": 1
+  }
+ ],
+ "kien_thuc_loai": [
+  {
+   "ten": "Defender's Aegis",
+   "mo_ta_chinh": "At the start of the turn, apply <:taunt:546615322598440960> **Taunt** to your animal for 2 turns.",
+   "hieu_ung_co_san": [
+    {
+     "name": "Taunt",
+     "desc": "Taunts the enemy team and forces all opponents to attack this animal. Reduces incoming damage by -**40.8%**."
+    },
+    {
+     "name": "Taunt",
+     "desc": "Taunts the enemy team and forces all opponents to attack this animal. Reduces incoming damage by -**40%**."
+    },
+    {
+     "name": "Taunt",
+     "desc": "Taunts the enemy team and forces all opponents to attack this animal. Reduces incoming damage by -**48.2%**."
+    },
+    {
+     "name": "Taunt",
+     "desc": "Taunts the enemy team and forces all opponents to attack this animal. Reduces incoming damage by -**42.8%**."
+    }
+   ]
+  },
+  {
+   "ten": "Resurrection Staff",
+   "mo_ta_chinh": null,
+   "hieu_ung_co_san": [
+    {
+     "name": "Frost Armor",
+     "desc": "When you receive damage, apply **16** stacks of <:frostbite:1477901116950839386> **Frostbite** to the attacker."
+    },
+    {
+     "name": "Frostbite",
+     "desc": "At 100 stacks, apply a stack of <:freeze:618621661486514176> **Freeze** to the target. Remove all stacks after triggering."
+    }
+   ]
+  },
+  {
+   "ten": "Staff of Purity",
+   "mo_ta_chinh": null,
+   "hieu_ung_co_san": [
+    {
+     "name": "Sacred Ward",
+     "desc": "Prevents any debuffs to be applied to this animal. On success, remove a stack and replenish **23.1%** <:mag:531616156231139338> MAG to the animal."
+    }
+   ]
+  },
+  {
+   "ten": "Empowered Resurrection Staff",
+   "mo_ta_chinh": null,
+   "hieu_ung_co_san": [
+    {
+     "name": "Sprout",
+     "desc": "Increase all incoming healing by +**39.2%**."
+    }
+   ]
+  },
+  {
+   "ten": "Fine Poison Dagger",
+   "mo_ta_chinh": null,
+   "hieu_ung_co_san": [
+    {
+     "name": "Poison",
+     "desc": "Deals **44.8%** of your <:mag:531616156231139338> MAG as true damage at the end of the turn."
+    },
+    {
+     "name": "Poison",
+     "desc": "Deals **45.8%** of your <:mag:531616156231139338> MAG as true damage at the end of the turn."
+    }
+   ]
+  },
+  {
+   "ten": "Rune of Celebration",
+   "mo_ta_chinh": null,
+   "hieu_ung_co_san": [
+    {
+     "name": "Celebration",
+     "desc": "At the end of every turn, heal **37.5%** of your <:pr:531616156222488606> PR as <:hp:531620120410456064> HP and replenish **21%** of your <:mr:531616156226945024> MR as <:wp:531620120976687114> WP."
+    }
+   ]
+  },
+  {
+   "ten": "Vampiric Staff",
+   "mo_ta_chinh": null,
+   "hieu_ung_co_san": null
+  },
+  {
+   "ten": "Staff of Corruption",
+   "mo_ta_chinh": null,
+   "hieu_ung_co_san": null
+  },
+  {
+   "ten": "Empowered Arcane Scepter",
+   "mo_ta_chinh": null,
+   "hieu_ung_co_san": [
+    {
+     "name": "Enrage",
+     "desc": "Every 10% of missing health gives +**3.98%** damage."
+    },
+    {
+     "name": "Weapon Point",
+     "desc": "Increases your <:wp:531620120976687114> WP by **28.6%**."
+    },
+    {
+     "name": "Living Hive",
+     "desc": "When dealing damage, spend **3.02** <:wp:531620120976687114> WP to apply <:pest:1449595442714120404> **Pest** to the target."
+    },
+    {
+     "name": "Pest",
+     "desc": "At the end of the turn, each stack of pests will deal **3.98%** of your <:mag:531616156231139338> MAG as magical damage to the target. Pests will leave after they deal damage."
+    }
+   ]
+  },
+  {
+   "ten": "Empowered Healing Staff",
+   "mo_ta_chinh": null,
+   "hieu_ung_co_san": [
+    {
+     "name": "Weapon Point",
+     "desc": "Increases your <:wp:531620120976687114> WP by **22.4%**."
+    },
+    {
+     "name": "Magical Resistance",
+     "desc": "Increases your <:mr:531616156226945024> MR by **28%**."
+    }
+   ]
+  },
+  {
+   "ten": "Fine Vanguard's Banner",
+   "mo_ta_chinh": "At the start of the turn, apply <:attup:618734436506140675> **Attack Up** to all allies for 2 turns. If the user has enough WP when the buff expires, the buff will be recasted with a stronger version.",
+   "hieu_ung_co_san": [
+    {
+     "name": "Attack Up",
+     "desc": "Increases all damage by +**21.2%**. Cannot stack with other Attack Up buffs."
+    }
+   ]
+  },
+  {
+   "ten": "Empowered Vanguard's Banner",
+   "mo_ta_chinh": "At the start of the turn, apply <:attup:618734436506140675> **Attack Up** to all allies for 2 turns. If the user has enough WP when the buff expires, the buff will be recasted with a stronger version.",
+   "hieu_ung_co_san": [
+    {
+     "name": "Attack Up",
+     "desc": "Increases all damage by +**18%**. Cannot stack with other Attack Up buffs."
+    },
+    {
+     "name": "Mana Tap",
+     "desc": "All damage you deal replenishes your <:wp:531620120976687114> WP for **21.3%** of the damage dealt!"
+    },
+    {
+     "name": "Attack Up",
+     "desc": "Increases all damage by +**21.2%**. Cannot stack with other Attack Up buffs."
+    },
+    {
+     "name": "Weapon Point",
+     "desc": "Increases your <:wp:531620120976687114> WP by **21.8%**."
+    },
+    {
+     "name": "Attack Up",
+     "desc": "Increases all damage by +**15.1%**. Cannot stack with other Attack Up buffs."
+    },
+    {
+     "name": "Double Strike",
+     "desc": "When this animal attacks, it has a **16.6%** chance to attack one more time with **28.95%** of the weapon's *Effectiveness* and **27.2%** of the weapon's cost."
+    }
+   ]
+  },
+  {
+   "ten": "Empowered Defender's Aegis",
+   "mo_ta_chinh": "At the start of the turn, apply <:taunt:546615322598440960> **Taunt** to your animal for 2 turns.",
+   "hieu_ung_co_san": [
+    {
+     "name": "Taunt",
+     "desc": "Taunts the enemy team and forces all opponents to attack this animal. Reduces incoming damage by -**33.4%**."
+    },
+    {
+     "name": "Thorns",
+     "desc": "Reflect **22.8**% of the damage dealt to you as true damage."
+    },
+    {
+     "name": "Adaptation",
+     "desc": "Gains resistance against the last damage type received. Physical hits grant <:stoneskin:1448568600880353382> **Stoneskin**, while Magical hits grant <:spellskin:1448568599273803877> **Spellskin**."
+    },
+    {
+     "name": "Stoneskin",
+     "desc": "Reduces incoming Physical damage by **8.1%** per stack. Remove all stacks upon taking damage of other types."
+    },
+    {
+     "name": "Taunt",
+     "desc": "Taunts the enemy team and forces all opponents to attack this animal. Reduces incoming damage by -**37.6%**."
+    },
+    {
+     "name": "Resonance",
+     "desc": "For every buff you have, deal +**7.75%** more damage. For every debuff you have, take -**8.95%** less damage."
+    }
+   ]
+  },
+  {
+   "ten": "Healing Staff",
+   "mo_ta_chinh": null,
+   "hieu_ung_co_san": null
+  },
+  {
+   "ten": "Fine Empowered Great Sword",
+   "mo_ta_chinh": null,
+   "hieu_ung_co_san": [
+    {
+     "name": "Critical",
+     "desc": "Every attack has a **27%** chance to deal **28.5%** more damage. This can apply to heals."
+    }
+   ]
+  },
+  {
+   "ten": "Empowered Energy Staff",
+   "mo_ta_chinh": null,
+   "hieu_ung_co_san": [
+    {
+     "name": "Weapon Point",
+     "desc": "Increases your <:wp:531620120976687114> WP by **16.4%**."
+    },
+    {
+     "name": "Adaptation",
+     "desc": "Gains resistance against the last damage type received. Physical hits grant <:stoneskin:1448568600880353382> **Stoneskin**, while Magical hits grant <:spellskin:1448568599273803877> **Spellskin**."
+    },
+    {
+     "name": "Stoneskin",
+     "desc": "Reduces incoming Physical damage by **8.7%** per stack. Remove all stacks upon taking damage of other types."
+    }
+   ]
+  },
+  {
+   "ten": "Empowered Wand of Absorption",
+   "mo_ta_chinh": null,
+   "hieu_ung_co_san": [
+    {
+     "name": "Enrage",
+     "desc": "Every 10% of missing health gives +**4.43%** damage."
+    },
+    {
+     "name": "Regeneration",
+     "desc": "Heal **8.35%** of your max <:hp:531620120410456064> HP after every turn."
+    }
+   ]
+  },
+  {
+   "ten": "Empowered Staff of Corruption",
+   "mo_ta_chinh": null,
+   "hieu_ung_co_san": [
+    {
+     "name": "Adaptation",
+     "desc": "Gains resistance against the last damage type received. Physical hits grant <:stoneskin:1448568600880353382> **Stoneskin**, while Magical hits grant <:spellskin:1448568599273803877> **Spellskin**."
+    },
+    {
+     "name": "Stoneskin",
+     "desc": "Reduces incoming Physical damage by **9.95%** per stack. Remove all stacks upon taking damage of other types."
+    },
+    {
+     "name": "Spellskin",
+     "desc": "Reduces incoming Magical damage by **9.95%** per stack. Remove all stacks upon taking damage of other types."
+    }
+   ]
+  },
+  {
+   "ten": "Empowered Briar-Heart Staff",
+   "mo_ta_chinh": "At the start of the turn, apply <:ttether:1457225601617498172> **Thorn Tether** to your allies for 2 turns.",
+   "hieu_ung_co_san": [
+    {
+     "name": "Thorn Tether",
+     "desc": "Create a tether from the weapon owner to this animal. The owner absorbs -**37.25%** of the incoming damage dealt, but also intercepts -**25.3%** of healing and -**26%** replenishing from the target."
+    },
+    {
+     "name": "Magic",
+     "desc": "Increases your <:mag:531616156231139338> MAG by **15.65%**."
+    }
+   ]
+  },
+  {
+   "ten": "Great Sword",
+   "mo_ta_chinh": null,
+   "hieu_ung_co_san": null
+  },
+  {
+   "ten": "Empowered Vampiric Staff",
+   "mo_ta_chinh": null,
+   "hieu_ung_co_san": [
+    {
+     "name": "Magical Resistance",
+     "desc": "Increases your <:mr:531616156226945024> MR by **27.6%**."
+    }
+   ]
+  },
+  {
+   "ten": "Fine Flame Staff",
+   "mo_ta_chinh": null,
+   "hieu_ung_co_san": [
+    {
+     "name": "Flame",
+     "desc": "Deals **38%** of your <:mag:531616156231139338> MAG at the end of the turn. Applying flame on a target that already has flame will explode and deal **93.1%** damage to the target."
+    },
+    {
+     "name": "Flame",
+     "desc": "Deals **35.6%** of your <:mag:531616156231139338> MAG at the end of the turn. Applying flame on a target that already has flame will explode and deal **96.1%** damage to the target."
+    }
+   ]
+  },
+  {
+   "ten": "Flame Staff",
+   "mo_ta_chinh": null,
+   "hieu_ung_co_san": [
+    {
+     "name": "Flame",
+     "desc": "Deals **36.6%** of your <:mag:531616156231139338> MAG at the end of the turn. Applying flame on a target that already has flame will explode and deal **77.5%** damage to the target."
+    }
+   ]
+  },
+  {
+   "ten": "Fine Orb of Potency",
+   "mo_ta_chinh": null,
+   "hieu_ung_co_san": [
+    {
+     "name": "Discharge",
+     "desc": "When <:wp:531620120976687114> WP is replenished, deal **135.2%** of the replenished amount to an enemy as magical damage."
+    }
+   ]
+  },
+  {
+   "ten": "Orb of Potency",
+   "mo_ta_chinh": null,
+   "hieu_ung_co_san": [
+    {
+     "name": "Safeguard",
+     "desc": "Negate **34%** of the damage dealt to you with <:wp:531620120976687114> WP."
+    }
+   ]
+  },
+  {
+   "ten": "Arcane Scepter",
+   "mo_ta_chinh": null,
+   "hieu_ung_co_san": null
+  },
+  {
+   "ten": "Bow",
+   "mo_ta_chinh": null,
+   "hieu_ung_co_san": null
+  },
+  {
+   "ten": "Empowered Bow",
+   "mo_ta_chinh": null,
+   "hieu_ung_co_san": [
+    {
+     "name": "Critical",
+     "desc": "Every attack has a **10.6%** chance to deal **27.75%** more damage. This can apply to heals."
+    },
+    {
+     "name": "Energize",
+     "desc": "Replenish **35.6** <:wp:531620120976687114> WP after every turn."
+    }
+   ]
+  },
+  {
+   "ten": "Decent Bow",
+   "mo_ta_chinh": null,
+   "hieu_ung_co_san": null
+  },
+  {
+   "ten": "Wounding Crossbow",
+   "mo_ta_chinh": null,
+   "hieu_ung_co_san": [
+    {
+     "name": "Heavy Arrow",
+     "desc": "When consumed, deal **253.6%** of your <:att:531616155450998794> STR and apply **24** stacks of <:exposed:1474247652874129429> **Exposed** to an enemy."
+    },
+    {
+     "name": "Exposed",
+     "desc": "The next instance of damage taken will be increased by 1% per stack. Consume all stacks after triggering."
+    },
+    {
+     "name": "Heavy Arrow",
+     "desc": "When consumed, deal **280%** of your <:att:531616155450998794> STR and apply **11** stacks of <:exposed:1474247652874129429> **Exposed** to an enemy."
+    },
+    {
+     "name": "Heavy Arrow",
+     "desc": "When consumed, deal **220.8%** of your <:att:531616155450998794> STR and apply **13** stacks of <:exposed:1474247652874129429> **Exposed** to an enemy."
+    }
+   ]
+  },
+  {
+   "ten": "Decent Orb of Potency",
+   "mo_ta_chinh": null,
+   "hieu_ung_co_san": [
+    {
+     "name": "Frost Armor",
+     "desc": "When you receive damage, apply **20** stacks of <:frostbite:1477901116950839386> **Frostbite** to the attacker."
+    },
+    {
+     "name": "Frostbite",
+     "desc": "At 100 stacks, apply a stack of <:freeze:618621661486514176> **Freeze** to the target. Remove all stacks after triggering."
+    },
+    {
+     "name": "Freeze",
+     "desc": "Next turn, prevent the target from attacking. Remove a stack after triggering."
+    }
+   ]
+  },
+  {
+   "ten": "Fine Energy Staff",
+   "mo_ta_chinh": null,
+   "hieu_ung_co_san": null
+  },
+  {
+   "ten": "Empowered Poison Dagger",
+   "mo_ta_chinh": null,
+   "hieu_ung_co_san": [
+    {
+     "name": "Poison",
+     "desc": "Deals **45%** of your <:mag:531616156231139338> MAG as true damage at the end of the turn."
+    },
+    {
+     "name": "Mana Tap",
+     "desc": "All damage you deal replenishes your <:wp:531620120976687114> WP for **29.7%** of the damage dealt!"
+    }
+   ]
+  },
+  {
+   "ten": "Empowered Orb of Potency",
+   "mo_ta_chinh": null,
+   "hieu_ung_co_san": [
+    {
+     "name": "Health Point",
+     "desc": "Increases your <:hp:531620120410456064> HP by **11.75%**."
+    },
+    {
+     "name": "Frost Armor",
+     "desc": "When you receive damage, apply **14** stacks of <:frostbite:1477901116950839386> **Frostbite** to the attacker."
+    },
+    {
+     "name": "Frostbite",
+     "desc": "At 100 stacks, apply a stack of <:freeze:618621661486514176> **Freeze** to the target. Remove all stacks after triggering."
+    },
+    {
+     "name": "Freeze",
+     "desc": "Next turn, prevent the target from attacking. Remove a stack after triggering."
+    },
+    {
+     "name": "Knowledge",
+     "desc": "This passive does not do anything in battle. However, it will give this animal +**11%** extra xp after each battle."
+    },
+    {
+     "name": "Safeguard",
+     "desc": "Negate **33%** of the damage dealt to you with <:wp:531620120976687114> WP."
+    }
+   ]
+  },
+  {
+   "ten": "Empowered Spirit Staff",
+   "mo_ta_chinh": null,
+   "hieu_ung_co_san": [
+    {
+     "name": "Defense Up",
+     "desc": "Reduces incoming damage by -**29.6%**."
+    },
+    {
+     "name": "Magic",
+     "desc": "Increases your <:mag:531616156231139338> MAG by **19.55%**."
+    }
+   ]
+  },
+  {
+   "ten": "Empowered Flame Staff",
+   "mo_ta_chinh": null,
+   "hieu_ung_co_san": [
+    {
+     "name": "Flame",
+     "desc": "Deals **39.8%** of your <:mag:531616156231139338> MAG at the end of the turn. Applying flame on a target that already has flame will explode and deal **92.8%** damage to the target."
+    },
+    {
+     "name": "Giant Slayer",
+     "desc": "Deal +**24.25%** more damage to bosses."
+    }
+   ]
+  },
+  {
+   "ten": "Culling Scythe",
+   "mo_ta_chinh": null,
+   "hieu_ung_co_san": [
+    {
+     "name": "Mortality",
+     "desc": "Decreases all healing for this animal by -**62.4%**."
+    }
+   ]
+  },
+  {
+   "ten": "Empowered Arbiter's Edge",
+   "mo_ta_chinh": null,
+   "hieu_ung_co_san": [
+    {
+     "name": "Sin",
+     "desc": "When consumed, each stack deals **10.3%** of your <:attmag:1459037092528263188> **highest** offense stat as physical damage to an enemy."
+    },
+    {
+     "name": "Virtue",
+     "desc": "When consumed, each stack deals **21.5%** of your <:attmag:1459037092528263188> **lowest** offense stat as magical damage to an enemy."
+    },
+    {
+     "name": "Snail",
+     "desc": "Your pet snail fights with you. Whenever you attack an animal, snail will slap a random enemy for **5%** of the damage dealt as true damage."
+    }
+   ]
+  },
+  {
+   "ten": "Decent Poison Dagger",
+   "mo_ta_chinh": null,
+   "hieu_ung_co_san": [
+    {
+     "name": "Poison",
+     "desc": "Deals **35.8%** of your <:mag:531616156231139338> MAG as true damage at the end of the turn."
+    },
+    {
+     "name": "Poison",
+     "desc": "Deals **41.6%** of your <:mag:531616156231139338> MAG as true damage at the end of the turn."
+    }
+   ]
+  },
+  {
+   "ten": "Decent Vampiric Staff",
+   "mo_ta_chinh": null,
+   "hieu_ung_co_san": null
+  },
+  {
+   "ten": "Empowered Wounding Crossbow",
+   "mo_ta_chinh": null,
+   "hieu_ung_co_san": [
+    {
+     "name": "Heavy Arrow",
+     "desc": "When consumed, deal **294.4%** of your <:att:531616155450998794> STR and apply **24** stacks of <:exposed:1474247652874129429> **Exposed** to an enemy."
+    },
+    {
+     "name": "Exposed",
+     "desc": "The next instance of damage taken will be increased by 1% per stack. Consume all stacks after triggering."
+    },
+    {
+     "name": "Magic",
+     "desc": "Increases your <:mag:531616156231139338> MAG by **8.3%**."
+    }
+   ]
+  },
+  {
+   "ten": "Empowered Glacial Axe",
+   "mo_ta_chinh": null,
+   "hieu_ung_co_san": [
+    {
+     "name": "Freeze",
+     "desc": "Next turn, prevent the target from attacking. Remove a stack after triggering."
+    },
+    {
+     "name": "Mana Tap",
+     "desc": "All damage you deal replenishes your <:wp:531620120976687114> WP for **25.5%** of the damage dealt!"
+    },
+    {
+     "name": "Living Hive",
+     "desc": "When dealing damage, spend **3.8** <:wp:531620120976687114> WP to apply <:pest:1449595442714120404> **Pest** to the target."
+    }
+   ]
+  },
+  {
+   "ten": "Empowered Leeching Scythe",
+   "mo_ta_chinh": null,
+   "hieu_ung_co_san": [
+    {
+     "name": "Leech",
+     "desc": "The caster who applied this debuff steals -**50.7%** of incoming heals and -**48.9%** of incoming replenishes."
+    },
+    {
+     "name": "Discharge",
+     "desc": "When <:wp:531620120976687114> WP is replenished, deal **146.4%** of the replenished amount to an enemy as magical damage."
+    }
+   ]
+  },
+  {
+   "ten": "Energy Staff",
+   "mo_ta_chinh": null,
+   "hieu_ung_co_san": null
+  },
+  {
+   "ten": "Fine Culling Scythe",
+   "mo_ta_chinh": null,
+   "hieu_ung_co_san": [
+    {
+     "name": "Mortality",
+     "desc": "Decreases all healing for this animal by -**66.3%**."
+    }
+   ]
+  },
+  {
+   "ten": "Poison Dagger",
+   "mo_ta_chinh": null,
+   "hieu_ung_co_san": [
+    {
+     "name": "Poison",
+     "desc": "Deals **50%** of your <:mag:531616156231139338> MAG as true damage at the end of the turn."
+    }
+   ]
+  },
+  {
+   "ten": "Arbiter's Edge",
+   "mo_ta_chinh": null,
+   "hieu_ung_co_san": [
+    {
+     "name": "Sin",
+     "desc": "When consumed, each stack deals **17.6%** of your <:attmag:1459037092528263188> **highest** offense stat as physical damage to an enemy."
+    },
+    {
+     "name": "Virtue",
+     "desc": "When consumed, each stack deals **29.5%** of your <:attmag:1459037092528263188> **lowest** offense stat as magical damage to an enemy."
+    }
+   ]
+  },
+  {
+   "ten": "Decent Foul Fish",
+   "mo_ta_chinh": null,
+   "hieu_ung_co_san": [
+    {
+     "name": "Stinky",
+     "desc": "Prevents any future buffs *AND* debuffs to be applied to this animal. On success, deal **49.1%** <:mag:531616156231139338> MAG to the animal. If Stinky is applied to stinky animals, extend the duration."
+    }
+   ]
+  },
+  {
+   "ten": "Empowered Great Sword",
+   "mo_ta_chinh": null,
+   "hieu_ung_co_san": [
+    {
+     "name": "Knowledge",
+     "desc": "This passive does not do anything in battle. However, it will give this animal +**14.2%** extra xp after each battle."
+    }
+   ]
+  },
+  {
+   "ten": "Fine Conduit Claw",
+   "mo_ta_chinh": null,
+   "hieu_ung_co_san": null
+  },
+  {
+   "ten": "Bleeding Gaze",
+   "mo_ta_chinh": null,
+   "hieu_ung_co_san": null
+  },
+  {
+   "ten": "Spirit Staff",
+   "mo_ta_chinh": null,
+   "hieu_ung_co_san": [
+    {
+     "name": "Defense Up",
+     "desc": "Reduces incoming damage by -**28.9%**."
+    }
+   ]
+  },
+  {
+   "ten": "Briar-Heart Staff",
+   "mo_ta_chinh": "At the start of the turn, apply <:ttether:1457225601617498172> **Thorn Tether** to your allies for 2 turns.",
+   "hieu_ung_co_san": [
+    {
+     "name": "Thorn Tether",
+     "desc": "Create a tether from the weapon owner to this animal. The owner absorbs -**39.5%** of the incoming damage dealt, but also intercepts -**29.8%** of healing and -**25.2%** replenishing from the target."
+    }
+   ]
+  },
+  {
+   "ten": "Soul Tithe",
+   "mo_ta_chinh": null,
+   "hieu_ung_co_san": null
+  },
+  {
+   "ten": "Decent Great Sword",
+   "mo_ta_chinh": null,
+   "hieu_ung_co_san": null
+  },
+  {
+   "ten": "Fine Healing Staff",
+   "mo_ta_chinh": null,
+   "hieu_ung_co_san": [
+    {
+     "name": "Adaptation",
+     "desc": "Gains resistance against the last damage type received. Physical hits grant <:stoneskin:1448568600880353382> **Stoneskin**, while Magical hits grant <:spellskin:1448568599273803877> **Spellskin**."
+    },
+    {
+     "name": "Stoneskin",
+     "desc": "Reduces incoming Physical damage by **5.8%** per stack. Remove all stacks upon taking damage of other types."
+    }
+   ]
+  },
+  {
+   "ten": "Rune of Luck",
+   "mo_ta_chinh": null,
+   "hieu_ung_co_san": null
+  },
+  {
+   "ten": "Decent Healing Staff",
+   "mo_ta_chinh": null,
+   "hieu_ung_co_san": null
+  }
+ ],
+ "passive": [
+  {
+   "key": "absolve",
+   "name": "Absolve",
+   "desc": "When healed, deal **76%** of the healed amount to an enemy as magical damage.",
+   "emoji_names": [
+    "eabsolve",
+    "uabsolve"
+   ],
+   "on_types": [
+    "Empowered Bow",
+    "Fine Poison Dagger"
+   ],
+   "so_cay_trong_kho": 36,
+   "vi_du_id": "FW4TZY"
+  },
+  {
+   "key": "adapt",
+   "name": "Adaptation",
+   "desc": "Gains resistance against the last damage type received. Physical hits grant <:stoneskin:1448568600880353382> **Stoneskin**, while Magical hits grant <:spellskin:1448568599273803877> **Spellskin**.",
+   "emoji_names": [
+    "ladapt",
+    "radapt"
+   ],
+   "on_types": [
+    "Empowered Staff of Corruption",
+    "Fine Healing Staff"
+   ],
+   "so_cay_trong_kho": 20,
+   "vi_du_id": "FW4U04"
+  },
+  {
+   "key": "att",
+   "name": "Strength",
+   "desc": "Increases your <:att:531616155450998794> STR by **11.3%**.",
+   "emoji_names": [
+    "ratt"
+   ],
+   "on_types": [
+    "Empowered Defender's Aegis"
+   ],
+   "so_cay_trong_kho": 37,
+   "vi_du_id": "FVK6GB"
+  },
+  {
+   "key": "attup",
+   "name": "Attack Up",
+   "desc": "Increases all damage by +**15.1%**. Cannot stack with other Attack Up buffs.",
+   "emoji_names": [
+    "attup"
+   ],
+   "on_types": [
+    "Empowered Vanguard's Banner"
+   ]
+  },
+  {
+   "key": "attupp",
+   "name": "Attack Up+",
+   "desc": "Increases all damage by +**35%**. Cannot stack with other Attack Up+ buffs.",
+   "emoji_names": [
+    "attupp"
+   ],
+   "on_types": [
+    "Empowered Vanguard's Banner"
+   ]
+  },
+  {
+   "key": "attuppp",
+   "name": "Attack Up++",
+   "desc": "Increases all damage by +**47.1%**. Cannot stack with other Attack Up++ buffs.",
+   "emoji_names": [
+    "attuppp"
+   ],
+   "on_types": [
+    "Empowered Vanguard's Banner"
+   ]
+  },
+  {
+   "key": "critical",
+   "name": "Critical",
+   "desc": "Every attack has a **29.6%** chance to deal **38.75%** more damage. This can apply to heals.",
+   "emoji_names": [
+    "ecritical"
+   ],
+   "on_types": [
+    "Vampiric Staff"
+   ],
+   "so_cay_trong_kho": 34,
+   "vi_du_id": "FVK6GI"
+  },
+  {
+   "key": "dfup",
+   "name": "Defense Up",
+   "desc": "Reduces incoming damage by -**29.6%**.",
+   "emoji_names": [
+    "dfup"
+   ],
+   "on_types": [
+    "Empowered Spirit Staff",
+    "Spirit Staff"
+   ]
+  },
+  {
+   "key": "discharge",
+   "name": "Discharge",
+   "desc": "When <:wp:531620120976687114> WP is replenished, deal **119.2%** of the replenished amount to an enemy as magical damage.",
+   "emoji_names": [
+    "udischarge",
+    "mdischarge"
+   ],
+   "on_types": [
+    "Resurrection Staff",
+    "Empowered Leeching Scythe"
+   ],
+   "so_cay_trong_kho": 43,
+   "vi_du_id": "FVVH7G"
+  },
+  {
+   "key": "dstrike",
+   "name": "Double Strike",
+   "desc": "When this animal attacks, it has a **16.6%** chance to attack one more time with **28.95%** of the weapon's *Effectiveness* and **27.2%** of the weapon's cost.",
+   "emoji_names": [
+    "edstrike",
+    "mdstrike"
+   ],
+   "on_types": [
+    "Empowered Vanguard's Banner",
+    "Bleeding Gaze",
+    "Briar-Heart Staff",
+    "Rune of Luck"
+   ],
+   "so_cay_trong_kho": 23,
+   "vi_du_id": "FW6CW1"
+  },
+  {
+   "key": "enrage",
+   "name": "Enrage",
+   "desc": "Every 10% of missing health gives +**4.82%** damage.",
+   "emoji_names": [
+    "menrage",
+    "eenrage"
+   ],
+   "on_types": [
+    "Fine Flame Staff",
+    "Energy Staff"
+   ],
+   "so_cay_trong_kho": 35,
+   "vi_du_id": "FVVH7H"
+  },
+  {
+   "key": "exposed",
+   "name": "Exposed",
+   "desc": "The next instance of damage taken will be increased by 1% per stack. Consume all stacks after triggering.",
+   "emoji_names": [
+    "exposed"
+   ],
+   "on_types": [
+    "Wounding Crossbow",
+    "Empowered Wounding Crossbow"
+   ]
+  },
+  {
+   "key": "flame",
+   "name": "Flame",
+   "desc": "Deals **35.6%** of your <:mag:531616156231139338> MAG at the end of the turn. Applying flame on a target that already has flame will explode and deal **96.1%** damage to the target.",
+   "emoji_names": [
+    "flame"
+   ],
+   "on_types": [
+    "Fine Flame Staff",
+    "Empowered Flame Staff"
+   ]
+  },
+  {
+   "key": "frarm",
+   "name": "Frost Armor",
+   "desc": "When you receive damage, apply **20** stacks of <:frostbite:1477901116950839386> **Frostbite** to the attacker.",
+   "emoji_names": [
+    "ffrarm",
+    "rfrarm"
+   ],
+   "on_types": [
+    "Decent Orb of Potency",
+    "Empowered Orb of Potency"
+   ],
+   "so_cay_trong_kho": 27,
+   "vi_du_id": "FW4U05"
+  },
+  {
+   "key": "freeze",
+   "name": "Freeze",
+   "desc": "Next turn, prevent the target from attacking. Remove a stack after triggering.",
+   "emoji_names": [
+    "freeze"
+   ],
+   "on_types": [
+    "Decent Orb of Potency",
+    "Empowered Orb of Potency",
+    "Empowered Glacial Axe"
+   ]
+  },
+  {
+   "key": "frostbite",
+   "name": "Frostbite",
+   "desc": "At 100 stacks, apply a stack of <:freeze:618621661486514176> **Freeze** to the target. Remove all stacks after triggering.",
+   "emoji_names": [
+    "frostbite"
+   ],
+   "on_types": [
+    "Decent Orb of Potency",
+    "Empowered Orb of Potency"
+   ]
+  },
+  {
+   "key": "gslay",
+   "name": "Giant Slayer",
+   "desc": "Deal +**16.15%** more damage to bosses.",
+   "emoji_names": [
+    "rgslay",
+    "lgslay",
+    "egslay"
+   ],
+   "on_types": [
+    "Empowered Spirit Staff",
+    "Empowered Flame Staff",
+    "Fine Culling Scythe"
+   ],
+   "so_cay_trong_kho": 36,
+   "vi_du_id": "FW6CW2"
+  },
+  {
+   "key": "harrow",
+   "name": "Heavy Arrow",
+   "desc": "When consumed, deal **220.8%** of your <:att:531616155450998794> STR and apply **13** stacks of <:exposed:1474247652874129429> **Exposed** to an enemy.",
+   "emoji_names": [
+    "harrow"
+   ],
+   "on_types": [
+    "Wounding Crossbow",
+    "Empowered Wounding Crossbow"
+   ]
+  },
+  {
+   "key": "hgen",
+   "name": "Regeneration",
+   "desc": "Heal **8.35%** of your max <:hp:531620120410456064> HP after every turn.",
+   "emoji_names": [
+    "ehgen"
+   ],
+   "on_types": [
+    "Empowered Wand of Absorption",
+    "Decent Vampiric Staff"
+   ],
+   "so_cay_trong_kho": 51,
+   "vi_du_id": "FW4U01"
+  },
+  {
+   "key": "hp",
+   "name": "Health Point",
+   "desc": "Increases your <:hp:531620120410456064> HP by **13.55%**.",
+   "emoji_names": [
+    "rhp"
+   ],
+   "on_types": [
+    "Empowered Staff of Corruption",
+    "Empowered Orb of Potency",
+    "Empowered Flame Staff"
+   ],
+   "so_cay_trong_kho": 31,
+   "vi_du_id": "FW4U02"
+  },
+  {
+   "key": "kkaze",
+   "name": "Kamikaze",
+   "desc": "When the animal dies, deal **67.25%** of its max <:hp:531620120410456064> HP as magical damage to the attacker.",
+   "emoji_names": [
+    "ekkaze",
+    "mkkaze"
+   ],
+   "on_types": [
+    "Empowered Arbiter's Edge",
+    "Empowered Orb of Potency",
+    "Decent Vampiric Staff"
+   ],
+   "so_cay_trong_kho": 33,
+   "vi_du_id": "FWCG57"
+  },
+  {
+   "key": "kno",
+   "name": "Knowledge",
+   "desc": "This passive does not do anything in battle. However, it will give this animal +**11%** extra xp after each battle.",
+   "emoji_names": [
+    "rkno",
+    "ekno",
+    "mkno"
+   ],
+   "on_types": [
+    "Empowered Orb of Potency",
+    "Arbiter's Edge",
+    "Empowered Great Sword",
+    "Fine Healing Staff"
+   ],
+   "so_cay_trong_kho": 40,
+   "vi_du_id": "FW4U03"
+  },
+  {
+   "key": "leech",
+   "name": "Leech",
+   "desc": "The caster who applied this debuff steals -**50.7%** of incoming heals and -**48.9%** of incoming replenishes.",
+   "emoji_names": [
+    "leech"
+   ],
+   "on_types": [
+    "Empowered Leeching Scythe"
+   ]
+  },
+  {
+   "key": "lifesteal",
+   "name": "Lifesteal",
+   "desc": "All damage you deal heals you for **17.4%** of the damage dealt!",
+   "emoji_names": [
+    "clifesteal",
+    "mlifesteal"
+   ],
+   "on_types": [
+    "Decent Poison Dagger",
+    "Empowered Vanguard's Banner"
+   ],
+   "so_cay_trong_kho": 40,
+   "vi_du_id": "FW6CW6"
+  },
+  {
+   "key": "lwolf",
+   "name": "Lone Wolf",
+   "desc": "If you are the only animal in your team, deal +**29%** more damage and take -**24.4%** less damage.",
+   "emoji_names": [
+    "mlwolf"
+   ],
+   "on_types": [
+    "Empowered Wounding Crossbow"
+   ],
+   "so_cay_trong_kho": 27,
+   "vi_du_id": "FVG2WK"
+  },
+  {
+   "key": "mag",
+   "name": "Magic",
+   "desc": "Increases your <:mag:531616156231139338> MAG by **19.55%**.",
+   "emoji_names": [
+    "lmag",
+    "umag"
+   ],
+   "on_types": [
+    "Empowered Spirit Staff",
+    "Empowered Wounding Crossbow",
+    "Spirit Staff",
+    "Decent Great Sword"
+   ],
+   "so_cay_trong_kho": 40,
+   "vi_du_id": "FW6CVZ"
+  },
+  {
+   "key": "manatap",
+   "name": "Mana Tap",
+   "desc": "All damage you deal replenishes your <:wp:531620120976687114> WP for **25.5%** of the damage dealt!",
+   "emoji_names": [
+    "emanatap"
+   ],
+   "on_types": [
+    "Empowered Glacial Axe"
+   ],
+   "so_cay_trong_kho": 30,
+   "vi_du_id": "FVVH7F"
+  },
+  {
+   "key": "mortality",
+   "name": "Mortality",
+   "desc": "Decreases all healing for this animal by -**62.4%**.",
+   "emoji_names": [
+    "mortality"
+   ],
+   "on_types": [
+    "Culling Scythe",
+    "Fine Culling Scythe"
+   ]
+  },
+  {
+   "key": "mr",
+   "name": "Magical Resistance",
+   "desc": "Increases your <:mr:531616156226945024> MR by **35%**.",
+   "emoji_names": [
+    "fmr"
+   ],
+   "on_types": [
+    "Decent Orb of Potency"
+   ],
+   "so_cay_trong_kho": 34,
+   "vi_du_id": "FVJQE8"
+  },
+  {
+   "key": "pest",
+   "name": "Pest",
+   "desc": "At the end of the turn, each stack of pests will deal **7.82%** of your <:mag:531616156231139338> MAG as magical damage to the target. Pests will leave after they deal damage.",
+   "emoji_names": [
+    "pest"
+   ],
+   "on_types": [
+    "Empowered Glacial Axe"
+   ]
+  },
+  {
+   "key": "poison",
+   "name": "Poison",
+   "desc": "Deals **35.8%** of your <:mag:531616156231139338> MAG as true damage at the end of the turn.",
+   "emoji_names": [
+    "poison"
+   ],
+   "on_types": [
+    "Decent Poison Dagger",
+    "Poison Dagger",
+    "Fine Poison Dagger"
+   ]
+  },
+  {
+   "key": "pr",
+   "name": "Physical Resistance",
+   "desc": "Increases your <:pr:531616156222488606> PR by **34.2%**.",
+   "emoji_names": [
+    "lpr",
+    "rpr"
+   ],
+   "on_types": [
+    "Empowered Orb of Potency",
+    "Empowered Leeching Scythe"
+   ],
+   "so_cay_trong_kho": 32,
+   "vi_du_id": "FVVH7G"
+  },
+  {
+   "key": "resonance",
+   "name": "Resonance",
+   "desc": "For every buff you have, deal +**7.75%** more damage. For every debuff you have, take -**8.95%** less damage.",
+   "emoji_names": [
+    "eresonance"
+   ],
+   "on_types": [
+    "Empowered Defender's Aegis"
+   ],
+   "so_cay_trong_kho": 34,
+   "vi_du_id": "FW6CW7"
+  },
+  {
+   "key": "sac",
+   "name": "Sacrifice",
+   "desc": "When this animal dies, heal your teammates for **38.5%** of its Max <:hp:531620120410456064> HP and replenish for **35%** of its Max <:wp:531620120976687114> WP.",
+   "emoji_names": [
+    "esac",
+    "msac",
+    "usac"
+   ],
+   "on_types": [
+    "Empowered Arcane Scepter",
+    "Fine Conduit Claw",
+    "Soul Tithe",
+    "Decent Poison Dagger"
+   ],
+   "so_cay_trong_kho": 41,
+   "vi_du_id": "FW6CW8"
+  },
+  {
+   "key": "safeguard",
+   "name": "Safeguard",
+   "desc": "Negate **33%** of the damage dealt to you with <:wp:531620120976687114> WP.",
+   "emoji_names": [
+    "esafeguard"
+   ],
+   "on_types": [
+    "Empowered Orb of Potency"
+   ],
+   "so_cay_trong_kho": 35,
+   "vi_du_id": "FWC9AC"
+  },
+  {
+   "key": "sin",
+   "name": "Sin",
+   "desc": "When consumed, each stack deals **10.3%** of your <:attmag:1459037092528263188> **highest** offense stat as physical damage to an enemy.",
+   "emoji_names": [
+    "sin"
+   ],
+   "on_types": [
+    "Empowered Arbiter's Edge",
+    "Arbiter's Edge"
+   ]
+  },
+  {
+   "key": "snail",
+   "name": "Snail",
+   "desc": "Your pet snail fights with you. Whenever you attack an animal, snail will slap a random enemy for **14%** of the damage dealt as true damage.",
+   "emoji_names": [
+    "msnail",
+    "esnail",
+    "csnail"
+   ],
+   "on_types": [
+    "Empowered Wand of Absorption",
+    "Culling Scythe",
+    "Empowered Arbiter's Edge"
+   ],
+   "so_cay_trong_kho": 38,
+   "vi_du_id": "FVK6GT"
+  },
+  {
+   "key": "spellskin",
+   "name": "Spellskin",
+   "desc": "Reduces incoming Magical damage by **9.95%** per stack. Remove all stacks upon taking damage of other types.",
+   "emoji_names": [
+    "spellskin"
+   ],
+   "on_types": [
+    "Empowered Staff of Corruption",
+    "Fine Healing Staff"
+   ]
+  },
+  {
+   "key": "sprout",
+   "name": "Sprout",
+   "desc": "Increase all incoming healing by +**39.2%**.",
+   "emoji_names": [
+    "lsprout",
+    "msprout",
+    "csprout"
+   ],
+   "on_types": [
+    "Empowered Resurrection Staff",
+    "Healing Staff",
+    "Decent Healing Staff"
+   ],
+   "so_cay_trong_kho": 33,
+   "vi_du_id": "FVK6GP"
+  },
+  {
+   "key": "stinky",
+   "name": "Stinky",
+   "desc": "Prevents any future buffs *AND* debuffs to be applied to this animal. On success, deal **49.1%** <:mag:531616156231139338> MAG to the animal. If Stinky is applied to stinky animals, extend the duration.",
+   "emoji_names": [
+    "stinky"
+   ],
+   "on_types": [
+    "Decent Foul Fish"
+   ]
+  },
+  {
+   "key": "stoneskin",
+   "name": "Stoneskin",
+   "desc": "Reduces incoming Physical damage by **9.95%** per stack. Remove all stacks upon taking damage of other types.",
+   "emoji_names": [
+    "stoneskin"
+   ],
+   "on_types": [
+    "Empowered Staff of Corruption",
+    "Fine Healing Staff"
+   ]
+  },
+  {
+   "key": "sward",
+   "name": "Sacred Ward",
+   "desc": "Prevents any debuffs to be applied to this animal. On success, remove a stack and replenish **23.1%** <:mag:531616156231139338> MAG to the animal.",
+   "emoji_names": [
+    "sward"
+   ],
+   "on_types": [
+    "Staff of Purity"
+   ]
+  },
+  {
+   "key": "swarm",
+   "name": "Living Hive",
+   "desc": "When dealing damage, spend **3.8** <:wp:531620120976687114> WP to apply <:pest:1449595442714120404> **Pest** to the target.",
+   "emoji_names": [
+    "mswarm"
+   ],
+   "on_types": [
+    "Empowered Glacial Axe"
+   ],
+   "so_cay_trong_kho": 25,
+   "vi_du_id": "FW6CW9"
+  },
+  {
+   "key": "taunt",
+   "name": "Taunt",
+   "desc": "Taunts the enemy team and forces all opponents to attack this animal. Reduces incoming damage by -**37.6%**.",
+   "emoji_names": [
+    "taunt"
+   ],
+   "on_types": [
+    "Empowered Defender's Aegis"
+   ]
+  },
+  {
+   "key": "thorns",
+   "name": "Thorns",
+   "desc": "Reflect **32.2**% of the damage dealt to you as true damage.",
+   "emoji_names": [
+    "mthorns",
+    "ethorns"
+   ],
+   "on_types": [
+    "Empowered Resurrection Staff",
+    "Staff of Purity"
+   ],
+   "so_cay_trong_kho": 39,
+   "vi_du_id": "FWC9AB"
+  },
+  {
+   "key": "ttether",
+   "name": "Thorn Tether",
+   "desc": "Create a tether from the weapon owner to this animal. The owner absorbs -**39.5%** of the incoming damage dealt, but also intercepts -**29.8%** of healing and -**25.2%** replenishing from the target.",
+   "emoji_names": [
+    "ttether"
+   ],
+   "on_types": [
+    "Briar-Heart Staff"
+   ]
+  },
+  {
+   "key": "virtue",
+   "name": "Virtue",
+   "desc": "When consumed, each stack deals **21.5%** of your <:attmag:1459037092528263188> **lowest** offense stat as magical damage to an enemy.",
+   "emoji_names": [
+    "virtue"
+   ],
+   "on_types": [
+    "Empowered Arbiter's Edge",
+    "Arbiter's Edge"
+   ]
+  },
+  {
+   "key": "wgen",
+   "name": "Energize",
+   "desc": "Replenish **35.6** <:wp:531620120976687114> WP after every turn.",
+   "emoji_names": [
+    "ewgen"
+   ],
+   "on_types": [
+    "Empowered Bow",
+    "Empowered Great Sword"
+   ],
+   "so_cay_trong_kho": 34,
+   "vi_du_id": "FVVH7H"
+  },
+  {
+   "key": "wp",
+   "name": "Weapon Point",
+   "desc": "Increases your <:wp:531620120976687114> WP by **28.6%**.",
+   "emoji_names": [
+    "mwp",
+    "cwp",
+    "fwp",
+    "ewp"
+   ],
+   "on_types": [
+    "Empowered Arcane Scepter",
+    "Wounding Crossbow",
+    "Poison Dagger",
+    "Decent Foul Fish"
+   ],
+   "so_cay_trong_kho": 38,
+   "vi_du_id": "FW6CWA"
+  }
+ ]
+}

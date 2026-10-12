@@ -1,5 +1,5 @@
 {
- "version": 2,
+ "version": 3,
  "ghi_chu": "Bộ luật vũ khí cho ,teamcheck / (sau này) lọc dismantle. Nguồn: lời khuyên ?tag của server OwO + ý riêng của Ruby. Khóa passive = tên emoji passive trong server (PSxxx bỏ 'PS'). passive_alias: tên emoji passive TRONG GAME (bỏ chữ cái độ hiếm) -> khóa trong lời khuyên.",
  "types": {
   "101": {
@@ -847,9 +847,19 @@
   "bgaze": "128"
  },
  "passive_alias": {
-  "sac": "sacrifice"
+  "sac": "sacrifice",
+  "manatap": "mtap",
+  "critical": "crit",
+  "gslay": "gslayer",
+  "safeguard": "sguard",
+  "att": "str",
+  "frarm": "farmor",
+  "swarm": "lhive",
+  "kkaze": "kaze"
  },
  "known_passives": [
+  "absolve",
+  "adapt",
   "crit",
   "discharge",
   "dstrike",
@@ -857,30 +867,305 @@
   "farmor",
   "gslayer",
   "hgen",
+  "hp",
   "kaze",
+  "kno",
   "lhive",
   "lifesteal",
+  "lwolf",
   "mag",
+  "mr",
   "mtap",
   "pr",
+  "resonance",
   "sacrifice",
   "sguard",
   "snail",
   "sprout",
   "str",
   "thorns",
-  "wgen"
+  "wgen",
+  "wp"
  ],
  "ruby": {
   "sacrifice_hop_voi": [
    "shield",
    "rstaff"
   ],
-  "passive_hoi_wp": "CHƯA RÕ — chờ Ruby nói rõ là những passive nào"
+  "passive_hoi_wp": [
+   "wgen",
+   "mtap",
+   "sacrifice"
+  ],
+  "ghi_chu_hoi_wp": "Chọn theo mô tả game: Energize (wgen), Mana Tap (mtap), Sacrifice (sacrifice) đều HỒI WP. Ruby nói passive hồi WP rất tốt -> coi là hợp ở mọi vũ khí (chờ Ruby xác nhận)."
  },
  "never_dismantle": [
   "118",
   "122"
  ],
- "loai_chua_co_loi_khuyen": []
+ "loai_chua_co_loi_khuyen": [],
+ "passives": {
+  "absolve": {
+   "ten": "Absolve",
+   "mo_ta_en": "When healed, deal **76%** of the healed amount to an enemy as magical damage.",
+   "tom_tat_vi": "Khi được hồi máu, gây sát thương phép bằng một phần lượng hồi lên 1 kẻ địch",
+   "khoa_loi_khuyen": "absolve",
+   "hoi_wp": false,
+   "lien_quan_wp": null,
+   "so_cay_trong_kho": 36
+  },
+  "adapt": {
+   "ten": "Adaptation",
+   "mo_ta_en": "Gains resistance against the last damage type received. Physical hits grant <:stoneskin:1448568600880353382> **Stoneskin**, while Magical hits grant <:spellskin:1448568599273803877> **Spellskin**.",
+   "tom_tat_vi": "Kháng loại sát thương vừa nhận (vật lý → Stoneskin, phép → Spellskin)",
+   "khoa_loi_khuyen": "adapt",
+   "hoi_wp": false,
+   "lien_quan_wp": null,
+   "so_cay_trong_kho": 20
+  },
+  "att": {
+   "ten": "Strength",
+   "mo_ta_en": "Increases your <:att:531616155450998794> STR by **11.3%**.",
+   "tom_tat_vi": "Tăng STR theo %",
+   "khoa_loi_khuyen": "str",
+   "hoi_wp": false,
+   "lien_quan_wp": null,
+   "so_cay_trong_kho": 37
+  },
+  "critical": {
+   "ten": "Critical",
+   "mo_ta_en": "Every attack has a **29.6%** chance to deal **38.75%** more damage. This can apply to heals.",
+   "tom_tat_vi": "Mỗi đòn có xác suất gây thêm sát thương (áp dụng cả khi hồi máu)",
+   "khoa_loi_khuyen": "crit",
+   "hoi_wp": false,
+   "lien_quan_wp": null,
+   "so_cay_trong_kho": 34
+  },
+  "discharge": {
+   "ten": "Discharge",
+   "mo_ta_en": "When <:wp:531620120976687114> WP is replenished, deal **119.2%** of the replenished amount to an enemy as magical damage.",
+   "tom_tat_vi": "Khi WP được hồi, gây sát thương phép bằng một phần lượng WP vừa hồi",
+   "khoa_loi_khuyen": "discharge",
+   "hoi_wp": false,
+   "lien_quan_wp": "cần WP được hồi mới phát huy",
+   "so_cay_trong_kho": 43
+  },
+  "dstrike": {
+   "ten": "Double Strike",
+   "mo_ta_en": "When this animal attacks, it has a **16.6%** chance to attack one more time with **28.95%** of the weapon's *Effectiveness* and **27.2%** of the weapon's cost.",
+   "tom_tat_vi": "Có xác suất đánh thêm 1 đòn (tốn thêm một ít WP)",
+   "khoa_loi_khuyen": "dstrike",
+   "hoi_wp": false,
+   "lien_quan_wp": "tốn thêm WP mỗi đòn phụ",
+   "so_cay_trong_kho": 23
+  },
+  "enrage": {
+   "ten": "Enrage",
+   "mo_ta_en": "Every 10% of missing health gives +**4.82%** damage.",
+   "tom_tat_vi": "Mỗi 10% máu đã mất cộng thêm % sát thương",
+   "khoa_loi_khuyen": "enrage",
+   "hoi_wp": false,
+   "lien_quan_wp": null,
+   "so_cay_trong_kho": 35
+  },
+  "frarm": {
+   "ten": "Frost Armor",
+   "mo_ta_en": "When you receive damage, apply **20** stacks of <:frostbite:1477901116950839386> **Frostbite** to the attacker.",
+   "tom_tat_vi": "Khi bị đánh, gắn Frostbite lên kẻ tấn công (đủ 100 lớp thì bị đóng băng)",
+   "khoa_loi_khuyen": "farmor",
+   "hoi_wp": false,
+   "lien_quan_wp": null,
+   "so_cay_trong_kho": 27
+  },
+  "gslay": {
+   "ten": "Giant Slayer",
+   "mo_ta_en": "Deal +**16.15%** more damage to bosses.",
+   "tom_tat_vi": "Thêm % sát thương lên boss",
+   "khoa_loi_khuyen": "gslayer",
+   "hoi_wp": false,
+   "lien_quan_wp": null,
+   "so_cay_trong_kho": 36
+  },
+  "hgen": {
+   "ten": "Regeneration",
+   "mo_ta_en": "Heal **8.35%** of your max <:hp:531620120410456064> HP after every turn.",
+   "tom_tat_vi": "Hồi % máu tối đa sau mỗi lượt",
+   "khoa_loi_khuyen": "hgen",
+   "hoi_wp": false,
+   "lien_quan_wp": null,
+   "so_cay_trong_kho": 51
+  },
+  "hp": {
+   "ten": "Health Point",
+   "mo_ta_en": "Increases your <:hp:531620120410456064> HP by **13.55%**.",
+   "tom_tat_vi": "Tăng HP theo %",
+   "khoa_loi_khuyen": "hp",
+   "hoi_wp": false,
+   "lien_quan_wp": null,
+   "so_cay_trong_kho": 31
+  },
+  "kkaze": {
+   "ten": "Kamikaze",
+   "mo_ta_en": "When the animal dies, deal **67.25%** of its max <:hp:531620120410456064> HP as magical damage to the attacker.",
+   "tom_tat_vi": "Khi chết, gây sát thương phép bằng một phần máu tối đa lên kẻ đã hạ mình",
+   "khoa_loi_khuyen": "kaze",
+   "hoi_wp": false,
+   "lien_quan_wp": null,
+   "so_cay_trong_kho": 33
+  },
+  "kno": {
+   "ten": "Knowledge",
+   "mo_ta_en": "This passive does not do anything in battle. However, it will give this animal +**11%** extra xp after each battle.",
+   "tom_tat_vi": "Không có tác dụng trong trận, chỉ cộng thêm % XP sau mỗi trận",
+   "khoa_loi_khuyen": "kno",
+   "hoi_wp": false,
+   "lien_quan_wp": null,
+   "so_cay_trong_kho": 40
+  },
+  "lifesteal": {
+   "ten": "Lifesteal",
+   "mo_ta_en": "All damage you deal heals you for **17.4%** of the damage dealt!",
+   "tom_tat_vi": "Mọi sát thương gây ra hồi lại một phần cho bản thân",
+   "khoa_loi_khuyen": "lifesteal",
+   "hoi_wp": false,
+   "lien_quan_wp": null,
+   "so_cay_trong_kho": 40
+  },
+  "lwolf": {
+   "ten": "Lone Wolf",
+   "mo_ta_en": "If you are the only animal in your team, deal +**29%** more damage and take -**24.4%** less damage.",
+   "tom_tat_vi": "Chỉ khi cả đội có đúng 1 pet: tăng sát thương và giảm sát thương nhận",
+   "khoa_loi_khuyen": "lwolf",
+   "hoi_wp": false,
+   "lien_quan_wp": null,
+   "so_cay_trong_kho": 27
+  },
+  "mag": {
+   "ten": "Magic",
+   "mo_ta_en": "Increases your <:mag:531616156231139338> MAG by **19.55%**.",
+   "tom_tat_vi": "Tăng MAG theo %",
+   "khoa_loi_khuyen": "mag",
+   "hoi_wp": false,
+   "lien_quan_wp": null,
+   "so_cay_trong_kho": 40
+  },
+  "manatap": {
+   "ten": "Mana Tap",
+   "mo_ta_en": "All damage you deal replenishes your <:wp:531620120976687114> WP for **25.5%** of the damage dealt!",
+   "tom_tat_vi": "Sát thương gây ra hồi lại một phần thành WP",
+   "khoa_loi_khuyen": "mtap",
+   "hoi_wp": true,
+   "lien_quan_wp": null,
+   "so_cay_trong_kho": 30
+  },
+  "mr": {
+   "ten": "Magical Resistance",
+   "mo_ta_en": "Increases your <:mr:531616156226945024> MR by **35%**.",
+   "tom_tat_vi": "Tăng MR theo %",
+   "khoa_loi_khuyen": "mr",
+   "hoi_wp": false,
+   "lien_quan_wp": null,
+   "so_cay_trong_kho": 34
+  },
+  "pr": {
+   "ten": "Physical Resistance",
+   "mo_ta_en": "Increases your <:pr:531616156222488606> PR by **34.2%**.",
+   "tom_tat_vi": "Tăng PR theo %",
+   "khoa_loi_khuyen": "pr",
+   "hoi_wp": false,
+   "lien_quan_wp": null,
+   "so_cay_trong_kho": 32
+  },
+  "resonance": {
+   "ten": "Resonance",
+   "mo_ta_en": "For every buff you have, deal +**7.75%** more damage. For every debuff you have, take -**8.95%** less damage.",
+   "tom_tat_vi": "Mỗi buff tăng sát thương gây ra, mỗi debuff giảm sát thương nhận",
+   "khoa_loi_khuyen": "resonance",
+   "hoi_wp": false,
+   "lien_quan_wp": null,
+   "so_cay_trong_kho": 34
+  },
+  "sac": {
+   "ten": "Sacrifice",
+   "mo_ta_en": "When this animal dies, heal your teammates for **38.5%** of its Max <:hp:531620120410456064> HP and replenish for **35%** of its Max <:wp:531620120976687114> WP.",
+   "tom_tat_vi": "Khi chết, hồi máu và WP cho đồng đội",
+   "khoa_loi_khuyen": "sacrifice",
+   "hoi_wp": true,
+   "lien_quan_wp": null,
+   "so_cay_trong_kho": 41
+  },
+  "safeguard": {
+   "ten": "Safeguard",
+   "mo_ta_en": "Negate **33%** of the damage dealt to you with <:wp:531620120976687114> WP.",
+   "tom_tat_vi": "Dùng WP để chặn một phần sát thương nhận",
+   "khoa_loi_khuyen": "sguard",
+   "hoi_wp": false,
+   "lien_quan_wp": "tiêu WP để chặn sát thương",
+   "so_cay_trong_kho": 35
+  },
+  "snail": {
+   "ten": "Snail",
+   "mo_ta_en": "Your pet snail fights with you. Whenever you attack an animal, snail will slap a random enemy for **14%** of the damage dealt as true damage.",
+   "tom_tat_vi": "Con ốc đi cùng đánh thêm vào kẻ địch ngẫu nhiên (sát thương chuẩn)",
+   "khoa_loi_khuyen": "snail",
+   "hoi_wp": false,
+   "lien_quan_wp": null,
+   "so_cay_trong_kho": 38
+  },
+  "sprout": {
+   "ten": "Sprout",
+   "mo_ta_en": "Increase all incoming healing by +**39.2%**.",
+   "tom_tat_vi": "Tăng lượng hồi máu nhận vào",
+   "khoa_loi_khuyen": "sprout",
+   "hoi_wp": false,
+   "lien_quan_wp": null,
+   "so_cay_trong_kho": 33
+  },
+  "swarm": {
+   "ten": "Living Hive",
+   "mo_ta_en": "When dealing damage, spend **3.8** <:wp:531620120976687114> WP to apply <:pest:1449595442714120404> **Pest** to the target.",
+   "tom_tat_vi": "Khi gây sát thương, tốn WP để gắn Pest lên mục tiêu",
+   "khoa_loi_khuyen": "lhive",
+   "hoi_wp": false,
+   "lien_quan_wp": "tiêu WP để gắn Pest",
+   "so_cay_trong_kho": 25
+  },
+  "thorns": {
+   "ten": "Thorns",
+   "mo_ta_en": "Reflect **32.2**% of the damage dealt to you as true damage.",
+   "tom_tat_vi": "Phản lại % sát thương nhận (sát thương chuẩn)",
+   "khoa_loi_khuyen": "thorns",
+   "hoi_wp": false,
+   "lien_quan_wp": null,
+   "so_cay_trong_kho": 39
+  },
+  "wgen": {
+   "ten": "Energize",
+   "mo_ta_en": "Replenish **35.6** <:wp:531620120976687114> WP after every turn.",
+   "tom_tat_vi": "Hồi một lượng WP cố định sau mỗi lượt",
+   "khoa_loi_khuyen": "wgen",
+   "hoi_wp": true,
+   "lien_quan_wp": null,
+   "so_cay_trong_kho": 34
+  },
+  "wp": {
+   "ten": "Weapon Point",
+   "mo_ta_en": "Increases your <:wp:531620120976687114> WP by **28.6%**.",
+   "tom_tat_vi": "Tăng WP theo %",
+   "khoa_loi_khuyen": "wp",
+   "hoi_wp": false,
+   "lien_quan_wp": "tăng WP tối đa",
+   "so_cay_trong_kho": 38
+  }
+ },
+ "server_chua_co_loi_khuyen": [
+  "absolve",
+  "adapt",
+  "hp",
+  "kno",
+  "lwolf",
+  "mr",
+  "resonance",
+  "wp"
+ ]
 }

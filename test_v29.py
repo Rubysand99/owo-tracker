@@ -537,3 +537,41 @@ asyncio.run(run_scan())
 if fails:
     print("\n❌ %d bài lỗi" % len(fails)); sys.exit(1)
 print("✅ Test quét kho vũ khí pass.")
+
+# --- tên passive đầy đủ + ghép khóa trong game <-> khóa lời khuyên (từ weapon_knowledge.json do app quét 790 cây)
+async def run_passive_names():
+    b.mdb = AsyncMongoMockClient()["v29_pn"]
+    await b.load_emoji_cache()
+    rules = b.load_weapon_rules(force=True)
+    check("luật v3: 28 passive trong kho có tên đầy đủ", (len(rules["passives"]), rules["passives"]["wgen"]["ten"], rules["passives"]["manatap"]["ten"]), (28, "Energize", "Mana Tap"))
+    check("luật: ghép khóa game -> khóa lời khuyên", [rules["passive_alias"][k] for k in ("manatap", "critical", "att", "frarm", "swarm", "kkaze", "safeguard", "gslay", "sac")],
+          ["mtap", "crit", "str", "farmor", "lhive", "kaze", "sguard", "gslayer", "sacrifice"])
+    check("luật: passive hồi WP theo mô tả game", sorted(k for k, v in rules["passives"].items() if v["hoi_wp"]), ["manatap", "sac", "wgen"])
+    check("luật: passive server chưa có lời khuyên", rules["server_chua_co_loi_khuyen"], ["absolve", "adapt", "hp", "kno", "lwolf", "mr", "resonance", "wp"])
+    def mem(weapon, passive, pos=1):
+        return {"_id": pos, "pos": pos, "name": "pet", "level": 20, "hp": 800, "wp": 600, "att": 100, "mag": 100, "pr": 40, "mr": 40,
+                "weaponId": "ABC123", "quality": 70.0, "weapon_rarity": "epic", "weapon_emoji": weapon, "passive_emojis": [passive]}
+    async def verdict(weapon, passive):
+        await b.save_team([mem(weapon, passive)])
+        txt, res = await b.build_team_check()
+        return res[0]["passive_verdict"], txt
+    v, txt = await verdict("mshield", "mwgen")
+    check("wgen (Energize, hồi WP) trên shield -> ✅ hồi WP, hiện tên đầy đủ", (v, "Energize (wgen)" in txt), ("ruby_wp", True))
+    v, _ = await verdict("ebow", "ecritical")
+    check("bow + Critical (khóa game 'critical' = 'crit' của server) -> ✅ server khuyên", v, "ok")
+    v, _ = await verdict("ebow", "eatt")
+    check("bow + Strength (khóa game 'att' = 'str') -> ✅ server khuyên", v, "ok")
+    v, txt = await verdict("mshield", "ewp")
+    check("shield + Weapon Point (server chưa có lời khuyên) -> ⚪, không bị coi là sai", (v, "⚪" in txt, "❌" in txt), ("unlisted", True, False))
+    v, _ = await verdict("mshield", "ecritical")
+    check("shield + Critical (server không khuyên cho shield) -> ❌", v, "no")
+    v, txt = await verdict("mshield", "exyzzy")
+    check("passive lạ hoàn toàn -> ❓", (v, "❓" in txt), ("unknown", True))
+    await b.save_team([mem("mshield", "mwgen", 1), mem("ebow", "ecritical", 2), mem("estaff", "ewp", 3)])
+    _, res = await b.build_team_check()
+    t2, _ = await b.build_team_check()
+    check("tiêu đề: 2/3 hợp + 1 server chưa có lời khuyên", "passive hợp: 2/3" in t2 and "server chưa có lời khuyên: 1" in t2, True)
+asyncio.run(run_passive_names())
+if fails:
+    print("\n❌ %d bài lỗi" % len(fails)); sys.exit(1)
+print("✅ Test tên passive đầy đủ pass.")
