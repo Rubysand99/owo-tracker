@@ -457,3 +457,83 @@ asyncio.run(run_hb_idle())
 if fails:
     print("\n❌ %d bài lỗi" % len(fails)); sys.exit(1)
 print("✅ Test chấm đội hình + huntbot rảnh pass.")
+
+# --- quét kho vũ khí (danh sách nhiều trang) -> chọn cây đại diện -> đọc chi tiết -> báo cáo kiến thức
+_FX3 = _json.load(open(_os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "fixtures_weapon_list_2026-10-10.json"), encoding="utf-8"))
+wl = b.parse_weapon_list(_FX3["list_raw"])
+check("danh sách vũ khí: đọc 15 cây của 1 trang", len(wl), 15)
+check("danh sách: cây đầu = Staff of Purity (pstaff + passive discharge, 60.7%)", (wl[0]["id"], wl[0]["type"], wl[0]["passives"], wl[0]["quality"]), ("FVK6GV", "pstaff", ["discharge"], 60.7))
+byid = {e["id"]: e for e in wl}
+check("danh sách: 'prgaxe' -> loại gaxe (bỏ tiền tố lạ), 'matt' -> passive att", (byid["FVK6GG"]["type"], byid["FVK6GB"]["passives"]), ("gaxe", ["att"]))
+check("danh sách: không phải tin danh sách thì None", b.parse_weapon_list("Ruby, you currently have 5 cowoncy!"), None)
+wd2 = b.parse_weapon_detail(_FX2["weapon_raw"])
+check("chi tiết vũ khí: đọc hiệu ứng + passive có tên đầy đủ", [(e["key"], e["name"]) for e in wd2["effects"]],
+      [("poison", "Poison"), ("manatap", "Mana Tap"), ("wp", "Weapon Point")])
+
+async def run_scan():
+    b.mdb = AsyncMongoMockClient()["v29_scan"]
+    await b.load_emoji_cache()
+    await b.save_weapon_list(wl, "u")
+    ids, left = await b.plan_weapon_probe()
+    covered_t = {byid[i]["type"] for i in ids}
+    covered_p = {p for i in ids for p in byid[i]["passives"]}
+    all_t = {e["type"] for e in wl}; all_p = {p for e in wl for p in e["passives"]}
+    check("chọn cây đại diện: phủ đủ MỌI loại và MỌI passive", (covered_t == all_t, covered_p == all_p, left), (True, True, []))
+    # kho thật có hàng trăm cây trùng loại/passive: nhân bản 5 lần -> chọn đại diện phải ít hơn nhiều so với cả kho
+    big = [dict(e, id=f"{e['id']}{k}") for k in range(5) for e in wl]
+    await b.mdb[b.COL_WEAPON_LIST].delete_many({})
+    await b.save_weapon_list(big, "u")
+    ids_big, left_big = await b.plan_weapon_probe()
+    check("chọn cây đại diện: kho 75 cây trùng lặp -> chỉ chọn bằng số loại/passive khác nhau", (len(ids_big) <= 15, left_big), (True, []))
+    await b.mdb[b.COL_WEAPON_LIST].delete_many({})
+    await b.save_weapon_list(wl, "u")
+    await b.mdb[b.COL_AUTOMACRO_COMMANDS].delete_many({})
+    ids2, _ = await b.queue_weapon_probe()
+    cmds = await b.mdb[b.COL_AUTOMACRO_COMMANDS].find({"action": "weapon_probe"}).to_list(length=200)
+    check("xếp hàng: mỗi cây 1 lệnh 'owo w <ID>'", sorted(c["params"]["command_text"] for c in cmds), sorted(f"owo w {i}" for i in ids2))
+    # báo cáo kiến thức: có chi tiết 1 cây
+    await b.mdb[b.COL_WEAPON_INSTANCES].insert_one({"_id": "FUMR0Y", "type_name": "Poison Dagger", "quality": 64.6, "effects": wd2["effects"]})
+    rep = await b.build_weapon_knowledge()
+    pk = {p["key"]: p for p in rep["passive"]}
+    check("báo cáo: passive manatap có tên đầy đủ 'Mana Tap' + mô tả", (pk["manatap"]["name"], "WP" in pk["manatap"]["desc"]), ("Mana Tap", True))
+    check("báo cáo: passive có trong kho nhưng chưa xem chi tiết vẫn được liệt kê (name=None)", pk["discharge"]["name"], None)
+    check("báo cáo: đếm cây trong kho", rep["so_cay_trong_kho"], 15)
+    # chuỗi ack: quét xong -> tự xếp lệnh đọc chi tiết; đọc xong hết -> gửi file
+    sent, notes = {}, []
+    async def fake_file(text, filename, data):
+        sent["filename"] = filename; return True
+    async def fake_notify(text, **kw):
+        notes.append(text); return True
+    old_f, old_n, old_sleep = b.send_file_to_owner, b.notify_owner, asyncio.sleep
+    b.send_file_to_owner, b.notify_owner = fake_file, fake_notify
+    async def fast_sleep(*a, **k):
+        return None
+    b.asyncio.sleep = fast_sleep
+    try:
+        await b.mdb[b.COL_AUTOMACRO_COMMANDS].delete_many({})
+        scan_id = await b.queue_automacro_command("weapon_scan", {"command_text": "owo weapon", "click_label": "forward"})
+        class Req:
+            def __init__(self, i, status="done"):
+                self.headers = {"Authorization": "Bearer tok"}; self.match_info = {"id": str(i)}; self._s = status
+            async def json(self):
+                return {"status": self._s}
+        b.AUTOMACRO_API_TOKEN = "tok"
+        await b.handle_ack_command(Req(scan_id))
+        await old_sleep(0.05)
+        probes = await b.mdb[b.COL_AUTOMACRO_COMMANDS].find({"action": "weapon_probe"}).to_list(length=200)
+        check("ack quét xong -> bot tự xếp lệnh đọc chi tiết", len(probes) > 0, True)
+        for pcmd in probes:
+            await b.handle_ack_command(Req(pcmd["_id"]))
+        await old_sleep(0.1)
+        check("ack đọc xong hết -> bot gửi file weapon_knowledge.json", sent.get("filename"), "weapon_knowledge.json")
+        scan2 = await b.queue_automacro_command("weapon_scan", {"command_text": "owo weapon"})
+        notes.clear()
+        await b.handle_ack_command(Req(scan2, "failed"))
+        check("quét thất bại -> báo Ruby dừng farm", any("DỪNG farm" in n for n in notes), True)
+    finally:
+        b.send_file_to_owner, b.notify_owner = old_f, old_n
+        b.asyncio.sleep = old_sleep
+asyncio.run(run_scan())
+if fails:
+    print("\n❌ %d bài lỗi" % len(fails)); sys.exit(1)
+print("✅ Test quét kho vũ khí pass.")

@@ -78,6 +78,7 @@ COL_DAILY = "owot_daily_status"
 COL_COWONCY = "owot_cowoncy"
 COL_WEAPON_SHARDS = "owot_weapon_shards"  # v29: so weapon shards (owo ws)
 COL_EVENT = "owot_event_hunt"              # v29: tin san thuong su kien [x/10]
+COL_WEAPON_LIST = "owot_weapon_list"         # v29: kho vu khi tu danh sach `owo weapon` (nhieu trang)
 COL_WEAPON_ADVICE = "owot_weapon_advice"   # v29: loi khuyen `?tag <vu khi>` do app thu thap trong server OwO
 COL_EMOJI = "owot_emoji_registry"
 COL_RAW = "owot_raw_samples"
@@ -376,11 +377,18 @@ def parse_weapon_detail(text: str):
         roll_passive = {"name": blocks[-1][0].strip(), "desc": blocks[-1][1].strip()}
         inherent_effects = [{"name": n.strip(), "desc": d.strip()} for n, d in blocks[:-1]]
 
+    effects = []
+    for em in re.finditer(r"<a?:(\w+):\d+>\s*\*\*__([^_*\n]+?)__\*\*\s*-\s*([^\n]+)", text):
+        ebase, ename, edesc = em.group(1), em.group(2).strip(), em.group(3).strip()
+        norm = re.sub(r"[^a-z]", "", ename.lower())
+        key = ebase if _is_subsequence(ebase.lower(), norm) else strip_rarity(ebase)   # 'flame' giu nguyen, 'lmanatap' -> 'manatap'
+        effects.append({"emoji": ebase, "key": key, "name": ename, "desc": edesc})
     cost_m = re.search(r"\*\*Weapon Cost:\*\*\s*(\d+)", text)
     sell_m = re.search(r"\*\*Sell Value:\*\*\s*<[^>]+>\s*([\d,]+)\s*/\s*<[^>]+>\s*([\d,]+)", text)
     rar_m = re.search(r"\*\*Quality:\*\*\s*<a?:(\w+):\d+>", text)
     wear_m = re.search(r"\*\*Wear:\*\*\s*`?(\w+)`?", text)
     return {
+        "effects": effects,
         "wp_cost": int(cost_m.group(1)) if cost_m else None,
         "sell_cowoncy": int(sell_m.group(1).replace(",", "")) if sell_m else None,
         "sell_ws": int(sell_m.group(2).replace(",", "")) if sell_m else None,   # so ws nhan duoc khi dismantle
@@ -820,6 +828,110 @@ def parse_weapon_advice(reply: str):
             "co_muc_passive": bool(recommended or conditional)}
 
 
+def _is_subsequence(small: str, big: str) -> bool:
+    it = iter(big)
+    return all(ch in it for ch in small)
+
+
+# ===================== Kho vu khi: doc danh sach `owo weapon` (nhieu trang, moi trang SUA 1 tin) =====================
+# Moi dong: `FVK6GV` <:rare:..><:rpstaff:..><:udischarge:..> **Staff of Purity** 60.7%
+_WLIST_LINE_RE = re.compile(r"`([A-Z0-9]{4,8})`\s*((?:<a?:\w+:\d+>)+)\s*\*\*([^*\n]+)\*\*\s*([\d.]+)%")
+
+
+def _strip_to_known(emoji_name, known):
+    """Bo 0-2 chu cai dau cho den khi khop 1 ten da biet (vd 'prgaxe' -> 'gaxe'); khong khop thi bo 1 chu cai do hiem."""
+    for k in (0, 1, 2):
+        if len(emoji_name) > k and emoji_name[k:] in known:
+            return emoji_name[k:]
+    return strip_rarity(emoji_name)
+
+
+def parse_weapon_list(text: str):
+    """Trang danh sach vu khi: header "'s Weapons" + "Weapon Filters". Tra ve [{id, rarity, type, passives, name, quality}]."""
+    if "'s Weapons" not in (text or "") or "Weapon Filters" not in text:
+        return None
+    known = set(load_weapon_rules().get("emoji_to_code", {}))
+    out = []
+    for m in _WLIST_LINE_RE.finditer(text):
+        ems = re.findall(r"<a?:(\w+):\d+>", m.group(2))
+        if len(ems) < 2:
+            continue
+        out.append({"id": m.group(1), "rarity": ems[0], "type": _strip_to_known(ems[1], known),
+                    "passives": [strip_rarity(x) for x in ems[2:]], "passive_emojis": ems[2:],
+                    "name": m.group(3).strip(), "quality": float(m.group(4))})
+    return out or None
+
+
+async def save_weapon_list(entries, source_id=None):
+    now_iso = datetime.utcnow().isoformat()
+    for e in entries:
+        await mdb[COL_WEAPON_LIST].update_one({"_id": e["id"]}, {"$set": {**e, "seen_at": now_iso, "owner_id": source_id}}, upsert=True)
+
+
+async def plan_weapon_probe(max_probes: int = 80):
+    """Chon it cay nhat nhung phu du MOI LOAI vu khi va MOI PASSIVE trong kho (tham lam): moi cay se duoc go
+    `owo w <ID>` de bot hoc ten day du + co che. Tra ve (danh sach ID, phan chua phu duoc)."""
+    rows = await mdb[COL_WEAPON_LIST].find({}).to_list(length=5000)
+    cand = []
+    for r in rows:
+        elems = {("type", r.get("type"))} | {("passive", pb) for pb in r.get("passives", [])}
+        cand.append((r["_id"], r.get("quality") or 0, elems))
+    uncovered = set().union(*[c[2] for c in cand]) if cand else set()
+    chosen = []
+    while uncovered and len(chosen) < max_probes:
+        best = max(cand, key=lambda c: (len(c[2] & uncovered), c[1]))
+        if not (best[2] & uncovered):
+            break
+        chosen.append(best[0])
+        uncovered -= best[2]
+    return chosen, sorted(f"{k}:{v}" for k, v in uncovered)
+
+
+async def queue_weapon_probe(max_probes: int = 80):
+    ids, left = await plan_weapon_probe(max_probes)
+    for wid in ids:
+        await queue_automacro_command("weapon_probe", {"command_text": f"owo w {wid}"})
+    return ids, left
+
+
+async def build_weapon_knowledge():
+    """Gom kien thuc: loai vu khi (mo ta chinh + hieu ung co san), passive (khoa trong game + ten day du + mo ta),
+    kem so luong trong kho cua Ruby."""
+    lst = await mdb[COL_WEAPON_LIST].find({}).to_list(length=5000)
+    inst = await mdb[COL_WEAPON_INSTANCES].find({}).to_list(length=5000)
+    types = await mdb[COL_WEAPON_TYPES].find({}).to_list(length=300)
+    type_count, passive_count, passive_example = {}, {}, {}
+    for r in lst:
+        type_count[r.get("type")] = type_count.get(r.get("type"), 0) + 1
+        for pb in r.get("passives", []):
+            passive_count[pb] = passive_count.get(pb, 0) + 1
+            passive_example.setdefault(pb, r["_id"])
+    passives = {}
+    for d in inst:
+        for e in d.get("effects") or []:
+            k = e.get("key")
+            if not k:
+                continue
+            row = passives.setdefault(k, {"key": k, "name": e.get("name"), "desc": e.get("desc"), "emoji_names": [], "on_types": []})
+            if e.get("emoji") not in row["emoji_names"]:
+                row["emoji_names"].append(e.get("emoji"))
+            if d.get("type_name") and d["type_name"] not in row["on_types"]:
+                row["on_types"].append(d["type_name"])
+    for k, n in passive_count.items():
+        passives.setdefault(k, {"key": k, "name": None, "desc": None, "emoji_names": [], "on_types": []})["so_cay_trong_kho"] = n
+        passives[k]["vi_du_id"] = passive_example.get(k)
+    return {"tao_luc": datetime.utcnow().isoformat(), "so_cay_trong_kho": len(lst), "so_cay_da_xem_chi_tiet": len(inst),
+            "loai_vu_khi": [{"base": b, "so_cay": n} for b, n in sorted(type_count.items(), key=lambda x: -x[1])],
+            "kien_thuc_loai": [{"ten": t.get("display_name"), "mo_ta_chinh": t.get("main_desc"), "hieu_ung_co_san": t.get("inherent_effects")} for t in types],
+            "passive": sorted(passives.values(), key=lambda x: x["key"])}
+
+
+async def send_weapon_knowledge():
+    data = json.dumps(await build_weapon_knowledge(), ensure_ascii=False, indent=1).encode("utf-8")
+    return await send_file_to_owner("🧠 App đã quét kho vũ khí và đọc chi tiết từng loại + từng passive. Gửi file này cho Claude "
+                                    "để ghép tên passive đầy đủ với lời khuyên server.", "weapon_knowledge.json", data)
+
+
 # ===================== Bo luat vu khi + cham diem DOI HINH (2 yeu to: chi so/co che vu khi va passive) =====================
 _RULES_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "weapon_rules.json")
 _RARITY_LETTERS = "curemlf"
@@ -898,7 +1010,9 @@ def evaluate_team_member(member, instance, rules, team_weapon_keys=()):
         nums = [int(x) for x in re.findall(r"\d+", str(rule["wp_cost"]))]
         if nums:
             lo, hi = min(nums), max(nums)
-            out["lines"].append(f"⚙️ Chi phí WP điển hình {rule['wp_cost']}, pet có {pet_wp} WP → khoảng {pet_wp // hi}–{pet_wp // lo} lượt "
+            u_lo, u_hi = pet_wp // hi, pet_wp // lo
+            uses = f"{u_lo}" if u_lo == u_hi else f"{u_lo}–{u_hi}"
+            out["lines"].append(f"⚙️ Chi phí WP điển hình {rule['wp_cost']}, pet có {pet_wp} WP → khoảng {uses} lượt "
                                 f"(chưa có chi tiết cây này: gõ `owo weapon {member.get('weaponId')}`).")
     # --- yeu to 2: passive
     pe = (member.get("passive_emojis") or [None])[0]
@@ -1626,7 +1740,30 @@ async def handle_ack_command(request: web.Request):
         codes = (cmd.get("params") or {}).get("item_codes") or (cmd.get("params") or {}).get("item_code") or ""
         for code in [c.strip() for c in str(codes).split(",") if c.strip()]:
             await mdb[COL_INVENTORY].update_one({"_id": code, "count": {"$gt": 0}}, {"$inc": {"count": -1}})
+    action = (cmd or {}).get("action")
+    if action == "weapon_scan":
+        if status == "done":
+            asyncio.create_task(_after_weapon_scan())
+        else:
+            await notify_owner("⚠️ App không quét được danh sách vũ khí (hãy DỪNG farm rồi thử lại bằng `,weaponscan`).", min_gap=60)
+    elif action == "weapon_probe":
+        asyncio.create_task(_after_weapon_probe())
     return web.json_response({"ok": True})
+
+
+async def _after_weapon_scan():
+    await asyncio.sleep(6)   # cho tin sua cua trang cuoi kip toi
+    n = await mdb[COL_WEAPON_LIST].count_documents({})
+    ids, left = await queue_weapon_probe()
+    await notify_owner(f"📦 Đã quét {n} vũ khí trong kho. Mình nhờ app gõ `owo w <ID>` cho {len(ids)} cây đại diện "
+                       f"(mỗi loại + mỗi passive ít nhất 1 cây)." + (f" Chưa phủ được: {', '.join(left[:8])}" if left else ""), min_gap=60)
+
+
+async def _after_weapon_probe():
+    await asyncio.sleep(8)   # cho tin chi tiet cuoi kip toi
+    pending = await mdb[COL_AUTOMACRO_COMMANDS].count_documents({"action": "weapon_probe", "status": "pending"})
+    if pending == 0:
+        await send_weapon_knowledge()
 
 
 # ----------------------------------------------------------------------
@@ -2467,6 +2604,7 @@ async def save_weapon_instance(w, source_id=None):
             "type_name": w["type_name"], "quality": w["quality"],
             "passive_name": passive.get("name"), "passive_desc": passive.get("desc"),
             "passive_desc_vi": passive_desc_vi,
+            "effects": w.get("effects") or [],
             "wp_cost": w.get("wp_cost"), "sell_cowoncy": w.get("sell_cowoncy"), "sell_ws": w.get("sell_ws"),
             "rarity": w.get("rarity"), "wear": w.get("wear"),
             "owner_id": source_id, "updated_at": datetime.utcnow().isoformat(),
@@ -2675,6 +2813,13 @@ async def on_raw_message_edit(payload):
         channel = bot.get_channel(payload.channel_id) or await bot.fetch_channel(payload.channel_id)
         message = await channel.fetch_message(payload.message_id)
         text = flatten_message(message)
+        wlist = parse_weapon_list(text)
+        if wlist:
+            tid = await get_config("tracked_user_id")
+            mention = re.search(r"<@!?(\d+)>'s Weapons", text)
+            if not tid or not mention or mention.group(1) == str(tid):
+                await save_weapon_list(wlist, tid)
+            return
         checklist = parse_checklist(text)
         if checklist:
             await save_checklist(checklist)
@@ -2893,6 +3038,15 @@ async def handle_owo_response(message: discord.Message, source_id):
         await save_pet_species(pet, source_id)
         await record_raw("owodex", text, pet, message)
         recognized = True
+
+    wlist = parse_weapon_list(text)
+    if wlist:
+        # chi nhan danh sach CUA MINH: tieu de "<@id>'s Weapons"
+        mention = re.search(r"<@!?(\d+)>'s Weapons", text)
+        if not source_id or not mention or mention.group(1) == str(source_id):
+            await save_weapon_list(wlist, source_id)
+            await record_raw("weapon_list", text, {"so_cay_trang_nay": len(wlist)}, message)
+            recognized = True
 
     weapon = parse_weapon_detail(text)
     if weapon:
@@ -3433,6 +3587,34 @@ async def hbstart_cmd(ctx, amount: str = ""):
     open_hb_window(amount)
     await queue_automacro_command("hb_start", {"command_text": f"owo hb {amount}"})
     await ctx.send(f"✅ Đã nhờ app gõ `owo hb {amount}`. OwO sẽ đưa mật khẩu — mình chuyển ảnh sang acc phụ, bạn đọc rồi nhắn lại đúng mã.")
+
+
+@bot.command(name="weaponscan")
+@is_owner()
+async def weaponscan_cmd(ctx):
+    """Nho app lat het cac trang `owo weapon`, roi tu go `owo w <ID>` cho vai cay dai dien (moi loai + moi passive)
+    de hoc ten day du + co che; xong gui file weapon_knowledge.json. Hay DUNG farm truoc khi chay."""
+    await mdb[COL_WEAPON_LIST].delete_many({})
+    await queue_automacro_command("weapon_scan", {"command_text": "owo weapon", "click_label": "forward",
+                                                  "click_times": "70", "click_min_ms": "1800", "click_max_ms": "2800"})
+    await ctx.send("📦 Đã nhờ app quét kho vũ khí (lật hết các trang). Nhớ **dừng farm** trong lúc này. Xong mình sẽ tự đọc "
+                   "chi tiết vài cây đại diện rồi gửi file `weapon_knowledge.json`.")
+
+
+@bot.command(name="weaponprobe")
+@is_owner()
+async def weaponprobe_cmd(ctx):
+    """Xep hang lenh `owo w <ID>` tu danh sach vu khi da quet (khong lat trang lai)."""
+    ids, left = await queue_weapon_probe()
+    await ctx.send(f"Đã xếp {len(ids)} lệnh `owo w <ID>` cho app." + (f" Chưa phủ: {', '.join(left[:8])}" if left else ""))
+
+
+@bot.command(name="weaponknowledge")
+@is_owner()
+async def weaponknowledge_cmd(ctx):
+    """Gui lai file kien thuc vu khi/passive da hoc."""
+    await send_weapon_knowledge()
+    await ctx.send("Đã gửi file `weapon_knowledge.json`.")
 
 
 @bot.command(name="teamcheck")
