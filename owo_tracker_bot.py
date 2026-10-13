@@ -3631,6 +3631,24 @@ async def weaponprobe_cmd(ctx):
     await ctx.send(f"Đã xếp {len(ids)} lệnh `owo w <ID>` cho app." + (f" Chưa phủ: {', '.join(left[:8])}" if left else ""))
 
 
+@bot.command(name="weaponlist")
+@is_owner()
+async def weaponlist_cmd(ctx):
+    """Gui file weapon_list.json: moi cay vu khi da quet (ID, do hiem, loai, passive, chat luong)."""
+    rows = await mdb[COL_WEAPON_LIST].find({}).to_list(length=5000)
+    if not rows:
+        await ctx.send("Chưa có danh sách vũ khí. Chạy `,weaponscan` trước.")
+        return
+    items = [{"id": r["_id"], "rarity": r.get("rarity"), "type": r.get("type"), "name": r.get("name"),
+              "quality": r.get("quality"), "passives": r.get("passives", []),
+              "passive_emojis": r.get("passive_emojis", [])} for r in rows]
+    items.sort(key=lambda x: (x["type"] or "", -(x["quality"] or 0)))
+    data = json.dumps({"tao_luc": datetime.utcnow().isoformat(), "so_cay": len(items), "cay": items},
+                      ensure_ascii=False, indent=1).encode("utf-8")
+    await send_file_to_owner(f"📦 Danh sách {len(items)} cây vũ khí đã quét.", "weapon_list.json", data)
+    await ctx.send("Đã gửi file `weapon_list.json`.")
+
+
 @bot.command(name="weaponknowledge")
 @is_owner()
 async def weaponknowledge_cmd(ctx):
