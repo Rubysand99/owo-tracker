@@ -72,6 +72,8 @@ COL_HUNTBOT = "owot_huntbot_status"
 COL_QUEST = "owot_quest_status"
 COL_NOTES = "owot_notes"
 COL_ZOO = "owot_zoo_snapshot"
+COL_ZOO_HISTORY = "owot_zoo_history"      # mỗi lần quan sát zoo (current = owo zoo, all = owo zoo d)
+COL_ZOO_UNLOCKED = "owot_zoo_unlocked"    # pet từng xuất hiện trong zoo = đã mở khóa (không bao giờ mất)
 COL_INVENTORY = "owot_inventory_items"
 COL_GEM_STATUS = "owot_gem_status"
 COL_DAILY = "owot_daily_status"
@@ -1226,6 +1228,7 @@ def parse_zoo(text: str, continuation: bool = False, start_tier=None):
     entry_pattern = re.compile(r"(?:<(a)?:(\w+):(\d+)>|:(\w+):)([⁰¹²³⁴⁵⁶⁷⁸⁹]+)")
 
     pets = []
+    sup_lens = []  # độ dài chuỗi số mũ: owo zoo d luôn đệm 0 cho đủ 6 chữ số
     current_tier = None
     # Zoo dai nen OwO chia thanh nhieu tin nhan. Tin tiep noi khong co tieu de
     # "'s zoo"; neu no bat dau bang 1 tier tag (ke ca "blank" = tiep tuc tier
@@ -1250,6 +1253,7 @@ def parse_zoo(text: str, continuation: bool = False, start_tier=None):
                 entry["emoji_id"] = custom_id
                 entry["emoji_animated"] = bool(animated)
             pets.append(entry)
+            sup_lens.append(len(m.group(5)))
 
     points_m = re.search(r"Zoo Points:\s*__([\d,]+)__", text)
     breakdown_m = re.search(r"\*\*(F-[\d\-A-Za-z, ]+C-[\d,]+)\*\*", text)
@@ -1259,6 +1263,7 @@ def parse_zoo(text: str, continuation: bool = False, start_tier=None):
         "pets": pets,
         "zoo_points": int(points_m.group(1).replace(",", "")) if points_m else None,
         "breakdown_raw": breakdown_m.group(1) if breakdown_m else None,
+        "padded": bool(sup_lens) and min(sup_lens) >= 6,  # True = bảng "owo zoo d" (số đã bắt)
     }
 
 
@@ -1414,6 +1419,7 @@ def merge_zoo_parts(first, part):
         "pets": list(by_name.values()),
         "zoo_points": part["zoo_points"] if part.get("zoo_points") is not None else first.get("zoo_points"),
         "breakdown_raw": part.get("breakdown_raw") or first.get("breakdown_raw"),
+        "padded": bool(part.get("padded")) if part.get("pets") else bool(first.get("padded")),
     }
 
 
@@ -1486,13 +1492,18 @@ def _looks_like_zoo(text):
 async def save_zoo(z, source_id=None):
     """Zoo là 1 bản chụp toàn cảnh — ghi đè bản cũ mỗi lần quan sát mới,
     không cộng dồn (số lượng pet là tuyệt đối, không phải log sự kiện)."""
-    await mdb[COL_ZOO].update_one(
-        {"_id": "latest"},
-        {"$set": {"pets": z["pets"], "zoo_points": z.get("zoo_points"),
-                  "breakdown_raw": z.get("breakdown_raw"), "has_header": z.get("has_header", True),
-                  "updated_at": datetime.utcnow().isoformat(), "updated_by": source_id}},
-        upsert=True,
-    )
+    if z.get("padded"):
+        # "owo zoo d" = số ĐÃ BẮT, không phải số đang giữ -> không được ghi đè zoo đang giữ
+        print("[tracker][zoo] bang 'owo zoo d' (so da bat) — giu nguyen zoo dang giu, chi luu lich su.")
+    else:
+        await mdb[COL_ZOO].update_one(
+            {"_id": "latest"},
+            {"$set": {"pets": z["pets"], "zoo_points": z.get("zoo_points"),
+                      "breakdown_raw": z.get("breakdown_raw"), "has_header": z.get("has_header", True),
+                      "updated_at": datetime.utcnow().isoformat(), "updated_by": source_id}},
+            upsert=True,
+        )
+    await _archive_zoo(z)
     # Pet nao da nam trong zoo thi khong con la "pet moi" nua
     try:
         names = [str(p["name"]).lower() for p in z["pets"] if p.get("name")]
@@ -1500,6 +1511,145 @@ async def save_zoo(z, source_id=None):
             await mdb[COL_NEW_PETS].delete_many({"_id": {"$in": names}})
     except Exception as e:
         print(f"[tracker][zoo] Khong don duoc danh sach pet moi: {e!r}")
+
+
+ZOO_HISTORY_KEEP = 30  # mỗi loại (current / all) giữ tối đa 30 lần ghi gần nhất
+ZOO_KIND_LABEL = {"current": "owo zoo (đang giữ)", "all": "owo zoo d (số đã bắt)"}
+ZOO_TIER_ORDER = ["common", "uncommon", "rare", "epic", "mythic", "legendary", "fabled",
+                  "gem", "botrank", "patreon", "cpatreon", "special"]
+# Emoji thường của OwO (OwO gửi dạng :tên:, phải đổi sang ký tự thật thì tin nhắn của bot mới hiện hình)
+ZOO_STD_EMOJI = {
+    "bee": "🐝", "bug": "🐛", "snail": "🐌", "beetle": "🐞", "butterfly": "🦋",
+    "baby_chick": "🐤", "mouse2": "🐁", "rooster": "🐓", "rabbit2": "🐇", "chipmunk": "🐿️",
+    "sheep": "🐑", "pig2": "🐖", "cow2": "🐄", "dog2": "🐕", "cat2": "🐈",
+    "crocodile": "🐊", "tiger2": "🐅", "penguin": "🐧", "elephant": "🐘", "whale": "🐳",
+    "dragon": "🐉", "unicorn": "🦄", "snowman2": "☃️", "ghost": "👻", "dove": "🕊️",
+}
+
+
+def _zoo_key(p):
+    return f"{p.get('tier')}:{p.get('emoji_id') or str(p.get('name')).lower()}"
+
+
+def _zoo_emoji(p):
+    if p.get("emoji_id"):
+        return f"<{'a' if p.get('emoji_animated') else ''}:{p.get('name')}:{p['emoji_id']}>"
+    return ZOO_STD_EMOJI.get(str(p.get("name")), f":{p.get('name')}:")
+
+
+def _zoo_pack(items, limit=1800):
+    out, cur = [], ""
+    for it in items:
+        if cur and len(cur) + 1 + len(it) > limit:
+            out.append(cur)
+            cur = it
+        else:
+            cur = f"{cur} {it}" if cur else it
+    if cur:
+        out.append(cur)
+    return out
+
+
+def _zoo_chunks(text, limit=1900):
+    out, cur = [], ""
+    for line in text.split("\n"):
+        while len(line) > limit:
+            if cur:
+                out.append(cur)
+                cur = ""
+            out.append(line[:limit])
+            line = line[limit:]
+        if cur and len(cur) + len(line) + 1 > limit:
+            out.append(cur)
+            cur = line
+        else:
+            cur = f"{cur}\n{line}" if cur else line
+    if cur:
+        out.append(cur)
+    return out
+
+
+def _zoo_vn_time(iso):
+    try:
+        return (datetime.fromisoformat(iso) + timedelta(hours=7)).strftime("%d/%m %H:%M")
+    except Exception:
+        return str(iso)
+
+
+async def _archive_zoo(z):
+    """Lưu lịch sử zoo (current = owo zoo, all = owo zoo d) và ghi nhớ pet đã mở khóa.
+    Lỗi ở đây KHÔNG được làm hỏng luồng lưu zoo chính."""
+    try:
+        kind = "all" if z.get("padded") else "current"
+        now = datetime.utcnow().isoformat()
+        pets = [{"tier": p.get("tier"), "name": p.get("name"), "count": p.get("count", 0),
+                 "emoji_id": p.get("emoji_id"), "emoji_animated": bool(p.get("emoji_animated"))}
+                for p in z.get("pets", [])]
+        last = await mdb[COL_ZOO_HISTORY].find({"kind": kind}).sort("at", -1).to_list(length=1)
+        same = bool(last) and last[0].get("zoo_points") == z.get("zoo_points") and last[0].get("pets") == pets
+        if not same:
+            await mdb[COL_ZOO_HISTORY].insert_one({"kind": kind, "at": now, "zoo_points": z.get("zoo_points"),
+                                                   "breakdown_raw": z.get("breakdown_raw"), "pets": pets})
+            old = await mdb[COL_ZOO_HISTORY].find({"kind": kind}).sort("at", -1).skip(ZOO_HISTORY_KEEP).to_list(length=500)
+            if old:
+                await mdb[COL_ZOO_HISTORY].delete_many({"_id": {"$in": [d["_id"] for d in old]}})
+        have = {d["_id"] for d in await mdb[COL_ZOO_UNLOCKED].find({}, {"_id": 1}).to_list(length=5000)}
+        fresh = {}
+        for p in pets:
+            k = _zoo_key(p)
+            if p["name"] and k not in have and k not in fresh:
+                fresh[k] = {"_id": k, "tier": p["tier"], "name": p["name"], "emoji_id": p["emoji_id"],
+                            "emoji_animated": p["emoji_animated"], "first_seen": now, "first_seen_kind": kind}
+        if fresh:
+            await mdb[COL_ZOO_UNLOCKED].insert_many(list(fresh.values()), ordered=False)
+    except Exception as e:
+        print(f"[tracker][zoo] Khong luu duoc lich su / pet da mo khoa: {e!r}")
+
+
+async def _zoo_unlocked_rows():
+    """Mọi pet đã mở khóa: danh sách đã ghi nhớ + pet trong zoo đang giữ (để không thiếu dù chưa ghi nhớ kịp)."""
+    rows = await mdb[COL_ZOO_UNLOCKED].find({}).to_list(length=5000)
+    seen = {r["_id"] for r in rows}
+    latest = await mdb[COL_ZOO].find_one({"_id": "latest"})
+    for p in (latest or {}).get("pets", []):
+        if p.get("name") and _zoo_key(p) not in seen:
+            seen.add(_zoo_key(p))
+            rows.append({"_id": _zoo_key(p), "tier": p.get("tier"), "name": p.get("name"),
+                         "emoji_id": p.get("emoji_id"), "emoji_animated": bool(p.get("emoji_animated"))})
+    rank = {t: i for i, t in enumerate(ZOO_TIER_ORDER)}
+    rows.sort(key=lambda r: rank.get(r.get("tier"), 99))  # sort ổn định: giữ thứ tự ghi nhớ trong từng tier
+    return rows
+
+
+def _zoo_diff_text(old, new, kind):
+    out = [f"**So 2 lần ghi {ZOO_KIND_LABEL[kind]}**",
+           f"{_zoo_vn_time(old['at'])} → {_zoo_vn_time(new['at'])} (giờ VN)"]
+    body = []
+    pts = None
+    if old.get("zoo_points") is not None and new.get("zoo_points") is not None:
+        pts = new["zoo_points"] - old["zoo_points"]
+    if pts:
+        body.append(f"Zoo Points: {pts:+,}")
+    bo, bn = parse_zoo_breakdown(old.get("breakdown_raw")), parse_zoo_breakdown(new.get("breakdown_raw"))
+    td = {t: bn.get(t, 0) - bo.get(t, 0) for t in ZOO_TIER_ORDER if bn.get(t, 0) != bo.get(t, 0)}
+    if td:
+        body.append("Tổng đã bắt theo tier: " + ", ".join(f"{t} {v:+,}" for t, v in td.items()))
+    mo = {_zoo_key(p): p for p in old.get("pets", [])}
+    mn = {_zoo_key(p): p for p in new.get("pets", [])}
+    fresh = [p for k, p in mn.items() if k not in mo]
+    gone = [p for k, p in mo.items() if k not in mn]
+    changed = sorted(({**mn[k], "before": mo[k].get("count", 0), "after": mn[k].get("count", 0)}
+                      for k in mn if k in mo and mn[k].get("count", 0) != mo[k].get("count", 0)),
+                     key=lambda r: -abs(r["after"] - r["before"]))
+    if fresh:
+        body.append(f"Mới mở khóa ({len(fresh)}): " + " ".join(_zoo_emoji(p) for p in fresh[:30]))
+    if gone:
+        body.append(f"Biến mất khỏi danh sách ({len(gone)}): " + " ".join(_zoo_emoji(p) for p in gone[:30]))
+    if changed:
+        body.append(f"Đổi số lượng: {len(changed)} loại, hiện {min(10, len(changed))} loại đổi nhiều nhất")
+        for r in changed[:10]:
+            body.append(f"{_zoo_emoji(r)} {r['name']}: {r['before']:,} → {r['after']:,} ({r['after'] - r['before']:+,})")
+    return "\n".join(out + (body or ["Không có gì thay đổi."]))
 
 
 INV_PART_WINDOW = 600  # giay: kho do dai nen OwO chia 2 tin; tin 2 khong co tieu de "Inventory"
@@ -3647,6 +3797,55 @@ async def weaponlist_cmd(ctx):
                       ensure_ascii=False, indent=1).encode("utf-8")
     await send_file_to_owner(f"📦 Danh sách {len(items)} cây vũ khí đã quét.", "weapon_list.json", data)
     await ctx.send("Đã gửi file `weapon_list.json`.")
+
+
+@bot.command(name="unlocked")
+@is_owner()
+async def unlocked_cmd(ctx, tier: str = ""):
+    """Liet ke pet da mo khoa (khong hien so luong)."""
+    rows = await _zoo_unlocked_rows()
+    if not rows:
+        await ctx.send("Chưa có dữ liệu zoo. Gõ `owo zoo` trong kênh farm một lần.")
+        return
+    by_tier = {}
+    for r in rows:
+        by_tier.setdefault(r.get("tier"), []).append(_zoo_emoji(r))
+    only = tier.lower().strip() or None
+    if only and only not in by_tier:
+        await ctx.send("Không có tier đó. Các tier: " + ", ".join(str(t) for t in by_tier))
+        return
+    lines, total = [], 0
+    for t, ems in by_tier.items():
+        if only and t != only:
+            continue
+        lines.append(f"**{t}** ({len(ems)})")
+        lines.extend(_zoo_pack(ems))
+        total += len(ems)
+    for chunk in _zoo_chunks(f"Đã mở khóa **{total}** con\n" + "\n".join(lines)):
+        await ctx.send(chunk)
+
+
+@bot.command(name="zoodiff")
+@is_owner()
+async def zoodiff_cmd(ctx, kind: str = ""):
+    """So 2 lan ghi zoo gan nhat cung loai: `,zoodiff d` (so da bat) hoac `,zoodiff now` (dang giu)."""
+    k = {"d": "all", "all": "all", "now": "current", "current": "current"}.get(kind.lower()) if kind else None
+    if kind and not k:
+        await ctx.send("Dùng `,zoodiff`, `,zoodiff d` (số đã bắt) hoặc `,zoodiff now` (đang giữ).")
+        return
+    if not k:
+        newest = await mdb[COL_ZOO_HISTORY].find({}).sort("at", -1).to_list(length=1)
+        if not newest:
+            await ctx.send("Chưa có lịch sử zoo. Gõ `owo zoo` hoặc `owo zoo d` trong kênh farm.")
+            return
+        k = newest[0]["kind"]
+    rows = await mdb[COL_ZOO_HISTORY].find({"kind": k}).sort("at", -1).to_list(length=2)
+    if len(rows) < 2:
+        await ctx.send(f"Mới có {len(rows)} lần ghi {ZOO_KIND_LABEL[k]}, chưa có gì để so. "
+                       "Gõ lại lệnh zoo trong kênh farm khi zoo đã thay đổi.")
+        return
+    for chunk in _zoo_chunks(_zoo_diff_text(rows[1], rows[0], k)):
+        await ctx.send(chunk)
 
 
 @bot.command(name="weaponknowledge")
