@@ -837,7 +837,7 @@ def _is_subsequence(small: str, big: str) -> bool:
 
 # ===================== Kho vu khi: doc danh sach `owo weapon` (nhieu trang, moi trang SUA 1 tin) =====================
 # Moi dong: `FVK6GV` <:rare:..><:rpstaff:..><:udischarge:..> **Staff of Purity** 60.7%
-_WLIST_LINE_RE = re.compile(r"`([A-Z0-9]{4,8})`\s*((?:<a?:\w+:\d+>)+)\s*\*\*([^*\n]+)\*\*\s*([\d.]+)%")
+_WLIST_LINE_RE = re.compile(r"`([A-Z0-9]{4,8})`\s*((?:<a?:\w+:\d+>)+)\s*(⭐)?\s*\*\*([^*\n]+)\*\*\s*([\d.]+)%(?:[^\n]*?➤[ \t]*([^\n]*))?")
 
 
 def _strip_to_known(emoji_name, known):
@@ -858,9 +858,11 @@ def parse_weapon_list(text: str):
         ems = re.findall(r"<a?:(\w+):\d+>", m.group(2))
         if len(ems) < 2:
             continue
+        pet = re.sub(r"<a?:\w+:\d+>|:\w+:", "", m.group(6) or "").strip()
         out.append({"id": m.group(1), "rarity": ems[0], "type": _strip_to_known(ems[1], known),
                     "passives": [strip_rarity(x) for x in ems[2:]], "passive_emojis": ems[2:],
-                    "name": m.group(3).strip(), "quality": float(m.group(4))})
+                    "name": m.group(4).strip(), "quality": float(m.group(5)),
+                    "starred": bool(m.group(3)), "equipped": m.group(6) is not None, "equipped_by": pet or None})
     return out or None
 
 
@@ -3791,7 +3793,9 @@ async def weaponlist_cmd(ctx):
         return
     items = [{"id": r["_id"], "rarity": r.get("rarity"), "type": r.get("type"), "name": r.get("name"),
               "quality": r.get("quality"), "passives": r.get("passives", []),
-              "passive_emojis": r.get("passive_emojis", [])} for r in rows]
+              "passive_emojis": r.get("passive_emojis", []),
+              "starred": bool(r.get("starred")), "equipped": bool(r.get("equipped")),
+              "equipped_by": r.get("equipped_by")} for r in rows]
     items.sort(key=lambda x: (x["type"] or "", -(x["quality"] or 0)))
     data = json.dumps({"tao_luc": datetime.utcnow().isoformat(), "so_cay": len(items), "cay": items},
                       ensure_ascii=False, indent=1).encode("utf-8")
