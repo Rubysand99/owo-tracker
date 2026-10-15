@@ -1851,11 +1851,36 @@ async def record_new_pets(found, source_id=None):
 # voi dien thoai — chi lo token API (thu hoi duoc), URI that chi nam o
 # server nay.
 # ----------------------------------------------------------------------
+_app_off_cache = {"v": None, "at": 0.0}
+
+
+async def is_app_off() -> bool:
+    """Công tắc tổng `,off`: BẬT = bot không giao việc nào cho app nữa. Lưu trong Mongo nên không mất khi Railway deploy lại."""
+    now = time.time()
+    if _app_off_cache["v"] is None or now - _app_off_cache["at"] > 5:
+        try:
+            _app_off_cache["v"] = (await get_config("app_off")) == "on"
+        except Exception:
+            if _app_off_cache["v"] is None:
+                _app_off_cache["v"] = False  # chưa từng đọc được và DB đang lỗi: coi như chưa tắt
+        _app_off_cache["at"] = now
+    return bool(_app_off_cache["v"])
+
+
+async def set_app_off(on: bool):
+    await set_config("app_off", "on" if on else "off")
+    _app_off_cache["v"] = bool(on)
+    _app_off_cache["at"] = time.time()
+
+
 async def queue_automacro_command(action: str, params: dict):
     """Ghi 1 lenh moi, trang thai 'pending'. AutoMacro se doc qua API,
     thuc thi, roi bao lai qua /commands/<id>/ack."""
     if mdb is None:
         return
+    if await is_app_off():
+        print(f"[tracker][off] App dang TAT (,off): khong giao viec {action} cho app.")
+        return None
     doc_id = await next_note_id()  # dung chung bo dem voi ,note, chi can duy nhat
     await mdb[COL_AUTOMACRO_COMMANDS].insert_one({
         "_id": doc_id,
@@ -1879,6 +1904,8 @@ def _check_api_token(request: web.Request) -> bool:
 async def handle_get_pending_commands(request: web.Request):
     if not _check_api_token(request):
         return web.json_response({"error": "unauthorized"}, status=401)
+    if await is_app_off():
+        return web.json_response({"commands": [], "off": True})
     stale_cut = (datetime.utcnow() - timedelta(seconds=COMMAND_EXPIRE_SECONDS)).isoformat()
     await mdb[COL_AUTOMACRO_COMMANDS].update_many(
         {"status": "pending", "created_at": {"$lt": stale_cut}},
@@ -2632,6 +2659,7 @@ async def handle_get_alerts(request: web.Request):
     return web.json_response({
         "captcha": await get_captcha_state(),
         "activity": {"last_reply_age_seconds": reply_age, "last_command_age_seconds": cmd_age},
+        "off": await is_app_off(),
     })
 
 
@@ -2856,6 +2884,8 @@ async def maybe_auto_hb_restart(source_id=None):
     Ruby chi viec doc ma va nhan lai (khong tu giai). Bat/tat: `,hbauto on|off` (mac dinh BAT)."""
     if (await get_config("hb_auto", "on")) != "on":
         return False
+    if await is_app_off():
+        return False  # công tắc tổng `,off`: không nhờ app gõ gì cả
     now = time.time()
     try:
         last = float(await get_config("hb_auto_last", "0") or 0)
@@ -3728,6 +3758,9 @@ async def handle_hb_code_dm(message) -> bool:
     amount = amount or hb_pending["amount"] or await get_config("hb_last_amount", "24h")
     if not _HB_AMOUNT_RE.match(str(amount)):
         amount = "24h"
+    if await is_app_off():
+        await message.channel.send("🔴 App đang TẮT (`,off`) nên mình không nhờ app gõ mã huntbot. Bật lại bằng `,off on`.")
+        return True
     hb_pending["at"] = 0.0      # moi lan nhac chi dung 1 lan, tranh gui lap
     await queue_automacro_command("hb_start", {"command_text": f"owo hb {amount} {code}"})
     await message.channel.send(f"✅ Đã nhờ app gõ `owo hb {amount} {code}`. Nếu app đang farm thì lệnh được gõ chen vào trong vài giây.")
@@ -3850,6 +3883,58 @@ async def zoodiff_cmd(ctx, kind: str = ""):
         return
     for chunk in _zoo_chunks(_zoo_diff_text(rows[1], rows[0], k)):
         await ctx.send(chunk)
+
+
+APP_DRIVING_COMMANDS = {"hbstart", "hbcode", "weaponscan", "weaponprobe"}  # các lệnh nhờ app gõ lệnh vào OwO
+
+
+@bot.check
+async def _app_off_guard(ctx):
+    """Đang `,off` thì các lệnh nhờ app làm việc bị chặn ngay từ đầu (nên `,weaponscan` cũng không xóa danh sách vũ khí)."""
+    if ctx.command and ctx.command.name in APP_DRIVING_COMMANDS and await is_app_off():
+        await ctx.send("🔴 App đang TẮT (lệnh `,off`). Gõ `,off on` để bật lại rồi thử lại.")
+        raise commands.CheckFailure("app_off")
+    return True
+
+
+_default_on_command_error = bot.on_command_error
+
+
+@bot.event
+async def on_command_error(ctx, error):
+    if isinstance(error, commands.CheckFailure) and str(error) == "app_off":
+        return  # đã báo cho Ruby rồi, không cần in lỗi ra log
+    await _default_on_command_error(ctx, error)
+
+
+@bot.command(name="off")
+@is_owner()
+async def off_cmd(ctx, state: str = ""):
+    """CONG TAT TONG: `,off` = tat moi hoat dong cua app; `,off on` = bat lai; `,off status` = xem trang thai."""
+    st = state.strip().lower()
+    pending = await mdb[COL_AUTOMACRO_COMMANDS].count_documents({"status": "pending"})
+    if st in ("on", "bat", "bật", "resume"):
+        await set_app_off(False)
+        await ctx.send("🟢 Đã BẬT lại: bot giao việc cho app như bình thường. App đã dừng thì phải bấm **Bắt đầu** lại mới farm tiếp.")
+        return
+    if st in ("status", "xem", "tt"):
+        off = await is_app_off()
+        await ctx.send(("🔴 App đang **TẮT**" if off else "🟢 App đang **BẬT**") + f" · lệnh đang chờ app: {pending}.")
+        return
+    if st:
+        await ctx.send("Dùng: `,off` (tắt) · `,off on` (bật lại) · `,off status` (xem trạng thái)")
+        return
+    await set_app_off(True)
+    await mdb[COL_AUTOMACRO_COMMANDS].update_many(
+        {"status": "pending"}, {"$set": {"status": "cancelled", "completed_at": datetime.utcnow().isoformat()}})
+    hb_pending["at"] = 0.0  # hủy cửa sổ chờ mã huntbot (nếu đang mở)
+    await ctx.send(
+        "🔴 **ĐÃ TẮT app.**\n"
+        f"• Đã hủy {pending} lệnh đang chờ.\n"
+        "• Bot không giao việc nào cho app nữa (huntbot tự động, thay gem, quét vũ khí...).\n"
+        "• App bản đã cập nhật sẽ tự dừng farm trong vài giây. App bản cũ thì bấm **Dừng** bằng tay.\n"
+        "• Kịch bản (script) boss man tự chạy trong app thì bot không dừng được.\n"
+        "• Bật lại: `,off on`.")
 
 
 @bot.command(name="weaponknowledge")
@@ -4234,6 +4319,7 @@ async def help_cmd(ctx):
             ("hbauto", "`,hbauto on|off` (owner)"), ("setalt", "`,setalt [id|xoa]` (owner)"),
             ("testalt", "`,testalt` (owner)")]),
         ("Chế độ và cảnh báo", [
+            ("off", "`,off` (owner): TẮT mọi hoạt động của app · `,off on` bật lại · `,off status` xem"),
             ("eventmode", "`,eventmode on|off` (owner): bật khi có sự kiện, được dùng slot thứ 4"),
             ("captcha", "`,captcha` xem cảnh báo · `,captcha clear` báo đã giải xong")]),
         ("Ghi chú", [("note", "`,note add <text>` · `,note list` · `,note done <id>`")]),
