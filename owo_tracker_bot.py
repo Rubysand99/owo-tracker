@@ -4211,40 +4211,62 @@ async def ping_cmd(ctx):
 
 @bot.command(name="help")
 async def help_cmd(ctx):
+    # Mỗi nhóm: (tên lệnh, chữ hiện ra). Lệnh nào bot không có thì tự bỏ qua, nên help không bao giờ nhắc lệnh không tồn tại.
+    groups = [
+        ("Theo dõi cá nhân", [
+            ("status", "`,status`"), ("huntbot", "`,huntbot`"), ("quests", "`,quests`"), ("team", "`,team`"),
+            ("teamcheck", "`,teamcheck` (owner): chấm đội hình đang đứng"),
+            ("inv", "`,inv [tìm]`"), ("gems", "`,gems`")]),
+        ("Zoo", [
+            ("zoo", "`,zoo [tìm]`: zoo đang giữ"),
+            ("unlocked", "`,unlocked [tier]` (owner): pet đã mở khóa, không hiện số lượng"),
+            ("zoodiff", "`,zoodiff [d|now]` (owner): so 2 lần ghi zoo gần nhất, `d` = số đã bắt, `now` = đang giữ")]),
+        ("Vũ khí của tôi", [
+            ("myweapons", "`,myweapons [tìm]`"),
+            ("weaponscan", "`,weaponscan` (owner): quét lại kho vũ khí, nhớ dừng farm"),
+            ("weaponprobe", "`,weaponprobe` (owner): xếp lệnh `owo w <ID>` cho app từ danh sách đã quét"),
+            ("weaponlist", "`,weaponlist` (owner): gửi file danh sách vũ khí đã quét"),
+            ("weaponknowledge", "`,weaponknowledge` (owner): gửi lại file kiến thức vũ khí"),
+            ("weaponadvice", "`,weaponadvice` (owner): gửi lại file lời khuyên vũ khí"),
+            ("weaponowner", "`,weaponowner` (owner): chỉ ghi vũ khí có tên chủ khớp tên Discord")]),
+        ("Huntbot và acc phụ", [
+            ("hbstart", "`,hbstart [24h|số cowoncy]`"), ("hbcode", "`,hbcode [24h] <mã>`"),
+            ("hbauto", "`,hbauto on|off` (owner)"), ("setalt", "`,setalt [id|xoa]` (owner)"),
+            ("testalt", "`,testalt` (owner)")]),
+        ("Chế độ và cảnh báo", [
+            ("eventmode", "`,eventmode on|off` (owner): bật khi có sự kiện, được dùng slot thứ 4"),
+            ("captcha", "`,captcha` xem cảnh báo · `,captcha clear` báo đã giải xong")]),
+        ("Ghi chú", [("note", "`,note add <text>` · `,note list` · `,note done <id>`")]),
+        ("Pet (loài)", [
+            ("pet", "`,pet <tên>` / `,dex <tên>`"), ("pets", "`,pets [tìm]`"),
+            ("petset", "`,petset <tên> <rank> <hp> <att> <pr> <wp> <mag> <mr>`")]),
+        ("Loại vũ khí", [
+            ("weapontype", "`,weapontype <tên>`"), ("weapontypes", "`,weapontypes [tìm]`"),
+            ("weapontypeset", "`,weapontypeset <tên> <mô tả>`")]),
+        ("Passive", [
+            ("passive", "`,passive <tên>`"), ("passives", "`,passives [tìm]`"),
+            ("passiveset", "`,passiveset <tên> <mô tả>`")]),
+        ("Cài đặt bot (owner)", [
+            ("track", "`,track @user`"), ("setprefixes", "`,setprefixes owo,o`"), ("setchannel", "`,setchannel`"),
+            ("rawdump", "`,rawdump`"), ("debugnext", "`,debugnext`"), ("automacro", "`,automacro`")]),
+        ("Khác", [("ping", "`,ping`"), ("help", "`,help`")]),
+    ]
     embed = discord.Embed(
         title="OwO Tracker — danh sách lệnh",
-        description="Prefix: `,`",
+        description="Prefix: `,` · (owner) = chỉ chủ bot dùng được",
         color=0xD9A227,
     )
-    embed.add_field(
-        name="Theo dõi cá nhân",
-        value="`,track @user` (owner) · `,setprefixes owo,o` (owner) · `,status` · `,setchannel` (owner) · `,rawdump` (owner) · `,weaponowner` (owner) · "
-              "`,huntbot` · `,quests` · `,team` · `,myweapons [tìm]` · "
-              "`,zoo [tìm]` · `,inv [tìm]` · `,gems`",
-        inline=False,
-    )
-    embed.add_field(
-        name="Ghi chú",
-        value="`,note add <text>` · `,note list` · `,note done <id>`",
-        inline=False,
-    )
-    embed.add_field(
-        name="Pet (loài)",
-        value="`,pet <tên>` / `,dex <tên>` · `,pets [tìm]` · "
-              "`,petset <tên> <rank> <hp> <att> <pr> <wp> <mag> <mr>`",
-        inline=False,
-    )
-    embed.add_field(
-        name="Loại vũ khí",
-        value="`,weapontype <tên>` · `,weapontypes [tìm]` · `,weapontypeset <tên> <mô tả>`",
-        inline=False,
-    )
-    embed.add_field(
-        name="Passive",
-        value="`,passive <tên>` · `,passives [tìm]` · `,passiveset <tên> <mô tả>`",
-        inline=False,
-    )
-    embed.add_field(name="Khác", value="`,ping` · `,help` · `,debugnext` (owner) · `,automacro` (owner)", inline=False)
+    covered = set()
+    for title, items in groups:
+        covered.update(name for name, _ in items)
+        shown = [txt for name, txt in items if bot.get_command(name)]
+        if shown:
+            embed.add_field(name=title, value=" · ".join(shown)[:1024], inline=False)
+    # Lưới an toàn: lệnh nào mới thêm mà chưa có trong danh sách trên thì tự hiện ra, help không bao giờ lỗi thời im lặng
+    extra = sorted(c.name for c in bot.commands if c.name not in covered)
+    if extra:
+        embed.add_field(name="Lệnh mới (chưa có mô tả trong ,help)",
+                        value=" · ".join(f"`,{n}`" for n in extra)[:1024], inline=False)
     embed.set_footer(text="Bot chỉ thấy được server đã mời nó vào — không tự theo dõi ở nơi khác.")
     await ctx.send(embed=embed)
 
