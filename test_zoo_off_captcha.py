@@ -116,3 +116,20 @@ asyncio.run(captcha_owner())
 if FAILS:
     print("\n❌ %d bài lỗi" % len(FAILS)); sys.exit(1)
 print("\n✅ Toàn bộ test zoo/off/captcha pass.")
+
+# --- OwO báo "Slow down": đếm để Hub hiện
+async def slowdown_count():
+    b.mdb = AsyncMongoMockClient()["rv5"]
+    r("slowdown: chưa có -> None", (await b._hub_slowdown(None)) is None, True)
+    txt = "**⏱ | Ruby**! Slow down and try the command again **<t:1792226164:R>**"
+    r("slowdown: nhận ra tin thật của OwO", bool(re.search(r"Slow down and try the command again", txt)), True)
+    await b.record_slowdown(); await b.record_slowdown()
+    h = await b._hub_slowdown(None)
+    r("slowdown: đếm 2 lần trong 30 phút", h["count_30m"], 2)
+    for _ in range(40): await b.record_slowdown()
+    doc = await b.mdb[b.COL_ALERTS].find_one({"_id": "slowdown"})
+    r("slowdown: chỉ giữ 30 mốc gần nhất", len(doc["ts"]), b.SLOWDOWN_KEEP)
+asyncio.run(slowdown_count())
+if FAILS:
+    print("\n❌ %d bài lỗi" % len(FAILS)); sys.exit(1)
+print("✅ Test slowdown pass.")

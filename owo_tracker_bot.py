@@ -2141,6 +2141,27 @@ async def _hub_event(now):
                      counters[0].get("updated_at"), now)
 
 
+SLOWDOWN_KEEP = 30
+
+
+async def record_slowdown():
+    """OwO bao '⏱ | Ruby! Slow down and try the command again <t:...:R>' = gui lenh qua day. Luu moc thoi gian (30 gan nhat)."""
+    doc = await mdb[COL_ALERTS].find_one({"_id": "slowdown"}) or {}
+    ts = [float(x) for x in doc.get("ts", [])][-(SLOWDOWN_KEEP - 1):] + [time.time()]
+    await mdb[COL_ALERTS].update_one({"_id": "slowdown"}, {"$set": {"ts": ts, "updated_at": datetime.utcnow().isoformat()}}, upsert=True)
+
+
+async def _hub_slowdown(now):
+    doc = await mdb[COL_ALERTS].find_one({"_id": "slowdown"})
+    if not doc or not doc.get("ts"):
+        return None
+    t_now = time.time()
+    recent = [t for t in doc["ts"] if t_now - float(t) <= 1800]
+    if not recent:
+        return None
+    return {"count_30m": len(recent), "age_seconds": int(t_now - max(float(t) for t in recent))}
+
+
 async def _hub_team(now):
     rows = await mdb[COL_TEAM].find().sort("_id", 1).to_list(length=10)
     if not rows:
@@ -2711,6 +2732,7 @@ async def build_hub(now=None):
         "weapon_shards": await _hub_weapon_shards(now),
         "event": await _hub_event(now),
         "event_mode": await get_event_mode(),
+        "slowdown": await _hub_slowdown(now),
         "gems": await _hub_gems(now),
         "huntbot": await _hub_huntbot(now),
         "quest": await _hub_quest(now),
@@ -3233,6 +3255,11 @@ async def handle_owo_response(message: discord.Message, source_id):
 
     await remember_emojis(text)
     recognized = False  # co loai nao nhan ra tin nay khong (neu khong -> ghi vao "unrecognized")
+
+    if re.search(r"Slow down and try the command again", text):
+        await record_slowdown()
+        await record_raw("slowdown", text, {"slowdown": True}, message)
+        recognized = True
 
     event_lines = parse_event_hunt(text, source_id)
     if event_lines:
