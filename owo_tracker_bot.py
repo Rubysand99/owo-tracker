@@ -1589,7 +1589,10 @@ async def _archive_zoo(z):
                 for p in z.get("pets", [])]
         last = await mdb[COL_ZOO_HISTORY].find({"kind": kind}).sort("at", -1).to_list(length=1)
         same = bool(last) and last[0].get("zoo_points") == z.get("zoo_points") and last[0].get("pets") == pets
-        if not same:
+        # OwO chia zoo thanh nhieu tin: moi lan ghep them 1 tin la 1 ban chup THIEU. Chi luu lich su khi ban chup da
+        # DAY DU (co tin tieu de + Zoo Points) — neu khong 1 lan go zoo tao 3 dong va ,zoodiff so ban thieu voi ban du.
+        complete = (z.get("zoo_points") is not None or bool(z.get("breakdown_raw"))) and z.get("has_header", True)
+        if complete and not same:
             await mdb[COL_ZOO_HISTORY].insert_one({"kind": kind, "at": now, "zoo_points": z.get("zoo_points"),
                                                    "breakdown_raw": z.get("breakdown_raw"), "pets": pets})
             old = await mdb[COL_ZOO_HISTORY].find({"kind": kind}).sort("at", -1).skip(ZOO_HISTORY_KEEP).to_list(length=500)
@@ -4060,6 +4063,10 @@ async def eventmode_cmd(ctx, state: str = ""):
 async def captcha_cmd(ctx, action: str = ""):
     """,captcha = xem trang thai canh bao captcha. ,captcha clear = tu bao da giai xong (huy canh bao)."""
     if action.lower() in ("clear", "xoa", "huy", "xong"):
+        # Huy canh bao captcha = cho app farm tiep, nen CHI chu bot duoc lam (kenh co nhieu nguoi khac)
+        if not (OWNER_ID and str(ctx.author.id) == str(OWNER_ID)):
+            await ctx.send("Chỉ chủ bot mới huỷ được cảnh báo captcha.")
+            return
         await mdb[COL_ALERTS].update_one(
             {"_id": "captcha"},
             {"$set": {"active": False, "cleared_at": datetime.utcnow().isoformat()}}, upsert=True)
