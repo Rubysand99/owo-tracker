@@ -3866,6 +3866,39 @@ async def weaponlist_cmd(ctx):
     await ctx.send("Đã gửi file `weapon_list.json`.")
 
 
+@bot.command(name="dismantleplan")
+@is_owner()
+async def dismantleplan_cmd(ctx):
+    """Lap KE HOACH don vu khi tu danh sach da quet: GIU / RAC / XAM. CHI LAP KE HOACH - khong xoa gi, khong nho app go lenh."""
+    try:
+        import weapon_cleanup
+    except Exception as e:
+        await ctx.send(f"Thiếu file `weapon_cleanup.py` cạnh bot ({e!r}). Chép file đó vào repo rồi push lại.")
+        return
+    rows = await mdb[COL_WEAPON_LIST].find({}).to_list(length=5000)
+    if not rows:
+        await ctx.send("Chưa có danh sách vũ khí. Chạy `,weaponscan` trước (nhớ dừng farm).")
+        return
+    rules = load_weapon_rules(force=True)
+    if not rules.get("types"):
+        await ctx.send("Không đọc được `weapon_rules.json` cạnh bot — chưa thể lập kế hoạch.")
+        return
+    weapons = [{**r, "id": r["_id"]} for r in rows]
+    plan = weapon_cleanup.plan_cleanup(weapons, rules)
+    text = weapon_cleanup.summary_text(plan)
+    seen = [r.get("seen_at") for r in rows if r.get("seen_at")]
+    if seen:
+        try:
+            age_h = (datetime.utcnow() - datetime.fromisoformat(max(seen))).total_seconds() / 3600
+            if age_h > 6:
+                text += f"\n⚠️ Danh sách quét cách đây {age_h:.0f} giờ — nên `,weaponscan` lại trước khi dọn thật."
+        except Exception:
+            pass
+    await ctx.send(text)
+    data = json.dumps(plan, ensure_ascii=False, indent=1).encode("utf-8")
+    await send_file_to_owner("🧹 Kế hoạch dọn vũ khí (chưa xóa gì): đủ 3 danh sách giữ / rác / xám.", "dismantle_plan.json", data)
+
+
 @bot.command(name="unlocked")
 @is_owner()
 async def unlocked_cmd(ctx, tier: str = ""):
@@ -4345,6 +4378,7 @@ async def help_cmd(ctx):
             ("weaponscan", "`,weaponscan` (owner): quét lại kho vũ khí, nhớ dừng farm"),
             ("weaponprobe", "`,weaponprobe` (owner): xếp lệnh `owo w <ID>` cho app từ danh sách đã quét"),
             ("weaponlist", "`,weaponlist` (owner): gửi file danh sách vũ khí đã quét"),
+            ("dismantleplan", "`,dismantleplan` (owner): lập kế hoạch dọn vũ khí (giữ/rác/xám), CHƯA xóa gì"),
             ("weaponknowledge", "`,weaponknowledge` (owner): gửi lại file kiến thức vũ khí"),
             ("weaponadvice", "`,weaponadvice` (owner): gửi lại file lời khuyên vũ khí"),
             ("weaponowner", "`,weaponowner` (owner): chỉ ghi vũ khí có tên chủ khớp tên Discord")]),
