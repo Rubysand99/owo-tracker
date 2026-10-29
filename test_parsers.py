@@ -469,7 +469,7 @@ async def run_daily_flow_tests():
     bot_mod.last_owo_command[ch] = "odaily"
     await bot_mod.handle_owo_response(SimpleNamespace(content=DAILY_WAIT, embeds=[], components=[],
                                                       channel=SimpleNamespace(id=ch)), "u1")
-    now = datetime.utcnow()
+    now = bot_mod._utcnow()
     hub = await bot_mod.build_hub(now)
     check("luong that: daily 'chua toi gio' vao hub", hub["daily"]["state"], "waiting")
     check("luong that: daily con ~3h11m (sai so vai giay)", 11400 <= hub["daily"]["seconds_left"] <= 11488, True)
@@ -478,7 +478,7 @@ async def run_daily_flow_tests():
     # Daily: da nhan
     await bot_mod.handle_owo_response(SimpleNamespace(content=DAILY_CLAIMED, embeds=[], components=[],
                                                       channel=SimpleNamespace(id=ch)), "u1")
-    hub = await bot_mod.build_hub(datetime.utcnow())
+    hub = await bot_mod.build_hub(bot_mod._utcnow())
     check("luong that: daily 'da nhan' -> streak + thuong + gio ke tiep",
           (hub["daily"]["state"], hub["daily"]["streak"], hub["daily"]["last_reward"],
            84400 <= hub["daily"]["seconds_left"] <= 84557), ("claimed", 337, 5000, True))
@@ -486,7 +486,7 @@ async def run_daily_flow_tests():
     # Sau do go lai daily -> tin 'cho' KHONG duoc xoa streak/thuong
     await bot_mod.handle_owo_response(SimpleNamespace(content=DAILY_WAIT, embeds=[], components=[],
                                                       channel=SimpleNamespace(id=ch)), "u1")
-    hub = await bot_mod.build_hub(datetime.utcnow())
+    hub = await bot_mod.build_hub(bot_mod._utcnow())
     check("luong that: tin 'cho' giu nguyen streak/thuong cu",
           (hub["daily"]["state"], hub["daily"]["streak"], hub["daily"]["last_reward"]), ("waiting", 337, 5000))
 
@@ -503,7 +503,7 @@ async def run_daily_flow_tests():
     await bot_mod.handle_owo_response(SimpleNamespace(
         content="<:cash:1> | **Ruby**, you currently have **__2,061,145__ cowoncy**!", embeds=[], components=[],
         channel=SimpleNamespace(id=ch)), "u1")
-    hub = await bot_mod.build_hub(datetime.utcnow())
+    hub = await bot_mod.build_hub(bot_mod._utcnow())
     check("luong that: cowoncy vao hub", hub["cowoncy"]["amount"], 2061145)
 
     # Hub: quest co dem nguoc tu moc <t:...>
@@ -672,7 +672,7 @@ async def run_zoo_split_tests():
     await bot_mod.handle_owo_response(zoo_msg(ZOO_MSG2), "u1")
     doc = await db[bot_mod.COL_ZOO].find_one({"_id": "latest"})
     check("luong that: sau tin 2 -> du 76 pet + Zoo Points", (len(doc["pets"]), doc["zoo_points"]), (76, 13559875))
-    hub = await bot_mod.build_hub(datetime.utcnow())
+    hub = await bot_mod.build_hub(bot_mod._utcnow())
     z = hub["zoo"]
     check("hub: zoo co du tier moi + diem", (z["zoo_points"], "cpatreon" in z["by_tier"], "gem" in z["by_tier"]),
           (13559875, True, True))
@@ -771,8 +771,8 @@ async def run_emoji_owner_tests():
     # Du lieu team CU da luu sai (ten emoji tho + HP la ID emoji) -> hub tu lam sach
     await db[bot_mod.COL_TEAM].insert_one({"_id": 1, "pos": 1, "name": "<a:slothbot:711772997320441897>",
         "level": 26, "hp": 711772997320441897, "wp": 968, "att": 916, "mag": 100, "pr": 100, "mr": 45,
-        "weaponId": "C2PRPT", "quality": 82.7, "updated_at": datetime.utcnow().isoformat()})
-    hub = await bot_mod.build_hub(datetime.utcnow())
+        "weaponId": "C2PRPT", "quality": 82.7, "updated_at": bot_mod._utcnow().isoformat()})
+    hub = await bot_mod.build_hub(bot_mod._utcnow())
     m0 = hub["team"]["members"][0]
     check("hub team: du lieu cu -> ten sach, so ID emoji bi bo (None)", (m0["name"], m0["hp"], m0["wp"]), ("slothbot", None, 968))
 
@@ -971,7 +971,7 @@ async def run_icon_tests():
     zoo_text = ("Ruby's zoo!\n<:common:100> :bee:¹⁹⁰ :bug:²⁰²\n"
                 "<:gem:200> <a:gowl:300>⁰⁰¹\n**Zoo Points: __191__**")
     await bot_mod.handle_owo_response(msg(zoo_text), "u1")
-    hub = await bot_mod.build_hub(datetime.utcnow())
+    hub = await bot_mod.build_hub(bot_mod._utcnow())
     zoo = hub["zoo"]
     bee = next(p for p in zoo["pets"] if p["name"] == "bee")
     gowl = next(p for p in zoo["pets"] if p["name"] == "gowl")
@@ -986,7 +986,7 @@ async def run_icon_tests():
     hunt_text = "hunt is empowered by <a:cgem1:400>[47/75] tôi ơi"
     bot_mod.last_owo_command[3] = "owo hunt"
     await bot_mod.handle_owo_response(msg(hunt_text), "u1")
-    hub = await bot_mod.build_hub(datetime.utcnow())
+    hub = await bot_mod.build_hub(bot_mod._utcnow())
     slot1 = hub["gems"]["equipped"][0]
     check("gem dang dung: icon dung ID that cua vien gem (khong phai suy doan)",
           (slot1["emoji_id"], slot1["emoji_animated"]), ("400", True))
@@ -994,24 +994,24 @@ async def run_icon_tests():
     # --- Kho: gem du phong cung mang theo icon da luu tu truoc ---
     inv = bot_mod.parse_inventory("Inventory\n`051`<a:cgem1:500>¹⁰⁴")
     await bot_mod.save_inventory(inv, "u1")
-    hub = await bot_mod.build_hub(datetime.utcnow())
+    hub = await bot_mod.build_hub(bot_mod._utcnow())
     spare = hub["gems"]["spare"][0]
     check("gem du phong: icon dung ID that", (spare["emoji_id"], spare["emoji_animated"]), ("500", True))
 
     # --- Doi hinh: icon la ID that cua pet ---
     team = bot_mod.parse_team("[1] <a:slothbot:600>\nLvl 26 [1/2]\n100 100\n10 10\n1% 1%")
     await bot_mod.save_team(team)
-    hub = await bot_mod.build_hub(datetime.utcnow())
+    hub = await bot_mod.build_hub(bot_mod._utcnow())
     m0 = hub["team"]["members"][0]
     check("doi hinh: icon dung ID that cua pet", (m0["emoji_id"], m0["emoji_animated"]), ("600", True))
 
     # --- Cowoncy: icon la ID that cua dong xu (hoc duoc tu tin nhan money) ---
     bot_mod.last_owo_command[3] = "owo money"
     await bot_mod.handle_owo_response(msg("<:cowoncy:700> | Ruby, you currently have 999 cowoncy!"), "u1")
-    hub = await bot_mod.build_hub(datetime.utcnow())
+    hub = await bot_mod.build_hub(bot_mod._utcnow())
     check("cowoncy: icon dung ID that", hub["cowoncy"]["emoji_id"], "700")
     check("daily: dung chung icon cowoncy da hoc duoc (chua co tin daily nao)",
-          (await bot_mod.build_hub(datetime.utcnow()))["daily"], None)
+          (await bot_mod.build_hub(bot_mod._utcnow()))["daily"], None)
 
     # --- Chua tung thay emoji nao -> khong co icon, khong bao loi ---
     check("resolve_emoji: ten la khong ai biet -> tra ve rong", bot_mod.resolve_emoji("con_vat_khong_ton_tai"), {})
@@ -1021,9 +1021,9 @@ async def run_icon_tests():
     quest_row = {"seals": 10, "all_done": False, "quests": [
         {"index": 1, "title": "Battle", "rarity": "common", "rewards": [
             {"item": "cowoncy", "amount": 120}, {"item": "📦", "amount": 2}], "current": 1, "max": 10, "done": False}]}
-    await db[bot_mod.COL_QUEST].insert_one(dict(quest_row, created_at=datetime.utcnow().isoformat()))
+    await db[bot_mod.COL_QUEST].insert_one(dict(quest_row, created_at=bot_mod._utcnow().isoformat()))
     await bot_mod.remember_emojis("<:common:800>")  # tier "common" da co ID=100 tu truoc — khong ghi de (setOnInsert)
-    hub = await bot_mod.build_hub(datetime.utcnow())
+    hub = await bot_mod.build_hub(bot_mod._utcnow())
     qi = hub["quest"]["quests"][0]
     check("quest: icon do hiem lay tu registry (van la ID dau tien hoc duoc, khong bi ghi de)", qi.get("emoji_id"), "100")
     check("quest: phan thuong cowoncy co icon, phan thuong 📦 (unicode san, khong can tra) khong co gi them",
@@ -1214,7 +1214,7 @@ async def run_pet_dex_tests():
     await bot_mod.handle_owo_response(msg(BEE_DEX), "555")
 
     # Chua co du lieu zoo -> ca 2 loai deu "chua co"
-    hub = await bot_mod.build_hub(datetime.utcnow())
+    hub = await bot_mod.build_hub(bot_mod._utcnow())
     dex = hub["pet_dex"]
     check("pet_dex: biet 2 loai, ca 2 deu chua co (chua co du lieu zoo)",
           (dex["total_known"], dex["total_owned"]), (2, 0))
@@ -1231,7 +1231,7 @@ async def run_pet_dex_tests():
     bot_mod.last_owo_command[ch] = "owo zoo"
     await bot_mod.handle_owo_response(
         msg("Ruby's zoo!\n<:legendary:600>   <a:gowl:700>³\n**Zoo Points: __5__**"), "u1")
-    hub = await bot_mod.build_hub(datetime.utcnow())
+    hub = await bot_mod.build_hub(bot_mod._utcnow())
     dex = hub["pet_dex"]
     gowl_entry = next(p for p in dex["species"] if p["name"] == "gowl")
     bee_entry = next(p for p in dex["species"] if p["name"] == "bee")
@@ -1247,7 +1247,7 @@ async def run_pet_dex_tests():
 
     # Chua tung tra owodex loai nao -> pet_dex = None (khong phai list rong)
     m2 = bot_mod.mdb = AsyncMongoMockClient()["pet_dex_empty"]
-    check("pet_dex: chua tra owodex loai nao -> None", (await bot_mod.build_hub(datetime.utcnow()))["pet_dex"], None)
+    check("pet_dex: chua tra owodex loai nao -> None", (await bot_mod.build_hub(bot_mod._utcnow()))["pet_dex"], None)
     check("pet_dex: JSON hop le", isinstance(json.dumps(hub), str), True)
 
 

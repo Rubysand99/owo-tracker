@@ -50,6 +50,22 @@ báo rỗng dù bạn chơi bình thường. Kiểm tra và sửa:
 ,setprefixes owo,o    → thêm "o" vào danh sách (chỉ owner dùng được)
 ```
 
+## Cấu trúc file
+
+- `owo_tracker_bot.py` — bot Discord, lệnh, lưu MongoDB, API cho AutoMacro.
+- `owo_parsers.py` — các hàm **thuần** đọc/phân tích tin nhắn OwO (`parse_*`, regex, hằng số đi kèm). Không đụng DB hay Discord nên test được trực tiếp. `owo_tracker_bot.py` import lại các tên này nên `b.parse_xxx` trong test vẫn chạy.
+- `weapon_cleanup.py`, `weapon_rules.json` — luật dọn vũ khí.
+- `test_*.py` — test (dữ liệu mẫu thật nằm trong `fixtures_*.json`).
+
+## Chạy test
+
+```bash
+pip install -r requirements-dev.txt
+for t in test_*.py; do python "$t" || break; done
+```
+
+Mỗi lần push lên `main` (hoặc mở pull request), GitHub Actions tự chạy lại toàn bộ test (`.github/workflows/tests.yml`).
+
 ## Kết nối với AutoMacro (tự động thay gem)
 
 Bot có thể ghi "lệnh cần làm" vào MongoDB để app Android **AutoMacro**

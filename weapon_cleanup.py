@@ -8,7 +8,7 @@ Dau vao: danh sach cay (moi muc nhu bang owot_weapon_list):
 va bo luat weapon_rules.json (loi khuyen ?tag cua server + y rieng cua Ruby).
 """
 from collections import Counter, defaultdict
-from datetime import datetime
+from datetime import datetime, timezone
 
 # Do hiem (ten emoji o dau moi dong danh sach). Tu "mythic" tro len khong bao gio tu xep RAC.
 HIGH_RARITIES = ("mythic", "legendary", "fabled")
@@ -187,7 +187,7 @@ def plan_cleanup(weapons, rules, keep_top=KEEP_TOP_PER_TYPE):
         "xam_theo_ly_do": dict(Counter(x for r in out["xam"] for x in r["ly_do"])),
         "xam_passive": dict(xam_passive.most_common()),
     }
-    return {"tao_luc": datetime.utcnow().isoformat(),
+    return {"tao_luc": datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
             "tham_so": {"giu_top_moi_loai": keep_top, "do_hiem_khong_tu_xoa": list(HIGH_RARITIES),
                         "passive_hoi_wp": rules.get("ruby", {}).get("passive_hoi_wp", []),
                         "loai_khong_xoa": rules.get("never_dismantle", [])},

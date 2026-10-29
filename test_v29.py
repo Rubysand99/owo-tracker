@@ -71,12 +71,12 @@ check("hunt có gem special: đọc 3 gem, có slot star", sorted(g["slot"] for 
 async def run():
     b.mdb = AsyncMongoMockClient()["v29_test"]
     await b.load_emoji_cache()
-    now = datetime.utcnow()
+    now = b._utcnow()
     check("hub event: chưa có -> None", await b._hub_event(now), None)
     await b.save_event_hunt(b.parse_event_hunt(BEAR, UID), "m1", UID)
     await b.save_event_hunt(b.parse_event_hunt(CANDY, UID), "m2", UID)
     await b.save_event_hunt(b.parse_event_hunt(BEAR.replace("[8/10]", "[9/10]"), UID), "m3", UID)
-    h = await b._hub_event(datetime.utcnow())
+    h = await b._hub_event(b._utcnow())
     cnt = {c["kind"]: (c["current"], c["max"]) for c in h["counters"]}
     check("hub event: mỗi loại giữ số mới nhất", cnt, {"🐻": (9, 10), "🍬": (1, 10)})
     check("hub event: nhật ký 3 dòng", len(h["recent"]), 3)
@@ -110,7 +110,7 @@ async def run_gem_names():
     await b.save_gem_status(b.parse_hunt_gem_status(HUNT_STAR), "u1")
     await b.mdb[b.COL_INVENTORY].insert_one({"_id": "079", "is_gem": True, "gem_slot": "star", "gem_tier": "Common",
                                              "gem_tier_rank": 1, "count": 2, "name": "cstar"})
-    g = await b._hub_gems(datetime.utcnow())
+    g = await b._hub_gems(b._utcnow())
     check("hub gem: gem đang dùng có tên loại", sorted(e["type_name"] for e in g["equipped"]), ["Empowering", "Hunting", "Special"])
     check("hub gem: gem dự phòng có tên loại", [e["type_name"] for e in g["spare"]], ["Special"])
 asyncio.run(run_gem_names())
@@ -168,29 +168,29 @@ HB_IDLE_INFO_ONLY = ""
 async def run_hb():
     b.mdb = AsyncMongoMockClient()["v29_hb"]
     await b.load_emoji_cache()
-    now = datetime.utcnow()
+    now = b._utcnow()
     # 1) trước đó Hub tưởng huntbot KHÔNG chạy (tin thông tin cũ, không có trạng thái)
     await b.save_huntbot(b.parse_huntbot_status(_hb_text(HB_IDLE_INFO_ONLY)))
     h = await b._hub_huntbot(now)
     check("hb: tin chỉ có thông tin -> chưa kết luận đang săn", h["hunting"], False)
     # 2) tin GỘP đang săn: PHẢI cập nhật trạng thái, không chỉ chỉ số
     await b.save_huntbot(b.parse_huntbot_status(_hb_text(HB_RUNNING)))
-    h = await b._hub_huntbot(datetime.utcnow())
+    h = await b._hub_huntbot(b._utcnow())
     check("hb gộp: đang săn = True", h["hunting"], True)
     check("hb gộp: tiến độ 55.02% và 2626 con", (h["progress_pct"], h["animals_captured"]), (55.02, 2626))
     check("hb gộp: còn 9H 51M -> seconds_left ~ 9h51m", 35400 <= h["seconds_left"] <= 35460, True)
     check("hb gộp: vẫn có đủ 6 chỉ số", sorted(h["traits"]), ["cost", "duration", "efficiency", "experience", "gain", "radar"])
     # 3) tin thông tin cũ (không có trạng thái) đến sau KHÔNG được xóa trạng thái đang săn
     await b.save_huntbot(b.parse_huntbot_status(_hb_text(HB_IDLE_INFO_ONLY)))
-    h = await b._hub_huntbot(datetime.utcnow())
+    h = await b._hub_huntbot(b._utcnow())
     check("hb: tin chỉ-thông-tin đến sau không làm mất 'đang săn'", h["hunting"], True)
     # 4) tin trạng thái riêng (kiểu 2 tin cũ) vẫn chạy
     await b.save_huntbot(b.parse_huntbot_status("**BEEP BOOP. I AM STILL HUNTING. I WILL BE BACK IN 1H 12M**\n94.52% DONE | 4512 ANIMALS CAPTURED"))
-    h = await b._hub_huntbot(datetime.utcnow())
+    h = await b._hub_huntbot(b._utcnow())
     check("hb: tin trạng thái riêng vẫn cập nhật", (h["hunting"], h["animals_captured"]), (True, 4512))
     # 5) huntbot về: tin gộp có 'I AM BACK WITH' -> hunting False
     await b.save_huntbot(b.parse_huntbot_status(_hb_text("\n**BEEP BOOP. I AM BACK WITH 4512 ANIMALS, 95265 ESSENCE**")))
-    h = await b._hub_huntbot(datetime.utcnow())
+    h = await b._hub_huntbot(b._utcnow())
     check("hb gộp: tin 'I AM BACK WITH' -> không còn săn", h["hunting"], False)
 asyncio.run(run_hb())
 if fails:
@@ -292,7 +292,7 @@ async def run_zoo():
     mid_pet = next(p["name"] for p in (await b.handle_zoo_text(99, _FX["middle_part"], "u"))[1]["pets"] if p["count"] >= 0)
     await b.mdb[b.COL_ZOO].delete_many({}); b.zoo_session.clear()
     await feed(["header"], ch=3)
-    old = (datetime.utcnow().replace(microsecond=0)).isoformat()
+    old = (b._utcnow().replace(microsecond=0)).isoformat()
     await b.mdb[b.COL_ZOO].update_one({"_id": "latest"}, {"$set": {"updated_at": "2000-01-01T00:00:00"}})
     check("zoo chỉ có tin tiêu đề -> không kết luận pet mới", await b.record_new_pets({"animals": [{"name": mid_pet}]}, "u"), None)
     # E) đủ 3 tin + đã ổn định: pet có trong tin giữa KHÔNG bị báo mới; pet lạ thì báo
@@ -430,7 +430,7 @@ async def run_hb_idle():
     b.notify_owner = fake_notify
     try:
         # 1) đang săn, chưa tới giờ xong -> tin chỉ-thông-tin KHÔNG làm đổi trạng thái
-        now = datetime.utcnow()
+        now = b._utcnow()
         await b.mdb[b.COL_HUNTBOT].insert_one({"hunting": True, "time_remaining": "1H 0M", "status_at": now.isoformat(), "created_at": now.isoformat(), "traits": {"cost": 5}})
         r = await b.save_huntbot(b.parse_huntbot_status(_hb_text("")))
         check("hb: chưa tới giờ xong, tin chỉ-thông-tin -> không coi là rảnh", r, None)

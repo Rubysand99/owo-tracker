@@ -41,13 +41,13 @@ async def roundtrip():
     b.mdb = AsyncMongoMockClient()["ws_test"]
     await b.load_emoji_cache()
     from datetime import datetime
-    check("hub ws: chưa có dữ liệu -> None", await b._hub_weapon_shards(datetime.utcnow()), None)
+    check("hub ws: chưa có dữ liệu -> None", await b._hub_weapon_shards(b._utcnow()), None)
     await b.save_weapon_shards({"amount": 1174}, "999")
-    h = await b._hub_weapon_shards(datetime.utcnow())
+    h = await b._hub_weapon_shards(b._utcnow())
     check("hub ws: lưu rồi đọc lại đúng số", h["amount"], 1174)
     check("hub ws: có tuổi dữ liệu", "age_seconds" in h, True)
     await b.save_weapon_shards({"amount": 1500}, "999")
-    h = await b._hub_weapon_shards(datetime.utcnow())
+    h = await b._hub_weapon_shards(b._utcnow())
     check("hub ws: lần sau đè lần trước", h["amount"], 1500)
 asyncio.run(roundtrip())
 

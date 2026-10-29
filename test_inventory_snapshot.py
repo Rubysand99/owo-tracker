@@ -86,7 +86,7 @@ async def main():
     check("mọi món cùng 1 snapshot id", len(snaps), 1)
 
     # ---- 2) Hub: gem dự phòng không còn fgem4, có giờ cập nhật riêng ----------
-    hub = await b.build_hub(datetime.utcnow())
+    hub = await b.build_hub(b._utcnow())
     spare_ids = {(g["slot"], g["tier"]) for g in hub["gems"]["spare"]}
     check("Hub: slot 4 không còn Fabled", ("4", "Fabled") in spare_ids, False)
     check("Hub: slot 1 Legendary còn x2", [g["count"] for g in hub["gems"]["spare"] if (g["slot"], g["tier"]) == ("1", "Legendary")], [2])

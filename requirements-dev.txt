@@ -1,0 +1,3 @@
+# Thư viện chỉ cần để chạy test (không cần khi chạy bot thật)
+-r requirements.txt
+mongomock-motor

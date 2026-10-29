@@ -109,6 +109,13 @@ export MONGODB_URI="mongodb+srv://..."
 python owo_tracker_bot.py
 ```
 
+> ⚠️ **Về `AUTOMACRO_API_TOKEN` khi chạy bot trên điện thoại/mạng nhà:** API của bot chạy bằng HTTP thường,
+> token Bearer đi dạng chữ rõ nếu app và bot nói chuyện qua Wi‑Fi công cộng hoặc qua internet không có HTTPS
+> (Railway thì đã có HTTPS sẵn). Hãy dùng token **ngẫu nhiên dài từ 24 ký tự trở lên** (ví dụ `openssl rand -hex 24`),
+> và chỉ dùng HTTP cho mạng nhà tin cậy. Bot sẽ in cảnh báo lúc khởi động nếu token quá ngắn.
+> App Android (targetSdk 34) cũng mặc định **chặn** địa chỉ `http://` — dùng `https://` hoặc xem phần cài đặt trong app.
+
+
 ### Giữ bot chạy khi tắt màn hình
 
 Android sẽ tự kill tiến trình nền để tiết kiệm pin nếu không có wake
