@@ -54,6 +54,7 @@ báo rỗng dù bạn chơi bình thường. Kiểm tra và sửa:
 
 - `owo_tracker_bot.py` — bot Discord, lệnh, lưu MongoDB, API cho AutoMacro.
 - `owo_parsers.py` — các hàm **thuần** đọc/phân tích tin nhắn OwO (`parse_*`, regex, hằng số đi kèm). Không đụng DB hay Discord nên test được trực tiếp. `owo_tracker_bot.py` import lại các tên này nên `b.parse_xxx` trong test vẫn chạy.
+- `auto_refresh.py` — quyết định thuần cho 2 việc: nhắc huntbot còn 10 phút, và chọn lệnh check để chen vào khi app đang farm.
 - `weapon_cleanup.py`, `weapon_rules.json` — luật dọn vũ khí.
 - `test_*.py` — test (dữ liệu mẫu thật nằm trong `fixtures_*.json`).
 
@@ -65,6 +66,21 @@ for t in test_*.py; do python "$t" || break; done
 ```
 
 Mỗi lần push lên `main` (hoặc mở pull request), GitHub Actions tự chạy lại toàn bộ test (`.github/workflows/tests.yml`).
+
+## Huntbot: nhắc còn 10 phút & tự cập nhật khi đang farm
+
+**Nhắc còn 10 phút:** app AutoMacro hỏi bot mỗi phút (kể cả khi Hub nổi đang tắt) và hiện thông báo trên điện thoại khi
+huntbot còn ≤ 10 phút nữa là về — mỗi chuyến chỉ 1 lần. Muốn thêm bản dự phòng qua Discord (DM acc phụ, phòng khi app
+không chạy): `,hbalert on` (mặc định tắt; `,hbalert off` để tắt).
+
+**Dữ liệu trên Hub luôn mới:**
+- Bot đọc MỌI tin OwO trong kênh được theo dõi, dù **bạn tự gõ** hay **app gõ**. Khi app tắt hoặc không farm, Hub cập nhật theo
+  đúng những lệnh bạn tự chơi (giờ huntbot về tự đếm ngược, huntbot về thì OwO tự báo nên bot cũng đọc được).
+- Khi app **đang farm**, bot nhờ app gõ **xen** các lệnh check cho mục nào đã cũ: `owo hb` (đến hạn / quá 3 giờ), `owo cash`
+  (25 phút), `owo inv` (90 phút), `owo quest` (2 giờ), `owo ws` (3 giờ), `owo zoo` (4 giờ), `owo team` (6 giờ).
+  Tối đa 1 lệnh mỗi 3 phút; lùi lại khi OwO báo Slow down, đang captcha, `,off`, hoặc app còn lệnh chưa làm.
+- `,autocheck` xem trạng thái · `,autocheck off` / `on` để tắt/bật.
+- Lưu ý: check huntbot lúc huntbot đã xong sẽ kích hoạt tự chạy lại huntbot nếu `hb_auto` đang bật (đúng như khi bạn tự gõ `owo hb`).
 
 ## Kết nối với AutoMacro (tự động thay gem)
 

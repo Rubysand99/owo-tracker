@@ -24,9 +24,9 @@ jobs:
       - name: Kiểm tra lỗi cú pháp / tên chưa định nghĩa
         # pyflakes báo cả "import không dùng" (owo_parsers được import lại cho test) nên chỉ chặn lỗi thật
         run: |
-          python -m py_compile owo_tracker_bot.py owo_parsers.py weapon_cleanup.py
-          python -m pyflakes owo_tracker_bot.py owo_parsers.py weapon_cleanup.py | grep -v "imported but unused" || true
-          if python -m pyflakes owo_tracker_bot.py owo_parsers.py weapon_cleanup.py | grep -E "undefined name|redefinition"; then exit 1; fi
+          python -m py_compile owo_tracker_bot.py owo_parsers.py auto_refresh.py weapon_cleanup.py
+          python -m pyflakes owo_tracker_bot.py owo_parsers.py auto_refresh.py weapon_cleanup.py | grep -v "imported but unused" || true
+          if python -m pyflakes owo_tracker_bot.py owo_parsers.py auto_refresh.py weapon_cleanup.py | grep -E "undefined name|redefinition"; then exit 1; fi
 
       - name: Chạy toàn bộ test
         run: |

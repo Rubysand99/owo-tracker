@@ -36,6 +36,7 @@ import discord
 from discord.ext import commands
 from motor.motor_asyncio import AsyncIOMotorClient
 from aiohttp import web
+import auto_refresh   # quyết định thuần: nhắc huntbot + chen lệnh check khi đang farm
 # Các hàm đọc tin OwO nằm ở owo_parsers.py; import lại đây để code cũ và test (b.parse_xxx) chạy như trước.
 from owo_parsers import (
     _GEM_TIER_RANK,
@@ -196,6 +197,7 @@ _notify_recent = {}           # text -> lan gui cuoi (chong spam tin nhac)
 # Doi bang lenh ,setalt <id>.
 ALT_USER_ID_DEFAULT = "1238687916176183409"
 _farm_watchdog_task = None
+_auto_refresh_task = None
 # Cua so "dang cho Ruby nhap ma huntbot": mo khi OwO vua dua mat khau (hoac Ruby vua go owo hb <thoi gian>)
 HB_PENDING_SECONDS = 600
 hb_pending = {"amount": None, "at": 0.0}
@@ -1670,6 +1672,125 @@ async def farm_watchdog():
 
 
 # ----------------------------------------------------------------------
+# HUNTBOT: nhac con 10 phut + tu chen lenh check khi app dang farm
+# ----------------------------------------------------------------------
+AUTO_REFRESH_TICK = 30        # giay giua 2 lan vong nen kiem tra
+AUTO_EVAL_GAP = 90            # giay toi thieu giua 2 lan tinh "du lieu nao cu" (do ton truy van DB)
+SLOWDOWN_BACKOFF = 300        # vua bi "Slow down" trong ngan nay thi KHONG chen them lenh
+_auto_check_state = {"last_auto": 0.0, "last_eval": 0.0, "requested": {}}
+
+
+def _epoch(dt) -> float:
+    """datetime UTC khong mui gio -> so giay tu 1970."""
+    return (dt - datetime(1970, 1, 1)).total_seconds()
+
+
+async def _huntbot_timing(now):
+    """Gio xong cua huntbot tu ban ghi moi nhat: {hunting, seconds_left, ready_epoch, observed_epoch}.
+    ready_epoch (giay tu 1970) la gio huntbot ve; None neu khong dang san hoac chua biet."""
+    row = await mdb[COL_HUNTBOT].find_one(sort=[("_id", -1)])
+    out = {"hunting": False, "seconds_left": None, "ready_epoch": None, "observed_epoch": None}
+    if not row:
+        return out
+    observed = _parse_utc(row.get("status_at") or row.get("created_at"))
+    out["hunting"] = bool(row.get("hunting"))
+    out["observed_epoch"] = _epoch(observed) if observed else None
+    secs = duration_to_seconds(row.get("time_remaining")) if out["hunting"] else None
+    if secs is not None and observed is not None:
+        ready = observed + timedelta(seconds=secs)
+        out["ready_epoch"] = int(_epoch(ready))
+        out["seconds_left"] = max(0, int((ready - now).total_seconds()))
+    return out
+
+
+async def hb_reminder_tick(now):
+    """Con <= 10 phut nua huntbot ve -> DM acc phu (CHI khi Ruby bat `,hbalert on`). Thong bao tren dien thoai
+    do AutoMacro tu lam (hoi /alerts), nen day chi la ban du phong khi app khong chay."""
+    if (await get_config("hb_alert", "off")) != "on":
+        return None
+    t = await _huntbot_timing(now)
+    last = float(await get_config("hb_alert_ready", "0") or 0) or None
+    if not auto_refresh.huntbot_alert_due(t["hunting"], t["seconds_left"], t["ready_epoch"], last):
+        return None
+    await set_config("hb_alert_ready", str(t["ready_epoch"]))   # danh dau TRUOC khi gui: loi gui cung khong lap lai
+    mins = max(1, round(t["seconds_left"] / 60))
+    await notify_owner(f"⏰ Huntbot còn khoảng {mins} phút nữa là về.", target="alt", min_gap=300)
+    return mins
+
+
+async def _slowdown_recent(now_ts, within=SLOWDOWN_BACKOFF) -> bool:
+    doc = await mdb[COL_ALERTS].find_one({"_id": "slowdown"})
+    ts = [float(x) for x in (doc or {}).get("ts", [])]
+    return bool(ts) and now_ts - max(ts) <= within
+
+
+async def _section_ages(now):
+    """Tuoi (giay) cua tung muc tren Hub, dung dung ham dung Hub nen khop voi cai Ruby nhin thay."""
+    await load_emoji_cache()
+    builders = {"cowoncy": _hub_cowoncy, "inventory": _hub_inventory, "quest": _hub_quest,
+                "weapon_shards": _hub_weapon_shards, "zoo": _hub_zoo, "team": _hub_team}
+    ages = {}
+    for key, fn in builders.items():
+        d = await fn(now)
+        ages[key] = d.get("age_seconds") if d else None
+    return ages
+
+
+async def auto_check_tick(now_ts, now):
+    """App DANG FARM -> du lieu nao cu thi xep 1 lenh check (app go xen vao giua luc farm, nhu lenh doi gem).
+    App dang tat / khong farm -> KHONG tu go gi: Hub chi cap nhat theo nhung lenh Ruby tu go (bot doc moi tin OwO)."""
+    if (await get_config("auto_check", "on")) != "on":
+        return None
+    if not farm_watch["active"] or farm_watch["resting"] or now_ts - farm_watch["last_seen"] > 60:
+        return None
+    if now_ts - _auto_check_state["last_auto"] < auto_refresh.AUTO_MIN_GAP:
+        return None
+    if now_ts - _auto_check_state["last_eval"] < AUTO_EVAL_GAP:
+        return None
+    if await is_app_off() or (await get_captcha_state(now))["active"]:
+        return None
+    fresh_cut = (now - timedelta(seconds=COMMAND_EXPIRE_SECONDS)).isoformat()
+    if await mdb[COL_AUTOMACRO_COMMANDS].count_documents({"status": "pending", "created_at": {"$gte": fresh_cut}}):
+        return None            # app con viec chua lam: dung chong them
+    if await _slowdown_recent(now_ts):
+        return None            # OwO vua bao gui qua day: lui lai, khong them lenh
+    _auto_check_state["last_eval"] = now_ts
+    t = await _huntbot_timing(now)
+    pick = auto_refresh.pick_check(
+        now_ts, {"hunting": t["hunting"], "ready_epoch": t["ready_epoch"], "observed_epoch": t["observed_epoch"]},
+        await _section_ages(now), _auto_check_state["last_auto"], _auto_check_state["requested"])
+    if not pick:
+        return None
+    key, command = pick
+    cid = await queue_automacro_command("auto_check", {"command_text": command, "kind": key})
+    if cid is None:
+        return None
+    _auto_check_state["last_auto"] = now_ts
+    _auto_check_state["requested"][key] = now_ts
+    print(f"[tracker][auto_check] Xep lenh check '{command}' (muc {key} da cu)")
+    return command
+
+
+async def auto_refresh_loop():
+    """Chay nen: moi 30 giay xem co can nhac huntbot / chen lenh check khong. Moi viec bat loi rieng."""
+    while True:
+        try:
+            await asyncio.sleep(AUTO_REFRESH_TICK)
+            if mdb is None:
+                continue
+            now, now_ts = _utcnow(), time.time()
+            for name, coro in (("nhac huntbot", hb_reminder_tick(now)), ("auto_check", auto_check_tick(now_ts, now))):
+                try:
+                    await coro
+                except Exception as e:
+                    print(f"[tracker][{name}] Loi: {e!r}")
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            print(f"[tracker][auto_refresh] Loi: {e!r}")
+
+
+# ----------------------------------------------------------------------
 # CAPTCHA: OwO nghi ban spam -> bot (mat) bao cho app (tay) DUNG ngay + reo chuong
 # ----------------------------------------------------------------------
 CAPTCHA_ACTIVE_SECONDS = 12 * 60   # OwO cho 10 phut; qua 12 phut thi tu coi la het hieu luc
@@ -1872,10 +1993,17 @@ async def handle_get_alerts(request: web.Request):
         farm_watch["silent_notified"] = False
     reply_age = int(now - farm_watch["last_reply_at"]) if farm_watch["last_reply_at"] else None
     cmd_age = int(now - farm_watch["last_command_at"]) if farm_watch["last_command_at"] else None
+    try:
+        hb = await _huntbot_timing(_utcnow())
+        huntbot = {k: hb[k] for k in ("hunting", "seconds_left", "ready_epoch")}
+    except Exception as e:   # /alerts phai luon tra duoc (app dung no de canh captcha)
+        print(f"[tracker] /alerts: khong doc duoc gio huntbot ({type(e).__name__}: {e})")
+        huntbot = None
     return web.json_response({
         "captcha": await get_captcha_state(),
         "activity": {"last_reply_age_seconds": reply_age, "last_command_age_seconds": cmd_age},
         "off": await is_app_off(),
+        "huntbot": huntbot,
     })
 
 
@@ -2194,6 +2322,10 @@ async def on_ready():
     global _farm_watchdog_task
     if _farm_watchdog_task is None or _farm_watchdog_task.done():
         _farm_watchdog_task = asyncio.create_task(farm_watchdog())
+
+    global _auto_refresh_task
+    if _auto_refresh_task is None or _auto_refresh_task.done():
+        _auto_refresh_task = asyncio.create_task(auto_refresh_loop())
 
     global _automacro_api_started
     if AUTOMACRO_API_TOKEN:
@@ -2695,6 +2827,46 @@ def is_owner():
     async def predicate(ctx):
         return OWNER_ID and str(ctx.author.id) == str(OWNER_ID)
     return commands.check(predicate)
+
+
+@bot.command(name="autocheck")
+@is_owner()
+async def autocheck_cmd(ctx, state: str = ""):
+    """`,autocheck` = xem · `,autocheck on` / `off`: khi app dang farm, bot nho app go xen cac lenh check
+    (owo hb/cash/inv/quest/ws/zoo/team) cho muc nao da cu, de Hub luon moi."""
+    st = state.strip().lower()
+    if st in ("on", "bat", "bật"):
+        await set_config("auto_check", "on")
+    elif st in ("off", "tat", "tắt"):
+        await set_config("auto_check", "off")
+    elif st not in ("", "status", "xem"):
+        await ctx.send("Dùng: `,autocheck on` · `,autocheck off` · `,autocheck` (xem trạng thái)")
+        return
+    on = (await get_config("auto_check", "on")) == "on"
+    farming = farm_watch["active"] and not farm_watch["resting"]
+    plan = ", ".join(f"{cmd} ({age // 60 if age < 3600 else age // 3600}{'p' if age < 3600 else 'h'})"
+                     for _, cmd, age in auto_refresh.CHECK_PLAN)
+    await ctx.send(("🟢 Tự chen lệnh check: **BẬT**" if on else "🔴 Tự chen lệnh check: **TẮT**")
+                   + f" · app {'đang farm' if farming else 'không farm (bot chỉ đọc theo lệnh bạn tự gõ)'}.\n"
+                   f"Chỉ chen khi app **đang farm**, tối đa 1 lệnh mỗi {auto_refresh.AUTO_MIN_GAP // 60} phút, "
+                   f"lùi lại khi OwO báo Slow down / captcha. Lệnh & tuổi dữ liệu tối đa: `owo hb` (đến hạn / 3h), {plan}.")
+
+
+@bot.command(name="hbalert")
+@is_owner()
+async def hbalert_cmd(ctx, state: str = ""):
+    """`,hbalert on` = DM acc phu khi huntbot con 10 phut nua ve (ban du phong cho thong bao tren app)."""
+    st = state.strip().lower()
+    if st in ("on", "bat", "bật"):
+        await set_config("hb_alert", "on")
+    elif st in ("off", "tat", "tắt"):
+        await set_config("hb_alert", "off")
+    elif st not in ("", "status", "xem"):
+        await ctx.send("Dùng: `,hbalert on` · `,hbalert off` · `,hbalert` (xem trạng thái)")
+        return
+    on = (await get_config("hb_alert", "off")) == "on"
+    await ctx.send(("🟢 Nhắc huntbot qua DM: **BẬT**" if on else "🔴 Nhắc huntbot qua DM: **TẮT**")
+                   + " (thông báo trên điện thoại do app AutoMacro tự gửi, không phụ thuộc lệnh này).")
 
 
 @bot.command(name="track")
