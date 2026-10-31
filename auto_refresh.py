@@ -37,7 +37,6 @@ CHECK_PLAN = (
     ("quest", "owo quest", 2 * 3600),
     ("weapon_shards", "owo ws", 3 * 3600),
     ("zoo", "owo zoo", 4 * 3600),
-    ("team", "owo team", 6 * 3600),
 )
 
 

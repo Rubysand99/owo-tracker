@@ -74,10 +74,12 @@ huntbot còn ≤ 10 phút nữa là về — mỗi chuyến chỉ 1 lần. Muố
 không chạy): `,hbalert on` (mặc định tắt; `,hbalert off` để tắt).
 
 **Dữ liệu trên Hub luôn mới:**
-- Bot đọc MỌI tin OwO trong kênh được theo dõi, dù **bạn tự gõ** hay **app gõ**. Khi app tắt hoặc không farm, Hub cập nhật theo
+- Bot đọc MỌI tin OwO trong phạm vi được theo dõi (cả server nếu đã `,setserver`), dù **bạn tự gõ** hay **app gõ**. Khi app tắt hoặc không farm, Hub cập nhật theo
   đúng những lệnh bạn tự chơi (giờ huntbot về tự đếm ngược, huntbot về thì OwO tự báo nên bot cũng đọc được).
 - Khi app **đang farm**, bot nhờ app gõ **xen** các lệnh check cho mục nào đã cũ: `owo hb` (đến hạn / quá 3 giờ), `owo cash`
-  (25 phút), `owo inv` (90 phút), `owo quest` (2 giờ), `owo ws` (3 giờ), `owo zoo` (4 giờ), `owo team` (6 giờ).
+  (25 phút), `owo inv` (90 phút), `owo quest` (2 giờ), `owo ws` (3 giờ), `owo zoo` (4 giờ).
+  Bản dự phòng ở phía bot: **chính app AutoMacro đã tự chạy các lệnh check này theo vòng farm** (cash/ws/inv/zoo/quest/hb và
+  `owo daily` khi đến giờ), bot chỉ chen thêm khi dữ liệu cũ quá hạn trên.
   Tối đa 1 lệnh mỗi 3 phút; lùi lại khi OwO báo Slow down, đang captcha, `,off`, hoặc app còn lệnh chưa làm.
 - `,autocheck` xem trạng thái · `,autocheck off` / `on` để tắt/bật.
 - Lưu ý: check huntbot lúc huntbot đã xong sẽ kích hoạt tự chạy lại huntbot nếu `hb_auto` đang bật (đúng như khi bạn tự gõ `owo hb`).
@@ -237,6 +239,21 @@ từ tin đó. Gõ `,rawdump` để nhận 1 file `owo_raw.json` qua **tin nhắ
 
 Mục `weapon` luôn được ghi mẫu kể cả khi vũ khí không phải của bạn (kèm
 `saved: false` để biết bot đã bỏ qua).
+
+### Theo dõi cả 1 SERVER (khuyên dùng)
+
+`,setserver here` (gõ trong server bạn chơi OwO) hoặc `,setserver <ID server>`: bot đọc lệnh `owo` của bạn và tin OwO ở
+**mọi kênh** của server đó (kể cả kênh bạn chưa gõ lệnh), bỏ qua server khác và tin nhắn riêng. Bot nhớ kênh gần nhất
+bạn gõ lệnh để nhắn tag / mở Discord đúng chỗ. `,setserver` xem trạng thái · `,setserver xoa` bỏ giới hạn.
+`,setserver` và `,setchannel` thay thế nhau (đặt cái này thì cái kia bị bỏ).
+
+### Hub nổi bật/tắt = bot ON/OFF
+App báo cho bot mỗi khi **bật Hub nổi** (bot ON) hoặc **tắt Hub nổi** (bot OFF, giống `,off`: bot không giao việc cho app).
+Lệnh `,off` gõ tay vẫn dùng được; lần bật Hub kế tiếp sẽ ghi đè về ON.
+
+### Gem hết độ bền
+Khi tin hunt hiện gem dạng `[0/xx]` nghĩa là viên đó vừa hết, bot đặt lệnh đổi gem **ngay** thay vì chờ 2 lượt hunt thiếu gem
+(thiếu gem thì các viên còn lại hao nhanh gấp đôi).
 
 ### Giới hạn hoạt động vào 1 kênh
 

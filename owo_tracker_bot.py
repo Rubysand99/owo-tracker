@@ -228,6 +228,41 @@ async def set_config(key, value):
     await mdb[COL_CONFIG].update_one({"_id": key}, {"$set": {"value": value}}, upsert=True)
 
 
+def scope_allows(scope_guild, scope_channel, guild_id, channel_id) -> bool:
+    """Tin o (guild_id, channel_id) co thuoc pham vi theo doi khong?
+    Gioi han theo SERVER (,setserver) thang gioi han theo 1 KENH (,setchannel); ca hai trong = moi noi.
+    Tin rieng (guild_id None) khong thuoc pham vi nao khi da dat gioi han."""
+    if scope_guild:
+        return guild_id is not None and str(guild_id) == str(scope_guild)
+    if scope_channel:
+        return str(channel_id) == str(scope_channel)
+    return True
+
+
+async def tracking_scope():
+    """(server_id, kenh_id) dang gioi han; chuoi rong = khong gioi han o muc do."""
+    return (str(await get_config("tracked_guild_id") or ""), str(await get_config("tracked_channel_id") or ""))
+
+
+_last_farm_channel = {"id": None}
+
+
+async def remember_farm_channel(channel_id):
+    """Theo doi ca server: nho kenh gan nhat Ruby go lenh owo, de bot biet nhan tag / mo Discord vao dau."""
+    cid = str(channel_id)
+    if _last_farm_channel["id"] != cid:
+        _last_farm_channel["id"] = cid
+        await set_config("last_farm_channel_id", cid)
+
+
+async def notify_channel_id():
+    """Kenh de bot nhan tag Ruby: kenh chi dinh (,setchannel); theo doi ca server -> kenh gan nhat Ruby go lenh."""
+    scope_guild, scope_channel = await tracking_scope()
+    if scope_guild:
+        return await get_config("last_farm_channel_id") or None
+    return scope_channel or None
+
+
 async def get_event_mode() -> bool:
     """v29: cong tat Event do Ruby bat/tat (app hoac `,eventmode`). BAT = dang co su kien, duoc dung
     slot thu 4 = gem Special (`star`). TAT = khong bao gio tu dat gem Special."""
@@ -588,7 +623,7 @@ def weapon_advice_payload(docs):
 async def send_file_to_owner(text: str, filename: str, data: bytes):
     """Gui 1 file kem loi nhan: vao kenh theo doi (tag ban) va DM, giong notify_owner."""
     tid = await get_config("tracked_user_id")
-    cid = await get_config("tracked_channel_id")
+    cid = await notify_channel_id()
     sent = False
     if cid:
         try:
@@ -985,7 +1020,7 @@ async def save_inventory(inv, source_id=None, snapshot_id=None):
 
 async def save_gem_status(gs, source_id=None):
     """Luu tinh trang gem NGAY LUC HUNT - khoa theo slot (1/3/4...), ghi de ban cu.
-    Tra ve cac slot da BIEN MAT DUOC XAC NHAN: phai vang mat o GEM_MISSING_CONFIRM tin
+    Tra ve cac slot gem HET: (1) da hien [0/xx] = het do ben ngay luc nay; (2) BIEN MAT DUOC XAC NHAN: phai vang mat o GEM_MISSING_CONFIRM tin
     hunt lien tiep (1 tin thieu gem co the do tin cua nguoi khac / doc sot, khong phai
     gem het that). Slot chi bi xoa khoi bang trang thai khi da xac nhan."""
     seen_slots = {g["slot"] for g in gs["gems"]}
@@ -1011,6 +1046,12 @@ async def save_gem_status(gs, source_id=None):
                   f"({gem_missing_streak[slot]}/{GEM_MISSING_CONFIRM}) - cho tin tiep theo de chac. "
                   f"Slot dang thay: {sorted(seen_slots)}")
 
+    # Gem hien [0/xx] = vien do da het do ben ngay o luot hunt nay -> khong can doi den luot hunt sau thay thieu gem
+    # moi dat lenh dung: thieu gem, vien con lai hao nhanh gap doi.
+    exhausted = {g["slot"] for g in gs["gems"] if g["current"] <= 0}
+    for slot in exhausted:
+        print(f"[tracker][gem] slot {slot} hien 0/xx - gem da het do ben, dat lenh thay NGAY")
+
     for g in gs["gems"]:
         await mdb[COL_GEM_STATUS].update_one(
             {"_id": g["slot"]},
@@ -1023,7 +1064,7 @@ async def save_gem_status(gs, source_id=None):
     for slot in confirmed:
         await mdb[COL_GEM_STATUS].delete_one({"_id": slot})
         gem_missing_streak.pop(slot, None)
-    return confirmed
+    return confirmed | exhausted
 
 
 async def save_battle(b, source_id=None):
@@ -1540,7 +1581,7 @@ async def notify_owner(text: str, dm: bool = True, min_gap: int = 90, target: st
         if images:
             text += "\n🖼️ " + "  ".join(images)
     tid = await get_config("tracked_user_id")
-    cid = await get_config("tracked_channel_id")
+    cid = await notify_channel_id()
     sent = False
     if cid:
         try:
@@ -1638,6 +1679,22 @@ async def handle_post_event_mode(request: web.Request):
     return web.json_response({"event_mode": body["enabled"]})
 
 
+async def handle_post_power(request: web.Request):
+    """App bao Hub noi BAT/TAT. Body: {"on": true|false}. Hub TAT = bot khong giao viec cho app (nhu `,off`);
+    Hub BAT = bo `,off`. Luu trong Mongo nen khong mat khi Railway deploy lai."""
+    if not _check_api_token(request):
+        return web.json_response({"error": "unauthorized"}, status=401)
+    try:
+        body = await request.json()
+    except ValueError:   # body rong / khong phai JSON
+        body = {}
+    if not isinstance(body, dict) or not isinstance(body.get("on"), bool):
+        return web.json_response({"error": "on phai la true/false"}, status=400)
+    await set_app_off(not body["on"])
+    print(f"[tracker][power] Hub noi {'BAT' if body['on'] else 'TAT'} -> app {'ON' if body['on'] else 'OFF'}")
+    return web.json_response({"on": body["on"], "off": not body["on"]})
+
+
 async def farm_watchdog():
     """Chay nen: canh chung khi app dang farm. Bao Ruby neu dien thoai mat ket noi hoac OwO im lang."""
     while True:
@@ -1728,7 +1785,7 @@ async def _section_ages(now):
     """Tuoi (giay) cua tung muc tren Hub, dung dung ham dung Hub nen khop voi cai Ruby nhin thay."""
     await load_emoji_cache()
     builders = {"cowoncy": _hub_cowoncy, "inventory": _hub_inventory, "quest": _hub_quest,
-                "weapon_shards": _hub_weapon_shards, "zoo": _hub_zoo, "team": _hub_team}
+                "weapon_shards": _hub_weapon_shards, "zoo": _hub_zoo}
     ages = {}
     for key, fn in builders.items():
         d = await fn(now)
@@ -2022,7 +2079,19 @@ async def _hub_channel():
     """Kenh duoc chi dinh bang ,setchannel -> link Discord de app tu mo dung kenh.
     Link dang https://discord.com/channels/<server>/<kenh>. Chua dat kenh hoac bot khong
     nhin thay kenh (khong biet server) -> null."""
-    cid = await get_config("tracked_channel_id")
+    scope_guild, cid = await tracking_scope()
+    if scope_guild:
+        # Theo doi ca SERVER: mo Discord vao kenh Ruby farm gan nhat (neu biet), khong thi vao server
+        last = await get_config("last_farm_channel_id")
+        out = {"id": str(last or scope_guild), "name": None, "server": True,
+               "link": f"https://discord.com/channels/{scope_guild}" + (f"/{last}" if last else "")}
+        try:
+            ch = bot.get_channel(int(last)) if last else None
+            if ch is not None:
+                out["name"] = getattr(ch, "name", None)
+        except Exception as e:
+            print(f"[tracker] Khong lay duoc ten kenh: {e!r}")
+        return out
     if not cid:
         return None
     out = {"id": str(cid), "link": None, "name": None}
@@ -2088,6 +2157,7 @@ async def start_automacro_api_server():
     app.router.add_get("/alerts", handle_get_alerts)
     app.router.add_post("/notify", handle_post_notify)
     app.router.add_post("/event-mode", handle_post_event_mode)
+    app.router.add_post("/power", handle_post_power)
     app.router.add_post("/weapon-advice", handle_post_weapon_advice)
     runner = web.AppRunner(app)
     await runner.setup()
@@ -2363,8 +2433,8 @@ async def on_raw_message_edit(payload):
         author_id = (data.get("author") or {}).get("id")
         if str(author_id) != str(OWO_BOT_ID):
             return
-        tracked_channel_id = await get_config("tracked_channel_id")
-        if tracked_channel_id and str(payload.channel_id) != str(tracked_channel_id):
+        scope_guild, scope_channel = await tracking_scope()
+        if not scope_allows(scope_guild, scope_channel, getattr(payload, "guild_id", None), payload.channel_id):
             return
         channel = bot.get_channel(payload.channel_id) or await bot.fetch_channel(payload.channel_id)
         message = await channel.fetch_message(payload.message_id)
@@ -2407,10 +2477,11 @@ async def on_message(message: discord.Message):
     # HOAN TOAN moi kenh khac (khong theo doi lenh owo, khong doc tin OwO o
     # do). Lenh cua chinh bot nay (,status, ,setchannel, ,debugnext...) van
     # chay duoc o moi kenh, vi do la lenh quan tri, khong phai theo doi OwO.
-    tracked_channel_id = await get_config("tracked_channel_id")
-    if tracked_channel_id and str(message.channel.id) != str(tracked_channel_id):
+    scope_guild, scope_channel = await tracking_scope()
+    if not scope_allows(scope_guild, scope_channel, getattr(message.guild, "id", None) if message.guild else None, message.channel.id):
         await bot.process_commands(message)
         return
+    scoped = bool(scope_guild or scope_channel)
 
     tracked_id = await get_config("tracked_user_id")
     prefixes = await get_owo_prefixes()
@@ -2420,6 +2491,8 @@ async def on_message(message: discord.Message):
             and any(content_lower.startswith(p) for p in prefixes):
         pending_commands[message.channel.id] = time.time()
         farm_watch["last_command_at"] = time.time()
+        if scope_guild:
+            await remember_farm_channel(message.channel.id)
         mt = _HB_TYPED_RE.match(content_lower.strip())
         if mt:
             open_hb_window(mt.group(1))
@@ -2452,8 +2525,8 @@ async def on_message(message: discord.Message):
             # trong cung kenh se bi tinh la cua ban (gem, tien, zoo cua nguoi do lan vao du lieu).
             farm_watch["last_reply_at"] = time.time()
             await handle_owo_response(message, tracked_id)
-        elif tracked_channel_id and await tracked_name_set(tracked_id):
-            # v29: da chon kenh farm (,setchannel) -> doc MOI tin OwO trong kenh, khong can cho lenh
+        elif scoped and await tracked_name_set(tracked_id):
+            # v29: da chon kenh (,setchannel) hoac ca server (,setserver) -> doc MOI tin OwO, khong can cho lenh
             # (tin su kien tu bung ra, lenh go tat nhu Oah/Oq...). Tin cua nguoi khac van bi loc
             # theo ten/<@id>/reply. CHI khi bot da biet ten cua ban (tracked_names nam trong RAM,
             # mat sau moi lan khoi dong lai): chua biet ten thi khong loc duoc tin nguoi khac,
@@ -2913,6 +2986,7 @@ async def rawdump_cmd(ctx, *, arg: str = ""):
     payload = {
         "tao_luc": _utcnow().isoformat() + "Z",
         "kenh_gioi_han": await get_config("tracked_channel_id") or None,
+        "server_gioi_han": await get_config("tracked_guild_id") or None,
         "chua_thay_loai_nao": missing,
         "mau": samples,
     }
@@ -2963,7 +3037,46 @@ async def setchannel_cmd(ctx, *, arg: str = ""):
         await ctx.send("Không đọc được kênh. Dùng: `,setchannel #kênh` hoặc dán thẳng ID kênh.")
         return
     await set_config("tracked_channel_id", channel_id)
+    await set_config("tracked_guild_id", "")   # gioi han 1 kenh thay cho gioi han ca server
     await ctx.send(f"Đã giới hạn: owo-tracker giờ CHỈ xử lý lệnh/tin nhắn OwO trong <#{channel_id}>.")
+
+
+@bot.command(name="setserver")
+@is_owner()
+async def setserver_cmd(ctx, *, arg: str = ""):
+    """Gioi han owo-tracker theo doi CA 1 SERVER (moi kenh trong server do) thay vi 1 kenh duy nhat.
+    Bot doc moi tin OwO + lenh owo cua ban o MOI kenh cua server nay; server khac / tin rieng bi bo qua.
+    Dung: ,setserver here (server dang go lenh) · ,setserver <ID server> · ,setserver xoa (bo gioi han).
+    Khong kem gi: xem trang thai. Dat server se bo gioi han 1 kenh (,setchannel), va nguoc lai."""
+    arg = arg.strip()
+    current = await get_config("tracked_guild_id")
+    if not arg:
+        if current:
+            g = bot.get_guild(int(current)) if str(current).isdigit() else None
+            await ctx.send(f"Đang theo dõi cả server **{g.name if g else current}** (`{current}`) — mọi kênh trong server.\n"
+                           f"Đổi: `,setserver here` · Bỏ giới hạn: `,setserver xoa`")
+        else:
+            await ctx.send("Chưa giới hạn server nào. Theo dõi cả server: `,setserver here` (gõ trong server đó)")
+        return
+    if arg.lower() in ("xoa", "xóa", "clear"):
+        await set_config("tracked_guild_id", "")
+        await ctx.send("Đã bỏ giới hạn server.")
+        return
+    if arg.lower() in ("here", "day", "đây", "nay"):
+        if ctx.guild is None:
+            await ctx.send("Lệnh này phải gõ trong một server (không phải tin nhắn riêng), hoặc dùng `,setserver <ID server>`.")
+            return
+        gid = str(ctx.guild.id)
+    else:
+        gid = arg.strip()
+        if not gid.isdigit():
+            await ctx.send("Không đọc được server. Dùng: `,setserver here` hoặc dán ID server.")
+            return
+    await set_config("tracked_guild_id", gid)
+    await set_config("tracked_channel_id", "")   # theo doi ca server thay cho gioi han 1 kenh
+    g = bot.get_guild(int(gid))
+    await ctx.send(f"Đã chuyển sang theo dõi cả server **{g.name if g else gid}** — bot giờ đọc lệnh owo và tin OwO ở MỌI kênh "
+                   f"của server này (server khác bị bỏ qua).")
 
 
 @bot.command(name="weaponowner")
@@ -2998,9 +3111,14 @@ async def status(ctx):
 
     embed = discord.Embed(title="Trạng thái theo dõi", color=0xD9A227)
     embed.add_field(name="Đang theo dõi", value=f"<@{tracked}>" if tracked else "Chưa đặt — dùng `,track`", inline=False)
-    tracked_channel = await get_config("tracked_channel_id")
-    embed.add_field(name="Giới hạn kênh",
-                     value=f"<#{tracked_channel}>" if tracked_channel else "Không giới hạn — mọi kênh", inline=False)
+    scope_guild, tracked_channel = await tracking_scope()
+    if scope_guild:
+        scope_text = f"Cả server `{scope_guild}` (mọi kênh)"
+    elif tracked_channel:
+        scope_text = f"<#{tracked_channel}>"
+    else:
+        scope_text = "Không giới hạn — mọi nơi bot nhìn thấy"
+    embed.add_field(name="Phạm vi theo dõi", value=scope_text, inline=False)
     if skipped_foreign["name"] is not None:
         embed.add_field(name="Tin bị bỏ qua (tên khác bạn)",
                          value=f"{skipped_foreign['count']} tin, gần nhất của **{skipped_foreign['name']}**. "
