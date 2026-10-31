@@ -1176,12 +1176,47 @@ async def queue_automacro_command(action: str, params: dict):
     return doc_id
 
 
+AUTH_FAIL_LIMIT = 10        # so lan sai token toi da trong cua so ben duoi
+AUTH_FAIL_WINDOW = 300      # giay: vuot qua thi khoa IP do trong chinh khoang nay
+_auth_failures = {}         # ip -> [thoi diem sai gan nhat]
+
+
+def _client_ip(request: web.Request) -> str:
+    """IP that cua nguoi goi. Sau Caddy/nginx (chay cung may) thi lay tu X-Forwarded-For."""
+    remote = getattr(request, "remote", None) or "?"
+    if remote in ("127.0.0.1", "::1"):
+        fwd = request.headers.get("X-Forwarded-For", "")
+        if fwd:
+            return fwd.split(",")[0].strip() or remote
+    return remote
+
+
+def _auth_locked(ip: str, now: float = None) -> bool:
+    now = time.time() if now is None else now
+    recent = [t for t in _auth_failures.get(ip, []) if now - t < AUTH_FAIL_WINDOW]
+    if recent:
+        _auth_failures[ip] = recent
+    else:
+        _auth_failures.pop(ip, None)
+    return len(recent) >= AUTH_FAIL_LIMIT
+
+
 def _check_api_token(request: web.Request) -> bool:
     if not AUTOMACRO_API_TOKEN:
         return False
+    ip = _client_ip(request)
+    if _auth_locked(ip):
+        return False   # dang bi khoa vi sai token qua nhieu lan
     got = request.headers.get("Authorization", "").encode("utf-8")
     want = f"Bearer {AUTOMACRO_API_TOKEN}".encode("utf-8")
-    return hmac.compare_digest(got, want)
+    ok = hmac.compare_digest(got, want)
+    if ok:
+        _auth_failures.pop(ip, None)
+    else:
+        _auth_failures.setdefault(ip, []).append(time.time())
+        if len(_auth_failures) > 2000:   # chong day bo nho
+            _auth_failures.pop(next(iter(_auth_failures)))
+    return ok
 
 
 async def handle_get_pending_commands(request: web.Request):
@@ -1212,7 +1247,9 @@ async def handle_ack_command(request: web.Request):
         body = await request.json()
     except ValueError:   # body rong / khong phai JSON (JSONDecodeError la con cua ValueError)
         body = {}
-    status = body.get("status", "done")  # "done" hoac "failed"
+    status = body.get("status", "done") if isinstance(body, dict) else "done"  # "done" hoac "failed"
+    if status not in ("done", "failed"):
+        return web.json_response({"error": "status phai la done hoac failed"}, status=400)
     cmd = await mdb[COL_AUTOMACRO_COMMANDS].find_one({"_id": cmd_id})
     await mdb[COL_AUTOMACRO_COMMANDS].update_one(
         {"_id": cmd_id},
@@ -2413,9 +2450,11 @@ async def on_ready():
         if not _automacro_api_started:
             _automacro_api_started = True
             if len(AUTOMACRO_API_TOKEN) < 24:
-                print("[tracker] ⚠️ AUTOMACRO_API_TOKEN ngắn (<24 ký tự) — nên dùng chuỗi ngẫu nhiên dài hơn, "
-                      "vì API này mở ra internet và chỉ được bảo vệ bằng token.")
-            asyncio.create_task(start_automacro_api_server())
+                print("[tracker] ❌ AUTOMACRO_API_TOKEN ngắn (<24 ký tự) — API cho AutoMacro KHÔNG chạy. "
+                      "Hãy dùng chuỗi ngẫu nhiên dài hơn (vd `openssl rand -hex 24`), vì API này mở ra internet "
+                      "và chỉ được bảo vệ bằng token.")
+            else:
+                asyncio.create_task(start_automacro_api_server())
     else:
         print("[tracker] Chưa đặt AUTOMACRO_API_TOKEN — API cho AutoMacro KHÔNG chạy (an toàn mặc định).")
 
@@ -3206,6 +3245,7 @@ async def weaponowner_cmd(ctx, *, aliases: str = ""):
 
 
 @bot.command(name="status")
+@is_owner()
 async def status(ctx):
     tracked = await get_config("tracked_user_id")
     last_hunt = await mdb[COL_HUNTBOT].find_one(sort=[("_id", -1)])
@@ -3232,6 +3272,7 @@ async def status(ctx):
 
 
 @bot.command(name="huntbot")
+@is_owner()
 async def huntbot_cmd(ctx):
     row = await mdb[COL_HUNTBOT].find_one(sort=[("_id", -1)])
     if not row:
@@ -3247,6 +3288,7 @@ async def huntbot_cmd(ctx):
 
 
 @bot.command(name="quests")
+@is_owner()
 async def quests_cmd(ctx):
     row = await mdb[COL_QUEST].find_one(sort=[("_id", -1)])
     if not row:
@@ -3257,6 +3299,7 @@ async def quests_cmd(ctx):
 
 
 @bot.command(name="team")
+@is_owner()
 async def team_cmd(ctx):
     cursor = mdb[COL_TEAM].find().sort("_id", 1)
     rows = await cursor.to_list(length=10)
@@ -3269,8 +3312,9 @@ async def team_cmd(ctx):
 
 
 @bot.command(name="myweapons")
+@is_owner()
 async def myweapons_cmd(ctx, *, search: str = ""):
-    q = {"type_name": {"$regex": search, "$options": "i"}} if search else {}
+    q = {"type_name": {"$regex": re.escape(search), "$options": "i"}} if search else {}
     cursor = mdb[COL_WEAPON_INSTANCES].find(q).sort("updated_at", -1).limit(15)
     rows = await cursor.to_list(length=15)
     if not rows:
@@ -3282,6 +3326,7 @@ async def myweapons_cmd(ctx, *, search: str = ""):
 
 
 @bot.command(name="zoo")
+@is_owner()
 async def zoo_cmd(ctx, *, search: str = ""):
     doc = await mdb[COL_ZOO].find_one({"_id": "latest"})
     if not doc:
@@ -3309,8 +3354,9 @@ async def zoo_cmd(ctx, *, search: str = ""):
 
 
 @bot.command(name="inv")
+@is_owner()
 async def inv_cmd(ctx, *, search: str = ""):
-    q = {"name": {"$regex": search, "$options": "i"}} if search else {}
+    q = {"name": {"$regex": re.escape(search), "$options": "i"}} if search else {}
     cursor = mdb[COL_INVENTORY].find(q).sort("code", 1)
     rows = await cursor.to_list(length=100)
     if not rows:
@@ -3323,6 +3369,7 @@ async def inv_cmd(ctx, *, search: str = ""):
 
 
 @bot.command(name="gems")
+@is_owner()
 async def gems_cmd(ctx):
     cursor = mdb[COL_GEM_STATUS].find().sort("_id", 1)
     rows = await cursor.to_list(length=10)
@@ -3762,6 +3809,7 @@ async def automacro_cmd(ctx, action: str = ""):
 # LỆNH: ghi chú
 # ----------------------------------------------------------------------
 @bot.command(name="note")
+@is_owner()
 async def note_cmd(ctx, action: str = "list", *, text: str = ""):
     if action == "add" and text:
         nid = await next_note_id()
@@ -3785,6 +3833,7 @@ async def note_cmd(ctx, action: str = "list", *, text: str = ""):
 # LỆNH: pet species — xem/tra cứu + nhập tay khi cần
 # ----------------------------------------------------------------------
 @bot.command(name="pet", aliases=["dex"])
+@is_owner()
 async def pet_cmd(ctx, *, name: str = ""):
     if not name:
         await ctx.send("Dùng: `,pet <tên>` (hoặc `,dex <tên>`)")
@@ -3827,8 +3876,9 @@ async def pet_cmd(ctx, *, name: str = ""):
 
 
 @bot.command(name="pets")
+@is_owner()
 async def pets_cmd(ctx, *, search: str = ""):
-    q = {"display_name": {"$regex": search, "$options": "i"}} if search else {}
+    q = {"display_name": {"$regex": re.escape(search), "$options": "i"}} if search else {}
     cursor = mdb[COL_PET_SPECIES].find(q).sort("display_name", 1).limit(25)
     rows = await cursor.to_list(length=25)
     if not rows:
@@ -3840,6 +3890,7 @@ async def pets_cmd(ctx, *, search: str = ""):
 
 
 @bot.command(name="petset")
+@is_owner()
 async def petset_cmd(ctx, name: str, rank: str, hp: int, att: int, pr: int, wp: int, mag: int, mr: int):
     """Nhập tay 1 pet khi không có sẵn owodex — vd đọc từ nguồn khác.
     Dùng: ,petset <tên> <rank> <hp> <att> <pr> <wp> <mag> <mr>"""
@@ -3859,6 +3910,7 @@ async def petset_cmd(ctx, name: str, rank: str, hp: int, att: int, pr: int, wp: 
 # LỆNH: weapon types — xem/tra cứu + nhập tay
 # ----------------------------------------------------------------------
 @bot.command(name="weapontype")
+@is_owner()
 async def weapontype_cmd(ctx, *, name: str = ""):
     if not name:
         await ctx.send("Dùng: `,weapontype <tên>`")
@@ -3880,8 +3932,9 @@ async def weapontype_cmd(ctx, *, name: str = ""):
 
 
 @bot.command(name="weapontypes")
+@is_owner()
 async def weapontypes_cmd(ctx, *, search: str = ""):
-    q = {"display_name": {"$regex": search, "$options": "i"}} if search else {}
+    q = {"display_name": {"$regex": re.escape(search), "$options": "i"}} if search else {}
     cursor = mdb[COL_WEAPON_TYPES].find(q).sort("display_name", 1).limit(25)
     rows = await cursor.to_list(length=25)
     if not rows:
@@ -3893,6 +3946,7 @@ async def weapontypes_cmd(ctx, *, search: str = ""):
 
 
 @bot.command(name="weapontypeset")
+@is_owner()
 async def weapontypeset_cmd(ctx, name: str, *, desc: str):
     """Nhập/sửa tay mô tả 1 loại vũ khí. Dùng: ,weapontypeset <tên> <mô tả>"""
     key = name.lower()
@@ -3909,6 +3963,7 @@ async def weapontypeset_cmd(ctx, name: str, *, desc: str):
 # LỆNH: passives — xem/tra cứu + nhập tay
 # ----------------------------------------------------------------------
 @bot.command(name="passive")
+@is_owner()
 async def passive_cmd(ctx, *, name: str = ""):
     if not name:
         await ctx.send("Dùng: `,passive <tên>`")
@@ -3924,8 +3979,9 @@ async def passive_cmd(ctx, *, name: str = ""):
 
 
 @bot.command(name="passives")
+@is_owner()
 async def passives_cmd(ctx, *, search: str = ""):
-    q = {"display_name": {"$regex": search, "$options": "i"}} if search else {}
+    q = {"display_name": {"$regex": re.escape(search), "$options": "i"}} if search else {}
     cursor = mdb[COL_PASSIVES].find(q).sort("display_name", 1).limit(25)
     rows = await cursor.to_list(length=25)
     if not rows:
@@ -3935,6 +3991,7 @@ async def passives_cmd(ctx, *, search: str = ""):
 
 
 @bot.command(name="passiveset")
+@is_owner()
 async def passiveset_cmd(ctx, name: str, *, desc: str):
     """Nhập/sửa tay 1 passive. Dùng: ,passiveset <tên> <mô tả>"""
     await save_passive(name, desc, str(ctx.author.id))

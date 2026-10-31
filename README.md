@@ -125,14 +125,17 @@ Xem lệnh đang chờ / đã xử lý ngay trong Discord: `,automacro` (owner).
   tính từ lúc bot thấy tin nhắn), `quest`, `team`, `zoo`,
   `inventory`, `weapons`. Mục nào bot chưa thấy lần nào thì là `null`.
   Mỗi mục có `updated_at` + `age_seconds` để biết dữ liệu cũ hay mới.
-- Cả 3 đều cần header `Authorization: Bearer <AUTOMACRO_API_TOKEN>`,
-  thiếu/sai token trả về lỗi 401.
+- Mọi đường API đều cần header `Authorization: Bearer <AUTOMACRO_API_TOKEN>`,
+  thiếu/sai token trả về lỗi 401. Sai token 10 lần trong 5 phút thì IP đó bị khoá 5 phút
+  (sau Caddy, IP thật lấy từ `X-Forwarded-For`). Token dưới 24 ký tự thì API **không chạy**.
 
 **Hub chỉ biết những gì OwO đã in ra khi bạn gõ lệnh.** Ví dụ muốn có
 danh sách pet mới thì gõ `owo zoo`; muốn kho mới thì gõ `owo inventory`;
 vũ khí chỉ có những cây bạn từng xem bằng `owo weapon <ID>`.
 
 ## Dùng thử
+
+> Mọi lệnh bot (trừ `,ping`, `,help`, `,captcha` xem trạng thái) **chỉ chủ bot** (`OWNER_ID`) dùng được.
 
 ```
 ,track @Ruby            → đặt tài khoản cần theo dõi (chỉ owner)
