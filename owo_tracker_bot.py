@@ -3050,6 +3050,96 @@ async def setchannel_cmd(ctx, *, arg: str = ""):
     await ctx.send(f"Đã giới hạn: owo-tracker giờ CHỈ xử lý lệnh/tin nhắn OwO trong <#{channel_id}>.")
 
 
+# ----------------------------------------------------------------------
+# ZOO -> DEX: pet nao dang giu ma chua co thong tin dex thi nho app go `owo dex <pet>`
+# ----------------------------------------------------------------------
+DEX_BATCH_MAX = 20                 # toi da bay nhieu pet moi lan (app go cach nhau 2,5-5,5 giay, lenh het han sau 10 phut)
+DEX_RETRY_SECONDS = 15 * 60        # da nho app tra 1 pet ma chua thay dex -> cho bay nhieu giay moi nho lai
+ZOO_STALE_SECONDS = 6 * 3600       # zoo cu hon thi nhac nen `owo zoo` lai truoc
+_dex_requested = {}                # ten pet (thuong) -> time.time() luc nho app tra dex
+
+
+def _dex_name_ok(name) -> bool:
+    """Ten pet se duoc GO vao Discord nen chi nhan chu/so/gach duoi (ten emoji cua OwO)."""
+    return bool(re.fullmatch(r"[A-Za-z0-9_]{1,32}", str(name)))
+
+
+async def zoo_pets_missing_dex():
+    """Tu ZOO HIEN TAI: pet nao dang giu (so luong > 0) ma chua co dex. Khop theo ten HOAC bi danh trong dex.
+    Tra ve None neu chua co zoo; nguoc lai {"missing": [...], "held": so_pet_dang_giu, "updated_at": ...}."""
+    zoo = await mdb[COL_ZOO].find_one({"_id": "latest"})
+    if not zoo or not zoo.get("pets"):
+        return None
+    known = set()
+    async for r in mdb[COL_PET_SPECIES].find({}):
+        known.add(str(r["_id"]).lower())
+        for a in r.get("aliases") or []:
+            known.add(str(a).lower())
+    held = {}
+    for p in zoo["pets"]:
+        if p.get("name") and (p.get("count") or 0) > 0:
+            held.setdefault(str(p["name"]).lower(), str(p["name"]))
+    missing = sorted((n for k, n in held.items() if k not in known), key=str.lower)
+    return {"missing": missing, "held": len(held), "updated_at": zoo.get("updated_at")}
+
+
+@bot.command(name="zoodex", aliases=["dexzoo"])
+@is_owner()
+async def zoodex_cmd(ctx, mode: str = ""):
+    """Check zoo hien tai: pet nao CHUA co thong tin dex thi nho app go `owo dex <pet>` cho tung con.
+    `,zoodex` = nho app tra (toi da 20 con moi lan, gõ lai de lam tiep) · `,zoodex xem` = chi liet ke, khong nho app."""
+    info = await zoo_pets_missing_dex()
+    if info is None:
+        await ctx.send("Chưa có dữ liệu zoo. Gõ `owo zoo` trong Discord để bot đọc zoo, rồi thử lại `,zoodex`.")
+        return
+    stale = ""
+    updated = _parse_utc(info["updated_at"])
+    if updated and (_utcnow() - updated).total_seconds() > ZOO_STALE_SECONDS:
+        stale = f"\n⚠️ Zoo đọc lần cuối cách đây {int((_utcnow() - updated).total_seconds() // 3600)} giờ — nên gõ `owo zoo` lại cho đúng."
+    missing = info["missing"]
+    if not missing:
+        await ctx.send(f"✅ Cả {info['held']} loại pet đang giữ trong zoo đều đã có thông tin dex.{stale}")
+        return
+    if mode.strip().lower() in ("xem", "list", "ds"):
+        shown = ", ".join(f"`{n}`" for n in missing[:60]) + (f" … (+{len(missing) - 60})" if len(missing) > 60 else "")
+        await ctx.send(f"📖 {len(missing)}/{info['held']} loại pet trong zoo chưa có dex: {shown}\n"
+                       f"Gõ `,zoodex` để nhờ app tra.{stale}")
+        return
+
+    now_ts = time.time()
+    pending = set()
+    async for c in mdb[COL_AUTOMACRO_COMMANDS].find({"status": "pending", "action": "dex_pet"}):
+        pending.add(str((c.get("params") or {}).get("pet", "")).lower())
+    bad = [n for n in missing if not _dex_name_ok(n)]
+    recent = [n for n in missing if _dex_name_ok(n)
+              and (n.lower() in pending or now_ts - _dex_requested.get(n.lower(), 0) < DEX_RETRY_SECONDS)]
+    todo = [n for n in missing if _dex_name_ok(n) and n not in recent]
+    batch = todo[:DEX_BATCH_MAX]
+    queued = []
+    for n in batch:
+        cid = await queue_automacro_command("dex_pet", {"command_text": f"owo dex {n}", "pet": n})
+        if cid is None:
+            break
+        _dex_requested[n.lower()] = now_ts
+        queued.append(n)
+    lines = [f"📖 Zoo có {info['held']} loại pet, **{len(missing)}** chưa có dex."]
+    if queued:
+        secs = len(queued) * 7
+        lines.append(f"Đã nhờ app gõ `owo dex` cho **{len(queued)}** pet: " + ", ".join(f"`{n}`" for n in queued[:30])
+                     + f" (khoảng {secs // 60} phút {secs % 60} giây; cần Hub nổi đang BẬT).")
+    elif todo:
+        lines.append("Không xếp được lệnh nào cho app (app đang TẮT?).")
+    not_queued = len(todo) - len(queued)   # vuot gioi han moi luot (hoac khong xep duoc)
+    if queued and not_queued:
+        lines.append(f"Còn {not_queued} pet chưa xếp — gõ lại `,zoodex` sau khi app xong lượt này.")
+    if recent:
+        lines.append(f"{len(recent)} pet đã nhờ app tra gần đây mà chưa thấy dex (chờ hoặc tên không tra được): "
+                     + ", ".join(f"`{n}`" for n in recent[:15]) + ".")
+    if bad:
+        lines.append(f"Bỏ qua {len(bad)} tên lạ (không an toàn để gõ): " + ", ".join(f"`{n}`" for n in bad[:5]) + ".")
+    await ctx.send("\n".join(lines) + stale)
+
+
 @bot.command(name="setserver")
 @is_owner()
 async def setserver_cmd(ctx, *, arg: str = ""):
@@ -3442,7 +3532,7 @@ async def zoodiff_cmd(ctx, kind: str = ""):
         await ctx.send(chunk)
 
 
-APP_DRIVING_COMMANDS = {"hbstart", "hbcode", "weaponscan", "weaponprobe"}  # các lệnh nhờ app gõ lệnh vào OwO
+APP_DRIVING_COMMANDS = {"hbstart", "hbcode", "weaponscan", "weaponprobe", "zoodex"}  # các lệnh nhờ app gõ lệnh vào OwO
 
 
 @bot.check
@@ -3887,6 +3977,7 @@ async def help_cmd(ctx):
         ("Ghi chú", [("note", "`,note add <text>` · `,note list` · `,note done <id>`")]),
         ("Pet (loài)", [
             ("pet", "`,pet <tên>` / `,dex <tên>`"), ("pets", "`,pets [tìm]`"),
+            ("zoodex", "`,zoodex` nhờ app tra dex cho pet trong zoo chưa có dex · `,zoodex xem` chỉ liệt kê"),
             ("petset", "`,petset <tên> <rank> <hp> <att> <pr> <wp> <mag> <mr>`")]),
         ("Loại vũ khí", [
             ("weapontype", "`,weapontype <tên>`"), ("weapontypes", "`,weapontypes [tìm]`"),

@@ -257,6 +257,13 @@ Lệnh `,off` gõ tay hoạt động y hệt; lần bật Hub kế tiếp sẽ g
 Khi tin hunt hiện gem dạng `[0/xx]` nghĩa là viên đó vừa hết, bot đặt lệnh đổi gem **ngay** thay vì chờ 2 lượt hunt thiếu gem
 (thiếu gem thì các viên còn lại hao nhanh gấp đôi).
 
+### Zoo → Dex: tự tra pet chưa có thông tin dex
+`,zoodex` đối chiếu **zoo hiện tại** (pet đang giữ, số lượng > 0) với sổ tay dex; pet nào chưa có dex (so theo tên và bí danh)
+thì bot nhờ app gõ `owo dex <pet>` cho từng con (giãn cách vài giây, cần Hub nổi đang BẬT). Dex trả về được bot tự ghi nhận
+như mọi lần `owo dex` khác. Mỗi lượt tối đa 20 con; còn dư thì gõ lại `,zoodex` sau khi app xong. Pet vừa nhờ tra trong vòng
+15 phút không bị nhờ lại. `,zoodex xem` chỉ liệt kê, không nhờ app. Zoo cũ quá 6 giờ thì bot nhắc gõ `owo zoo` lại.
+Khi Hub tắt (app OFF) lệnh này bị chặn.
+
 ### Giới hạn hoạt động vào 1 kênh
 
 Mặc định bot xử lý lệnh `owo` + tin nhắn OwO ở **mọi kênh** nó có mặt. Dùng
