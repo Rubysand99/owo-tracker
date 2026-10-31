@@ -248,8 +248,10 @@ bạn gõ lệnh để nhắn tag / mở Discord đúng chỗ. `,setserver` xem 
 `,setserver` và `,setchannel` thay thế nhau (đặt cái này thì cái kia bị bỏ).
 
 ### Hub nổi bật/tắt = bot ON/OFF
-App báo cho bot mỗi khi **bật Hub nổi** (bot ON) hoặc **tắt Hub nổi** (bot OFF, giống `,off`: bot không giao việc cho app).
-Lệnh `,off` gõ tay vẫn dùng được; lần bật Hub kế tiếp sẽ ghi đè về ON.
+App báo cho bot mỗi khi **bật Hub nổi** (ON) hoặc **tắt Hub nổi** (OFF). OFF chỉ nghĩa là **bot ngừng gửi yêu cầu cho app**
+(không giao việc đổi gem, không tự chen lệnh check, không nhờ app gõ mã huntbot; việc đang xếp hàng chờ bị huỷ).
+Bot **vẫn theo dõi bình thường**: cứ đọc lệnh bạn tự gõ và mọi tin OwO, Hub/dữ liệu vẫn cập nhật.
+Lệnh `,off` gõ tay hoạt động y hệt; lần bật Hub kế tiếp sẽ ghi đè về ON.
 
 ### Gem hết độ bền
 Khi tin hunt hiện gem dạng `[0/xx]` nghĩa là viên đó vừa hết, bot đặt lệnh đổi gem **ngay** thay vì chờ 2 lượt hunt thiếu gem

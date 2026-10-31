@@ -155,6 +155,29 @@ async def scenarios():
         r = await b.handle_post_power(req({"on": False}))
         check("power: Hub TẮT -> 200, app OFF", (r.status, json.loads(r.text)["off"], await b.is_app_off()), (200, True, True))
         check("power: Hub tắt -> bot KHÔNG giao việc cho app", await b.queue_automacro_command("swap_gem", {"command_text": "owo use 1"}), None)
+        # Hub TẮT chỉ chặn việc giao việc cho app — bot VẪN theo dõi bình thường khi Ruby tự chơi
+        await b.mdb[b.COL_AUTOMACRO_COMMANDS].insert_one(
+            {"_id": 7, "action": "swap_gem", "params": {"command_text": "owo use 5"}, "status": "pending",
+             "created_at": b._utcnow().isoformat(), "completed_at": None})
+        r = await b.handle_post_power(req({"on": False}))
+        pend = await b.mdb[b.COL_AUTOMACRO_COMMANDS].count_documents({"status": "pending"})
+        check("power: Hub tắt -> hủy các lệnh đang chờ app (không tự chạy bất ngờ khi bật lại)",
+              (json.loads(r.text)["cancelled"], pend), (1, 0))
+        await b.set_config("tracked_user_id", "555"); b.tracked_names.clear(); b.pending_commands.clear()
+        async def noop(msg): return None
+        orig_pc, b.bot.process_commands = b.bot.process_commands, noop
+        me = NS(id=555, display_name="Ruby", global_name="Ruby", nick=None, name="ruby")
+        try:
+            await b.set_config("tracked_guild_id", ""); await b.set_config("tracked_channel_id", "")
+            await b.on_message(NS(content="owo cash", author=me, guild=NS(id=1), channel=NS(id=9)))
+            await b.on_message(NS(content="Ruby, you currently have 4242 cowoncy!", embeds=[], components=[], guild=NS(id=1), id=1,
+                                  reference=None, author=NS(id=b.OWO_BOT_ID, bot=True), channel=NS(id=9)))
+        finally:
+            b.bot.process_commands = orig_pc
+        hub = await b.build_hub()
+        check("Hub TẮT: bot VẪN đọc tin OwO khi Ruby tự chơi (số dư cập nhật)", (hub.get("cowoncy") or {}).get("amount"), 4242)
+        check("Hub TẮT: vẫn báo giờ huntbot cho thông báo trên điện thoại (không phụ thuộc Hub)",
+              (await b._huntbot_timing(b._utcnow()))["hunting"], False)
         r = await b.handle_post_power(req({"on": True}))
         check("power: Hub BẬT -> 200, app ON", (r.status, json.loads(r.text)["off"], await b.is_app_off()), (200, False, False))
         check("power: Hub bật -> giao việc lại bình thường", await b.queue_automacro_command("swap_gem", {"command_text": "owo use 1"}) is not None, True)

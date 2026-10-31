@@ -1691,8 +1691,17 @@ async def handle_post_power(request: web.Request):
     if not isinstance(body, dict) or not isinstance(body.get("on"), bool):
         return web.json_response({"error": "on phai la true/false"}, status=400)
     await set_app_off(not body["on"])
-    print(f"[tracker][power] Hub noi {'BAT' if body['on'] else 'TAT'} -> app {'ON' if body['on'] else 'OFF'}")
-    return web.json_response({"on": body["on"], "off": not body["on"]})
+    cancelled = 0
+    if not body["on"]:
+        # Hub tat = bot ngung giao viec cho app. Viec da xep hang cho thi huy (nhu `,off`), khong de no tu chay
+        # bat ngo luc Ruby bat Hub lai. Bot VAN theo doi / doc tin OwO binh thuong.
+        res = await mdb[COL_AUTOMACRO_COMMANDS].update_many(
+            {"status": "pending"}, {"$set": {"status": "cancelled", "completed_at": _utcnow().isoformat()}})
+        cancelled = getattr(res, "modified_count", 0)
+        hb_pending["at"] = 0.0   # huy cua so cho ma huntbot (app khong con de go ma)
+    print(f"[tracker][power] Hub noi {'BAT' if body['on'] else 'TAT'} -> app {'ON' if body['on'] else 'OFF'}"
+          + (f" (huy {cancelled} lenh dang cho)" if cancelled else ""))
+    return web.json_response({"on": body["on"], "off": not body["on"], "cancelled": cancelled})
 
 
 async def farm_watchdog():
