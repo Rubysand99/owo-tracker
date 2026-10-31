@@ -1,0 +1,32 @@
+# systemd unit cho owo-tracker. setup-vps.sh điền @APP_DIR@ / @APP_USER@ / @ENV_FILE@ rồi chép vào /etc/systemd/system/
+[Unit]
+Description=owo-tracker (bot Discord + API cho AutoMacro)
+After=network-online.target
+Wants=network-online.target
+# Nếu cấu hình sai khiến bot chết liên tục thì dừng thử lại sau 8 lần trong 2 phút (xem: systemctl status owo-tracker)
+StartLimitIntervalSec=120
+StartLimitBurst=8
+
+[Service]
+Type=simple
+User=@APP_USER@
+Group=@APP_USER@
+WorkingDirectory=@APP_DIR@
+# Chứa DISCORD_TOKEN, MONGODB_URI... (root đọc được là đủ: systemd đọc file này trước khi hạ quyền)
+EnvironmentFile=@ENV_FILE@
+# Không có dòng này thì log (print) bị đệm và xuất hiện rất trễ trong journalctl
+Environment=PYTHONUNBUFFERED=1
+ExecStart=@APP_DIR@/.venv/bin/python owo_tracker_bot.py
+Restart=on-failure
+RestartSec=5
+
+# Hạn chế quyền: bot chỉ cần mạng và đọc/ghi trong thư mục của nó
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+
+[Install]
+WantedBy=multi-user.target

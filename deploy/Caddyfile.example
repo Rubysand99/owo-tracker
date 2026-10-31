@@ -1,0 +1,6 @@
+# Caddy tự xin và gia hạn chứng chỉ HTTPS (Let's Encrypt). Thay domain bằng domain của bạn.
+# Cần: domain đã trỏ về IP VPS, và cổng 80 + 443 đang mở. setup-vps.sh (DOMAIN=...) tự ghi file này vào /etc/caddy/Caddyfile.
+bot.example.com {
+	encode gzip
+	reverse_proxy 127.0.0.1:8080
+}

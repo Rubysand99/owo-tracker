@@ -84,6 +84,12 @@ không chạy): `,hbalert on` (mặc định tắt; `,hbalert off` để tắt).
 - `,autocheck` xem trạng thái · `,autocheck off` / `on` để tắt/bật.
 - Lưu ý: check huntbot lúc huntbot đã xong sẽ kích hoạt tự chạy lại huntbot nếu `hb_auto` đang bật (đúng như khi bạn tự gõ `owo hb`).
 
+## Chạy trên VPS
+
+Hướng dẫn đầy đủ (cài bằng 1 lệnh, HTTPS tự động bằng Caddy, chạy nền bằng systemd, cập nhật bằng `update.sh`) nằm trong
+[`deploy/VPS.md`](deploy/VPS.md). Tóm tắt: `sudo DOMAIN=bot.example.com bash deploy/setup-vps.sh`. Bot đọc thêm biến
+`AUTOMACRO_API_HOST` (mặc định `0.0.0.0`; trên VPS đặt `127.0.0.1` để chỉ Caddy gọi được vào API).
+
 ## Kết nối với AutoMacro (tự động thay gem)
 
 Bot có thể ghi "lệnh cần làm" vào MongoDB để app Android **AutoMacro**

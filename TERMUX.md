@@ -95,6 +95,8 @@ git push
 
 Muốn xem lại đã đổi gì trước khi commit: `git status` hoặc `git diff`.
 
+> 💡 Muốn bot chạy ổn định 24/7 thay vì trên điện thoại? Xem [`deploy/VPS.md`](deploy/VPS.md) (chạy trên VPS).
+
 ## 5. (Tuỳ chọn) Chạy luôn bot trên điện thoại qua Termux
 
 ```bash

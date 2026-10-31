@@ -91,6 +91,8 @@ CORRELATION_WINDOW = 20  # giây — cửa sổ khớp lệnh owo với phản h
 # tranh mo cong ma khong ai bao ve).
 AUTOMACRO_API_TOKEN = os.environ.get("AUTOMACRO_API_TOKEN")
 AUTOMACRO_API_PORT = int(os.environ.get("PORT", os.environ.get("AUTOMACRO_API_PORT", "8080")))
+# Dia chi lang nghe cua API. Mac dinh 0.0.0.0 (Railway/Termux). Tren VPS dat 127.0.0.1 va de Caddy/nginx lo HTTPS ben ngoai.
+AUTOMACRO_API_HOST = os.environ.get("AUTOMACRO_API_HOST", "0.0.0.0")
 COL_AUTOMACRO_COMMANDS = "owot_automacro_commands"
 
 intents = discord.Intents.default()
@@ -2170,9 +2172,9 @@ async def start_automacro_api_server():
     app.router.add_post("/weapon-advice", handle_post_weapon_advice)
     runner = web.AppRunner(app)
     await runner.setup()
-    site = web.TCPSite(runner, "0.0.0.0", AUTOMACRO_API_PORT)
+    site = web.TCPSite(runner, AUTOMACRO_API_HOST, AUTOMACRO_API_PORT)
     await site.start()
-    print(f"[tracker] API cho AutoMacro dang chay o cong {AUTOMACRO_API_PORT}")
+    print(f"[tracker] API cho AutoMacro dang chay o {AUTOMACRO_API_HOST}:{AUTOMACRO_API_PORT}")
 
 
 async def save_pet_species(p, source_id=None):
