@@ -118,6 +118,7 @@ async def scenarios():
     await fresh("own_hb_overwrite")
     b.record_recent_command(5, "owo hb", ["owo"])
     await b.handle_owo_response(msg(HB_STATUS), ME)                          # của bạn: còn 9H 41M
+    b.recent_owo_commands.clear()                                            # 1 phút sau: lệnh hb của bạn đã cũ
     b.record_recent_command(5, "owo hunt", ["owo"])                          # bạn farm tiếp
     await b.handle_owo_response(msg("**BEEP BOOP. I AM STILL HUNTING. I WILL BE BACK IN 1H 2M**\n10% DONE | 5 ANIMALS CAPTURED"), ME)  # người khác
     hub = await b._hub_huntbot(b._utcnow())
