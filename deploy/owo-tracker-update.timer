@@ -1,0 +1,14 @@
+# Cứ vài phút gọi owo-tracker-update.service một lần. Bật/tắt:
+#   sudo systemctl enable --now owo-tracker-update.timer
+#   sudo systemctl disable --now owo-tracker-update.timer
+[Unit]
+Description=Kiểm tra commit mới của owo-tracker trên GitHub
+
+[Timer]
+OnBootSec=3min
+OnUnitInactiveSec=3min
+RandomizedDelaySec=30
+Persistent=true
+
+[Install]
+WantedBy=timers.target

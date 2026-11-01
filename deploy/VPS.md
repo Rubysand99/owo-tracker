@@ -82,11 +82,34 @@ Star Hub → **Cài đặt** → *Địa chỉ API* = `https://owo-ruby.duckdns.
 | Xem log trực tiếp | `journalctl -u owo-tracker -f` |
 | Trạng thái | `systemctl status owo-tracker` |
 | Khởi động lại / dừng / bật | `sudo systemctl restart owo-tracker` · `stop` · `start` |
-| Cập nhật code sau khi push lên GitHub | `sudo bash /opt/owo-tracker/deploy/update.sh` |
+| Cập nhật code ngay (không đợi timer) | `sudo bash /opt/owo-tracker/deploy/auto-update.sh` (hoặc `update.sh`) |
+| Xem lịch sử tự cập nhật | `journalctl -t owo-tracker-update -n 30` |
+| Tạm tắt / bật tự cập nhật | `sudo systemctl disable --now owo-tracker-update.timer` · `sudo systemctl enable --now owo-tracker-update.timer` |
 | Sửa cấu hình rồi áp dụng | `sudo nano /etc/owo-tracker.env` → `sudo systemctl restart owo-tracker` |
 
-Bot tự chạy lại khi VPS khởi động lại và tự khởi động lại nếu bị lỗi (chờ 5 giây). Quy trình làm việc mới: sửa code → push
-GitHub (Termux/máy tính) → chạy `update.sh` trên VPS.
+Bot tự chạy lại khi VPS khởi động lại và tự khởi động lại nếu bị lỗi (chờ 5 giây). Quy trình làm việc: sửa code → push/merge
+vào `main` trên GitHub → trong vòng ~3 phút VPS tự kéo code và khởi động lại bot.
+
+## Tự cập nhật khi có commit mới
+
+`setup-vps.sh` cài sẵn một `systemd timer` (`owo-tracker-update.timer`, mỗi ~3 phút) chạy `deploy/auto-update.sh`.
+VPS đã cài từ trước: chạy lại `sudo bash /opt/owo-tracker/deploy/setup-vps.sh` (an toàn, không ghi đè cấu hình) để bật.
+Không muốn tự cập nhật: `sudo AUTO_UPDATE=0 bash setup-vps.sh`.
+
+Cách hoạt động, theo thứ tự:
+
+1. `git fetch` nhánh `main`. Không có commit mới thì thoát, không làm gì cả. Repo public nên VPS **không cần khóa hay token GitHub**
+   và **không mở thêm cổng nào**.
+2. Chỉ **fast-forward**. Nếu bạn đã sửa tay file trong `/opt/owo-tracker`, hoặc lịch sử `main` bị viết lại, script dừng và
+   ghi cảnh báo thay vì ghi đè.
+3. Cài lại thư viện nếu `requirements.txt` đổi.
+4. Kiểm tra cú pháp mọi file `.py` và chạy `test_security.py` (không cần mạng). **Hỏng thì quay về commit cũ và không restart.**
+5. Restart bot, đợi ~25 giây. Nếu bot không còn chạy thì **tự quay về commit cũ** và restart lại.
+6. Commit đã bị loại không bị thử lại mỗi 3 phút; khi có commit mới hơn thì thử lại.
+
+Lưu ý: commit nào vào `main` là bot chạy bản đó. Nên bật *branch protection* cho `main` (bắt buộc PR + CI xanh), và chỉ merge
+sau khi xem diff. Script giảm rủi ro nhưng không thay thế được việc review; test tự động chỉ bắt được lỗi cú pháp và các
+kiểm tra bảo mật, không bắt được lỗi logic.
 
 ## Bảo mật
 
