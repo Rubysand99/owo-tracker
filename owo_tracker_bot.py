@@ -75,6 +75,37 @@ from owo_parsers import (
 )
 
 
+def _read_version(base_dir=None) -> str:
+    """Số phiên bản của bot: nội dung file VERSION (GitHub Actions tự tăng sau mỗi lần cập nhật lên main).
+    Không đọc được thì trả '?' — không bao giờ làm bot hỏng chỉ vì thiếu file."""
+    try:
+        path = os.path.join(base_dir or os.path.dirname(os.path.abspath(__file__)), "VERSION")
+        with open(path, encoding="utf-8") as f:
+            return f.read().strip() or "?"
+    except Exception:
+        return "?"
+
+
+def _read_git_sha(base_dir=None) -> str:
+    """Mã commit ngắn nếu chạy từ 1 repo git (VPS / Termux); không có git (vd Railway) thì chuỗi rỗng."""
+    try:
+        import subprocess
+        out = subprocess.run(["git", "rev-parse", "--short=7", "HEAD"], cwd=base_dir or os.path.dirname(os.path.abspath(__file__)),
+                             capture_output=True, text=True, timeout=3)
+        return out.stdout.strip() if out.returncode == 0 else ""
+    except Exception:
+        return ""
+
+
+BOT_VERSION = _read_version()
+BOT_COMMIT = _read_git_sha()
+
+
+def bot_version_text() -> str:
+    """'v1.12 (a1b2c3d)' — số phiên bản kèm mã commit khi có."""
+    return f"v{BOT_VERSION}" + (f" ({BOT_COMMIT})" if BOT_COMMIT else "")
+
+
 def _utcnow() -> datetime:
     """Giờ UTC hiện tại dạng naive — thay cho datetime.utcnow() (đã deprecated từ Python 3.12).
     Giữ NGUYÊN định dạng ISO không có múi giờ đang lưu trong MongoDB nên dữ liệu cũ vẫn so sánh đúng."""
@@ -2228,6 +2259,7 @@ async def build_hub(now=None):
     await load_emoji_cache()
     return {
         "hub_version": 1,
+        "bot_version": bot_version_text(),
         "server_time": now.isoformat() + "Z",
         "daily": await _hub_daily(now),
         "cowoncy": await _hub_cowoncy(now),
@@ -2495,7 +2527,7 @@ async def save_cowoncy(c, source_id=None):
 # ----------------------------------------------------------------------
 @bot.event
 async def on_ready():
-    print(f"[tracker] Đăng nhập: {bot.user} (discord.py {discord.__version__})")
+    print(f"[tracker] Đăng nhập: {bot.user} · bot {bot_version_text()} (discord.py {discord.__version__})")
     if mdb is None:
         print("[tracker] CẢNH BÁO: chưa có MONGODB_URI — bot sẽ lỗi khi cố lưu/đọc dữ liệu.")
         return
@@ -3326,6 +3358,7 @@ async def status(ctx):
     last_hunt = await mdb[COL_HUNTBOT].find_one(sort=[("_id", -1)])
 
     embed = discord.Embed(title="Trạng thái theo dõi", color=0xD9A227)
+    embed.add_field(name="Phiên bản bot", value=f"`{bot_version_text()}`", inline=False)
     embed.add_field(name="Đang theo dõi", value=f"<@{tracked}>" if tracked else "Chưa đặt — dùng `,track`", inline=False)
     scope_guild, tracked_channel = await tracking_scope()
     if scope_guild:
@@ -4140,7 +4173,7 @@ async def passiveset_cmd(ctx, name: str, *, desc: str):
 @bot.command(name="ping")
 async def ping_cmd(ctx):
     ms = round(bot.latency * 1000)
-    await ctx.send(f"🏓 Pong! `{ms}ms`")
+    await ctx.send(f"🏓 Pong! `{ms}ms` · bot `{bot_version_text()}`")
 
 
 # Danh sách lệnh hiện trong `,help`. Mỗi nhóm: (tên lệnh, chữ hiện ra). Lệnh nào bot không có thì tự bỏ qua.
@@ -4211,7 +4244,7 @@ async def help_cmd(ctx):
     if extra:
         embed.add_field(name="Lệnh mới (chưa có mô tả trong ,help)",
                         value=" · ".join(f"`,{n}`" for n in extra)[:1024], inline=False)
-    embed.set_footer(text="Bot chỉ thấy được server đã mời nó vào — không tự theo dõi ở nơi khác.")
+    embed.set_footer(text=f"Bot {bot_version_text()} · Chỉ thấy được server đã mời nó vào — không tự theo dõi ở nơi khác.")
     await ctx.send(embed=embed)
 
 

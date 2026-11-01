@@ -70,6 +70,11 @@ Mỗi lần push lên `main` (hoặc mở pull request), GitHub Actions tự ch�
 **Quy ước mỗi lần cập nhật:** thêm / đổi / xóa lệnh nào thì sửa luôn `HELP_GROUPS` (danh sách của `,help` trong
 `owo_tracker_bot.py`) và mục "Dùng thử" ở file này. `test_help.py` sẽ báo lỗi nếu có lệnh mới mà `,help` chưa nhắc tới.
 
+**Số phiên bản tự tăng:** file `VERSION` (dạng `1.12`) do GitHub Actions (`.github/workflows/version.yml`) tự tăng 1 sau mỗi lần
+push lên `main` mà bộ test xanh, bằng 1 commit `chore(version): v1.13`. Bot hiện số này ở `,ping`, `,status`, chân trang `,help`,
+log khởi động và `/hub` (`bot_version`); chạy trên VPS thì kèm mã commit, vd `v1.13 (a1b2c3d)`. Muốn lên số lớn (2.0): sửa tay
+`VERSION` thành `2.0` rồi push, các lần sau tự đếm tiếp 2.1, 2.2... **Lưu ý khi push tay:** nhớ `git pull` trước vì workflow vừa thêm 1 commit.
+
 **Không đọc nhầm tin của người khác trong server:** bot xác định chủ tin OwO bằng `<@id>` (tiêu đề `<@id>'s Quest Log`,
 ping đầu tin), rồi tới tên ở dòng đầu / tiêu đề zoo-kho; tin của người khác bị bỏ qua (xem `,rawdump` mục `foreign_skipped`
 hoặc `,status` để biết bot vừa bỏ qua tin của ai). Tin **huntbot** không mang tên người chơi nên chỉ được nhận khi OwO ping/reply

@@ -1,0 +1,50 @@
+name: Tăng số phiên bản
+
+# Sau mỗi lần push lên main mà bộ test XANH, tự tăng số cuối của file VERSION (1.4 -> 1.5) và commit lại.
+# Muốn đổi số lớn (2.0): sửa tay file VERSION thành 2.0 rồi push — lần sau tự đếm tiếp 2.1, 2.2, ...
+# Commit do workflow tạo ra không kích hoạt lại workflow nào (GITHUB_TOKEN), nên không bị lặp vô hạn.
+
+on:
+  workflow_run:
+    workflows: ["Tests"]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: bump-version
+  cancel-in-progress: false
+
+jobs:
+  bump:
+    # chỉ khi test xanh trên push vào main, và không phải chính commit tăng version
+    if: >
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      !startsWith(github.event.workflow_run.head_commit.message, 'chore(version)')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Tăng số phiên bản
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # Có commit mới hơn commit vừa test xong thì bỏ qua: lần chạy của commit mới nhất sẽ tăng (tránh tăng 2 lần)
+          if [ "$(git rev-parse HEAD)" != "${{ github.event.workflow_run.head_sha }}" ]; then
+            echo "main đã có commit mới hơn — bỏ qua lần này"; exit 0
+          fi
+          cur=$(tr -d '[:space:]' < VERSION 2>/dev/null || true)
+          if ! echo "$cur" | grep -Eq '^[0-9]+\.[0-9]+$'; then cur="1.0"; fi
+          major=${cur%%.*}; minor=${cur##*.}
+          new="$major.$((minor + 1))"
+          echo "$new" > VERSION
+          git add VERSION
+          git commit -m "chore(version): v$new"
+          git push origin HEAD:main
