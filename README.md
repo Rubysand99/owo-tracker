@@ -70,6 +70,13 @@ Mỗi lần push lên `main` (hoặc mở pull request), GitHub Actions tự ch�
 **Quy ước mỗi lần cập nhật:** thêm / đổi / xóa lệnh nào thì sửa luôn `HELP_GROUPS` (danh sách của `,help` trong
 `owo_tracker_bot.py`) và mục "Dùng thử" ở file này. `test_help.py` sẽ báo lỗi nếu có lệnh mới mà `,help` chưa nhắc tới.
 
+**Không đọc nhầm tin của người khác trong server:** bot xác định chủ tin OwO bằng `<@id>` (tiêu đề `<@id>'s Quest Log`,
+ping đầu tin), rồi tới tên ở dòng đầu / tiêu đề zoo-kho; tin của người khác bị bỏ qua (xem `,rawdump` mục `foreign_skipped`
+hoặc `,status` để biết bot vừa bỏ qua tin của ai). Tin **huntbot** không mang tên người chơi nên chỉ được nhận khi OwO ping/reply
+bạn, hoặc bạn vừa gõ lệnh `hb` / `huntbot` / `autohunt` trong vòng 20 giây ở cùng kênh — nhờ vậy lúc app đang farm, người khác
+gõ `owo hb` không ghi đè giờ huntbot của bạn. Giới hạn còn lại: nếu người khác gõ `owo hb` đúng vài giây sau lệnh `owo hb` của bạn
+trong cùng kênh thì vẫn có thể lẫn; tin `owo team` cũng chưa có tên chủ nên chưa lọc được theo cách này.
+
 **Chọn tier gem khi thay (`,gemtier`):** gem hết độ bền thì bot nhờ app gõ `owo use <mã>`. Mỗi loại gem (Hunting / Empowering /
 Lucky / Special) có tier ưu tiên riêng; mặc định là cao nhất còn viên. Nếu đã chọn 1 tier cụ thể mà hết viên đó, bot lấy tier
 gần nhất **thấp hơn** trước (đỡ phí gem xịn), không còn thấp hơn mới lấy tier cao hơn. Cài đặt lưu trong MongoDB nên không mất khi bot khởi động lại.

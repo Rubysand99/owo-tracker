@@ -365,6 +365,54 @@ def header_owner(text):
     return clean_owner_name(m.group(1)) if m else None
 
 
+_MENTION_HEADER_RE = re.compile(r"<@!?(\d+)>'s\s+[A-Za-z]")          # "### 📜 <@id>'s Quest Log", "<@id>'s Weapons"
+_LEAD_MENTION_RE = re.compile(r"^[\s#>*_\-]*<@!?(\d+)>")               # tin OwO mo dau bang ping nguoi nhan
+
+
+def owner_verdict(text, tracked_id, names):
+    """Tin OwO nay la cua ai? Tra ve (ket_luan, nhan): 'mine' | 'other' | None (khong thay chu trong chu).
+    Uu tien <@id> (tieu de "<@id>'s ..." hoac ping dau tin) khi tracked_id la ID so that; roi toi ten o dong dau /
+    tieu de zoo-kho. Chi ket luan 'other' khi chac chan co chu KHAC; khong ro chu thi tra None."""
+    tid = str(tracked_id or "")
+    plain = text or ""
+    if tid.isdigit():
+        head = "\n".join(plain.split("\n")[:4])
+        m = _MENTION_HEADER_RE.search(head) or _LEAD_MENTION_RE.match(plain)
+        if m:
+            return ("mine" if m.group(1) == tid else "other"), f"<@{m.group(1)}>"
+    who = speaker_name(plain) or header_owner(plain)
+    if who and names:
+        return ("mine" if weapon_owner_matches(who, names) else "other"), who
+    return None, who
+
+
+# --- Gan tin KHONG co ten (vd trang thai huntbot) voi lenh cua ban ------------------------------------
+HB_COMMAND_RE = re.compile(r"^(?:hb|huntbot|autohunt|ah)(?:\s|$)")
+recent_owo_commands = {}   # channel_id -> [(thoi_diem, noi_dung_lenh_bo_prefix), ...] cac lenh owo gan day cua ban
+
+
+def owo_command_body(content_lower, prefixes):
+    """'owo hb 24h' -> 'hb 24h' (bo prefix OwO dai nhat khop)."""
+    for p in sorted(prefixes or [], key=len, reverse=True):
+        if content_lower.startswith(p):
+            return content_lower[len(p):].strip()
+    return content_lower.strip()
+
+
+def record_recent_command(channel_id, content_lower, prefixes, now=None):
+    now = time.time() if now is None else now
+    items = [x for x in recent_owo_commands.get(channel_id, []) if now - x[0] < 120]
+    items.append((now, owo_command_body(content_lower, prefixes)))
+    recent_owo_commands[channel_id] = items[-10:]
+
+
+def command_recent(channel_id, regex, window=None, now=None):
+    """Ban co go lenh khop `regex` trong kenh nay trong `window` giay gan day khong?"""
+    window = CORRELATION_WINDOW if window is None else window
+    now = time.time() if now is None else now
+    return any(now - ts < window and regex.match(body) for ts, body in recent_owo_commands.get(channel_id, []))
+
+
 async def tracked_name_set(source_id):
     names = set(tracked_names.get(str(source_id), set()))
     aliases = await get_config("weapon_owner_aliases", "") or ""
@@ -2564,6 +2612,7 @@ async def on_message(message: discord.Message):
         if mt:
             open_hb_window(mt.group(1))
         last_owo_command[message.channel.id] = content_lower
+        record_recent_command(message.channel.id, content_lower, prefixes)
         author = message.author
         tracked_names[str(author.id)] = {
             n for n in (getattr(author, "display_name", None), getattr(author, "global_name", None),
@@ -2710,15 +2759,15 @@ async def handle_owo_response(message: discord.Message, source_id):
 
     # Tin OwO tra loi NGUOI KHAC (ten o dong dau / tieu de khong khop ten ban) -> bo qua.
     # Chua biet ten nao (bot vua khoi dong, ban chua go lenh) thi khong loc.
-    who = speaker_name(text) or header_owner(text)
-    if who:
-        names = await tracked_name_set(source_id)
-        if names and not weapon_owner_matches(who, names):
-            print(f"[tracker] Bo qua tin cua '{who}' (khong khop {sorted(names)})")
-            skipped_foreign["name"] = who
-            skipped_foreign["count"] += 1
-            await record_raw("foreign_skipped", text, {"ten_trong_tin": who, "ten_chap_nhan": sorted(names)}, message)
-            return
+    # Nhan dien chu bang <@id> (tieu de "<@id>'s Quest Log", ping dau tin) roi toi ten o dong dau / tieu de.
+    names = await tracked_name_set(source_id)
+    verdict, who = owner_verdict(text, source_id, names)
+    if verdict == "other":
+        print(f"[tracker] Bo qua tin cua '{who}' (khong khop {sorted(names) or source_id})")
+        skipped_foreign["name"] = who
+        skipped_foreign["count"] += 1
+        await record_raw("foreign_skipped", text, {"ten_trong_tin": who, "ten_chap_nhan": sorted(names)}, message)
+        return
 
     await remember_emojis(text)
     recognized = False  # co loai nao nhan ra tin nay khong (neu khong -> ghi vao "unrecognized")
@@ -2780,6 +2829,14 @@ async def handle_owo_response(message: discord.Message, source_id):
             recognized = True
 
     hunt = parse_huntbot_status(text)
+    if hunt and verdict != "mine" and reply_target(message, source_id) != "ban" \
+            and not command_recent(message.channel.id, HB_COMMAND_RE):
+        # Tin huntbot KHONG co ten nguoi choi: chi nhan khi chac la cua ban (ping/reply cho ban) hoac ban vua go
+        # lenh hb. Neu khong, do la `owo hb` cua nguoi khac trong server va se ghi de gio huntbot cua ban.
+        print("[tracker] Bo qua tin huntbot khong gan duoc voi lenh/ten cua ban (co the cua nguoi khac)")
+        await record_raw("foreign_skipped", text, {"ten_trong_tin": None, "ly_do": "huntbot khong ro chu"}, message)
+        recognized = True
+        hunt = None
     if hunt:
         hb_state = await save_huntbot(hunt)
         await record_raw("huntbot", text, hunt, message)
