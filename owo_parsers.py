@@ -206,10 +206,16 @@ def parse_huntbot_status(text: str):
     essence_line = next((ln for ln in text.split("\n") if "Animal Essence" in ln), "")
     essence_line = re.sub(r"<a?:\w+:\d+>", "", essence_line)
     essence_m = re.search(r"Animal Essence\D*?(\d[\d,]*)", essence_line)
-    hunting = "STILL HUNTING" in text.upper() or "currently hunting" in text.lower()
     progress_m = re.search(r"([\d.]+)%\s*DONE", text.upper())
     animals_m = re.search(r"([\d,]+)\s*ANIMALS CAPTURED", text.upper())
     time_m = re.search(r"BACK IN\s*([0-9HMhm ]+)", text.upper())
+    # Dang san khi: tin trang thai ("STILL HUNTING" / "currently hunting"), HOAC tin BAT DAU chuyen moi
+    # ("I WILL BE BACK IN 24H ...") — tin nay khong co chu STILL HUNTING nhung co gio ve. Neu khong tinh no la
+    # "dang san" thi Hub/thong bao khong co gio ve cua chuyen moi cho toi khi Ruby go `owo hb`.
+    # Tin huntbot ve ("I AM BACK WITH") thi luon la KHONG san.
+    hunting = ("STILL HUNTING" in up or "currently hunting" in text.lower()
+               or (time_m is not None and duration_to_seconds(time_m.group(1)) is not None
+                   and "I AM BACK WITH" not in up))
     # Trang thong tin huntbot co cac chi so nang cap, moi dong dang:
     #   **⏱️ Efficiency - `218/H`:** `Lvl 193 [17866/99787]`
     traits = {}
@@ -730,6 +736,76 @@ def parse_gem_name(emoji_name: str):
     # gem thuong theo loai gem1/gem3/gem4 (slot "1"/"3"/"4"); gem DAC BIET (cstar...) chi co
     # trong su kien -> slot "star".
     return {"tier": _GEM_TIER_PREFIX.get(m.group(1)), "slot": m.group(2) or "star"}
+
+
+# --- Chon tier gem theo tung loai (lenh `,gemtier`) -------------------------------------------------
+GEM_SLOTS = ("1", "3", "4", "star")   # Hunting, Empowering, Lucky, Special
+
+# Cach goi tu do Ruby go -> slot. So thang (1/3/4) cung duoc.
+_GEM_SLOT_ALIASES = {
+    "1": "1", "hunting": "1", "hunt": "1",
+    "3": "3", "empowering": "3", "empower": "3",
+    "4": "4", "lucky": "4", "luck": "4",
+    "star": "star", "special": "star", "dacbiet": "star", "sao": "star",
+}
+
+_GEM_TIER_ALIASES = {
+    "common": "Common", "uncommon": "Uncommon", "rare": "Rare", "epic": "Epic",
+    "mythical": "Mythical", "mythic": "Mythical", "legendary": "Legendary", "legend": "Legendary",
+    "fabled": "Fabled",
+    # viet tat 1 chu = chu cai dau cua tier (giong ten emoji cgem1, ugem1, ...)
+    **{k: v for k, v in _GEM_TIER_PREFIX.items()},
+}
+_GEM_PREF_HIGHEST = {"highest", "high", "max", "top", "cao", "caonhat"}
+_GEM_PREF_LOWEST = {"lowest", "low", "min", "thap", "thapnhat"}
+
+
+def _fold(text) -> str:
+    """Chu thuong, bo dau tieng Viet va khoang trang: 'Cao nhất' -> 'caonhat'."""
+    import unicodedata
+    t = unicodedata.normalize("NFD", str(text or "").lower().replace("đ", "d"))
+    t = "".join(ch for ch in t if unicodedata.category(ch) != "Mn")
+    return re.sub(r"\s+", "", t)
+
+
+def resolve_gem_slot(text):
+    """'hunting' / 'Lucky' / '3' / 'special' -> slot ('1','3','4','star'). None neu khong nhan ra."""
+    return _GEM_SLOT_ALIASES.get(_fold(text))
+
+
+def normalize_gem_tier_pref(text):
+    """Sở thích chọn tier: 'highest' (cao nhất) | 'lowest' (thấp nhất) | tên tier chuẩn ('Rare', 'Epic', ...).
+    Hiểu 'cao', 'thấp', 'rare', 'r', 'mythic'... None nếu không hiểu."""
+    key = _fold(text)
+    if key in _GEM_PREF_HIGHEST:
+        return "highest"
+    if key in _GEM_PREF_LOWEST:
+        return "lowest"
+    return _GEM_TIER_ALIASES.get(key)
+
+
+def pick_gem_option(options, pref):
+    """Chọn 1 viên gem trong `options` (mỗi phần tử có `gem_tier_rank`) theo sở thích `pref`.
+    - 'highest' / không rõ: tier CAO nhất còn viên.   - 'lowest': tier THẤP nhất.
+    - một tier cụ thể: đúng tier đó nếu còn; HẾT thì lấy tier GẦN NHẤT thấp hơn (đỡ phí gem xịn),
+      không còn thấp hơn mới lấy tier gần nhất cao hơn.
+    Trả về None nếu `options` rỗng."""
+    opts = list(options or [])
+    if not opts:
+        return None
+    rank = lambda o: o.get("gem_tier_rank") or 0
+    if pref == "lowest":
+        return min(opts, key=rank)
+    want = _GEM_TIER_RANK.get(pref)
+    if want is None:                      # 'highest' hoac gia tri la
+        return max(opts, key=rank)
+    exact = [o for o in opts if rank(o) == want]
+    if exact:
+        return exact[0]
+    lower = [o for o in opts if rank(o) < want]
+    if lower:
+        return max(lower, key=rank)
+    return min(opts, key=rank)            # chi con tier cao hon: lay cao hon gan nhat
 
 
 def parse_inventory(text: str, continuation: bool = False):

@@ -67,10 +67,19 @@ for t in test_*.py; do python "$t" || break; done
 
 Mỗi lần push lên `main` (hoặc mở pull request), GitHub Actions tự chạy lại toàn bộ test (`.github/workflows/tests.yml`).
 
+**Quy ước mỗi lần cập nhật:** thêm / đổi / xóa lệnh nào thì sửa luôn `HELP_GROUPS` (danh sách của `,help` trong
+`owo_tracker_bot.py`) và mục "Dùng thử" ở file này. `test_help.py` sẽ báo lỗi nếu có lệnh mới mà `,help` chưa nhắc tới.
+
+**Chọn tier gem khi thay (`,gemtier`):** gem hết độ bền thì bot nhờ app gõ `owo use <mã>`. Mỗi loại gem (Hunting / Empowering /
+Lucky / Special) có tier ưu tiên riêng; mặc định là cao nhất còn viên. Nếu đã chọn 1 tier cụ thể mà hết viên đó, bot lấy tier
+gần nhất **thấp hơn** trước (đỡ phí gem xịn), không còn thấp hơn mới lấy tier cao hơn. Cài đặt lưu trong MongoDB nên không mất khi bot khởi động lại.
+
 ## Huntbot: nhắc còn 10 phút & tự cập nhật khi đang farm
 
 **Nhắc còn 10 phút:** app AutoMacro hỏi bot mỗi phút (kể cả khi Hub nổi đang tắt) và hiện thông báo trên điện thoại khi
-huntbot còn ≤ 10 phút nữa là về — mỗi chuyến chỉ 1 lần. Muốn thêm bản dự phòng qua Discord (DM acc phụ, phòng khi app
+huntbot còn ≤ 10 phút nữa là về — mỗi chuyến chỉ 1 lần. Thông báo có **giờ về theo giờ máy** và **đồng hồ đếm ngược thật**
+(vẫn đúng dù bạn mở máy xem muộn). Tin OwO "bắt đầu chuyến mới" (`I WILL BE BACK IN ...`) cũng được tính là đang săn, nên chuyến
+vừa bắt đầu có giờ về ngay, không phải chờ bạn gõ `owo hb`. Muốn thêm bản dự phòng qua Discord (DM acc phụ, phòng khi app
 không chạy): `,hbalert on` (mặc định tắt; `,hbalert off` để tắt).
 
 **Dữ liệu trên Hub luôn mới:**
@@ -151,6 +160,10 @@ vũ khí chỉ có những cây bạn từng xem bằng `owo weapon <ID>`.
 ,zoo bee                  → xem zoo đã ghi nhận, lọc theo tên
 ,inv gem                  → xem inventory đã ghi nhận, lọc theo tên
 ,gems                      → tình trạng độ bền từng slot gem đang trang bị
+,gemtier                   → xem tier gem đang ưu tiên của từng loại (kèm gem còn trong kho) (chỉ owner)
+,gemtier hunting rare      → khi gem Hunting hết độ bền, bot nhờ app dùng viên tier Rare (chỉ owner)
+,gemtier lucky thấp        → luôn lấy tier thấp nhất còn viên · `cao` = cao nhất · `all <tier>` = cả 4 loại
+,gemtier hunting reset     → về mặc định (cao nhất)
 
 ,note add Bắt gowl       → thêm việc cần làm
 ,note list / ,note done 1

@@ -1,0 +1,119 @@
+"""test_gemtier.py — chọn tier gem riêng cho từng loại (lệnh ,gemtier) khi bot nhờ app thay gem hết độ bền.
+Chạy: python test_gemtier.py"""
+import sys, asyncio
+from types import SimpleNamespace as NS
+from unittest.mock import MagicMock
+for m in ["discord", "discord.ext", "discord.ext.commands", "motor", "motor.motor_asyncio", "aiohttp"]:
+    if m not in sys.modules:
+        try:
+            __import__(m)
+        except Exception:
+            sys.modules[m] = MagicMock()
+import owo_tracker_bot as b
+from mongomock_motor import AsyncMongoMockClient
+
+fails = []
+def check(label, got, want):
+    ok = got == want
+    print(("✅ " if ok else "❌ ") + label)
+    if not ok:
+        print("   mong đợi:", want); print("   thực tế :", got); fails.append(label)
+
+# ---------- hàm thuần ----------
+check("loại gem: hunting/1", (b.resolve_gem_slot("Hunting"), b.resolve_gem_slot("1")), ("1", "1"))
+check("loại gem: empowering/3", (b.resolve_gem_slot("empowering"), b.resolve_gem_slot("3")), ("3", "3"))
+check("loại gem: lucky/4", (b.resolve_gem_slot("LUCKY"), b.resolve_gem_slot("4")), ("4", "4"))
+check("loại gem: special/sao/đặc biệt -> star",
+      (b.resolve_gem_slot("special"), b.resolve_gem_slot("sao"), b.resolve_gem_slot("đặc biệt")), ("star", "star", "star"))
+check("loại gem: không biết -> None", b.resolve_gem_slot("xyz"), None)
+check("tier: tên đầy đủ + chữ cái đầu + alias",
+      [b.normalize_gem_tier_pref(x) for x in ("rare", "R", "Mythic", "legendary", "f", "Epic")],
+      ["Rare", "Rare", "Mythical", "Legendary", "Fabled", "Epic"])
+check("tier: cao/thấp tiếng Việt có dấu",
+      [b.normalize_gem_tier_pref(x) for x in ("cao", "Cao nhất", "thấp", "Thấp nhất")], ["highest", "highest", "lowest", "lowest"])
+check("tier: không hiểu -> None", (b.normalize_gem_tier_pref("xyz"), b.normalize_gem_tier_pref("")), (None, None))
+
+def opt(tier, rank, count=1):
+    return {"gem_tier": tier, "gem_tier_rank": rank, "count": count}
+stock = [opt("Common", 1), opt("Rare", 3), opt("Epic", 4), opt("Legendary", 6)]
+tier_of = lambda o: o and o["gem_tier"]
+P = b.pick_gem_option
+check("chọn: highest", tier_of(P(stock, "highest")), "Legendary")
+check("chọn: lowest", tier_of(P(stock, "lowest")), "Common")
+check("chọn: đúng tier còn viên", tier_of(P(stock, "Rare")), "Rare")
+check("chọn: tier hết -> tier gần nhất THẤP hơn (Uncommon -> Common)", tier_of(P(stock, "Uncommon")), "Common")
+check("chọn: tier hết -> thấp hơn gần nhất (Mythical -> Epic)", tier_of(P(stock, "Mythical")), "Epic")
+check("chọn: chỉ còn tier cao hơn -> lấy cao hơn gần nhất", tier_of(P([opt("Rare", 3), opt("Epic", 4)], "Common")), "Rare")
+check("chọn: kho rỗng -> None", P([], "Rare"), None)
+check("chọn: giá trị lạ -> như highest", tier_of(P(stock, "???")), "Legendary")
+
+
+async def scenarios():
+    said = []
+    async def send(text=None, **kw): said.append(text or "")
+    ctx = NS(send=send)
+
+    def fresh(name):
+        b.mdb = AsyncMongoMockClient()[name]
+        b.gem_missing_streak.clear()
+        b._app_off_cache.update({"v": None, "at": 0})
+        said.clear()
+
+    # ----- lệnh ,gemtier -----
+    fresh("gemtier_cmd")
+    check("mặc định: tier cao nhất cho cả 4 loại", [await b.get_gem_tier_pref(s) for s in ("1", "3", "4", "star")], ["highest"] * 4)
+    await b.gemtier_cmd(ctx, "hunting", "rare")
+    check("đặt hunting = Rare", await b.get_gem_tier_pref("1"), "Rare")
+    check("đặt hunting không đụng loại khác", [await b.get_gem_tier_pref(s) for s in ("3", "4", "star")], ["highest"] * 3)
+    check("trả lời có tên tier + giải thích khi hết", ("Rare" in said[-1], "thấp hơn" in said[-1]), (True, True))
+    await b.gemtier_cmd(ctx, "lucky", "thấp", "nhất")
+    check("đặt lucky = thấp nhất (có dấu cách)", await b.get_gem_tier_pref("4"), "lowest")
+    await b.gemtier_cmd(ctx, "all", "epic")
+    check("all epic -> cả 4 loại = Epic", [await b.get_gem_tier_pref(s) for s in ("1", "3", "4", "star")], ["Epic"] * 4)
+    await b.gemtier_cmd(ctx, "hunting", "reset")
+    check("reset 1 loại -> về mặc định, loại khác giữ nguyên",
+          [await b.get_gem_tier_pref(s) for s in ("1", "3")], ["highest", "Epic"])
+    await b.gemtier_cmd(ctx, "reset")
+    check("reset không kèm loại -> về mặc định cả 4", [await b.get_gem_tier_pref(s) for s in ("1", "3", "4", "star")], ["highest"] * 4)
+    said.clear()
+    await b.gemtier_cmd(ctx, "xyz", "rare")
+    check("loại gem lạ -> hướng dẫn, không đổi gì", ("chưa hiểu" in said[-1], await b.get_gem_tier_pref("1")), (True, "highest"))
+    said.clear()
+    await b.gemtier_cmd(ctx, "hunting", "tierlalam")
+    check("tier lạ -> báo không hiểu, không đổi gì", ("Không hiểu tier" in said[-1], await b.get_gem_tier_pref("1")), (True, "highest"))
+    said.clear()
+    await b.gemtier_cmd(ctx, "hunting")
+    check("thiếu tier -> hướng dẫn", "chưa hiểu" in said[-1], True)
+    said.clear()
+    await b.mdb[b.COL_INVENTORY].insert_one({"_id": "051", "is_gem": True, "gem_slot": "1", "count": 3,
+                                              "gem_tier": "Common", "gem_tier_rank": 1})
+    await b.gemtier_cmd(ctx)
+    check("xem: có đủ 4 loại và kho gem", all(x in said[-1] for x in ("Hunting", "Empowering", "Lucky", "Special", "Common ×3")), True)
+
+    # ----- đầu-cuối: bot chọn viên theo tier đã đặt -----
+    async def run_swap(db_name, pref_cmd):
+        fresh(db_name)
+        await b.mdb[b.COL_INVENTORY].insert_many([
+            {"_id": "051", "is_gem": True, "gem_slot": "1", "count": 3, "gem_tier": "Common", "gem_tier_rank": 1},
+            {"_id": "053", "is_gem": True, "gem_slot": "1", "count": 2, "gem_tier": "Rare", "gem_tier_rank": 3},
+            {"_id": "054", "is_gem": True, "gem_slot": "1", "count": 1, "gem_tier": "Epic", "gem_tier_rank": 4}])
+        if pref_cmd:
+            await b.gemtier_cmd(ctx, *pref_cmd)
+        msg = NS(channel=NS(send=send, id=1))
+        await b.remind_gem_replacements(msg, {"1"}, "555")
+        cmds = [c async for c in b.mdb[b.COL_AUTOMACRO_COMMANDS].find({"status": "pending"})]
+        return [c["params"]["command_text"] for c in cmds]
+
+    check("thay gem: chưa đặt -> tier cao nhất (Epic 054)", await run_swap("sw_default", None), ["owo use 054"])
+    check("thay gem: hunting = Rare -> đúng viên Rare 053", await run_swap("sw_rare", ("hunting", "rare")), ["owo use 053"])
+    check("thay gem: hunting = thấp nhất -> Common 051", await run_swap("sw_low", ("hunting", "thap")), ["owo use 051"])
+    check("thay gem: hunting = Uncommon (hết) -> Common 051 (thấp hơn gần nhất)",
+          await run_swap("sw_unc", ("hunting", "uncommon")), ["owo use 051"])
+    check("thay gem: hunting = Legendary (hết) -> Epic 054 (thấp hơn gần nhất)",
+          await run_swap("sw_leg", ("hunting", "legendary")), ["owo use 054"])
+    check("thay gem: đặt cho loại KHÁC (lucky) không ảnh hưởng hunting", await run_swap("sw_other", ("lucky", "common")), ["owo use 054"])
+
+asyncio.run(scenarios())
+if fails:
+    print("\n❌ %d bài lỗi" % len(fails)); sys.exit(1)
+print("✅ Test chọn tier gem pass.")

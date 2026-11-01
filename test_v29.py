@@ -192,6 +192,18 @@ async def run_hb():
     await b.save_huntbot(b.parse_huntbot_status(_hb_text("\n**BEEP BOOP. I AM BACK WITH 4512 ANIMALS, 95265 ESSENCE**")))
     h = await b._hub_huntbot(b._utcnow())
     check("hb gộp: tin 'I AM BACK WITH' -> không còn săn", h["hunting"], False)
+    # 6) tin BẮT ĐẦU chuyến mới ("I WILL BE BACK IN 24H ...", không có chữ STILL HUNTING) -> phải tính là đang săn
+    #    và có giờ về, nếu không Hub/thông báo không biết chuyến mới cho tới khi Ruby gõ `owo hb`.
+    await b.save_huntbot(b.parse_huntbot_status("**BEEP BOOP. I WILL BE BACK IN 24H 0M WITH 4774 ANIMALS, 95265 ESSENCE**"))
+    h = await b._hub_huntbot(b._utcnow())
+    check("hb: tin bắt đầu chuyến mới -> đang săn, còn ~24h",
+          (h["hunting"], 86300 <= (h["seconds_left"] or 0) <= 86400), (True, True))
+    t = await b._huntbot_timing(b._utcnow())
+    check("hb: tin bắt đầu chuyến mới -> /alerts có giờ về", (t["hunting"], t["ready_epoch"] is not None), (True, True))
+    # ... và tin "về" ngay sau đó vẫn tắt trạng thái săn
+    await b.save_huntbot(b.parse_huntbot_status(_hb_text("\n**BEEP BOOP. I AM BACK WITH 4512 ANIMALS, 95265 ESSENCE**")))
+    h = await b._hub_huntbot(b._utcnow())
+    check("hb: sau chuyến mới, tin 'I AM BACK WITH' -> hết săn", h["hunting"], False)
 asyncio.run(run_hb())
 if fails:
     print("\n❌ %d bài lỗi" % len(fails)); sys.exit(1)

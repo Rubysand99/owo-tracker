@@ -40,13 +40,16 @@ import auto_refresh   # quyết định thuần: nhắc huntbot + chen lệnh ch
 # Các hàm đọc tin OwO nằm ở owo_parsers.py; import lại đây để code cũ và test (b.parse_xxx) chạy như trước.
 from owo_parsers import (
     _GEM_TIER_RANK,
+    _fold,
     _KNOWN_PASSIVES,
     _parse_utc,
     clean_owner_name,
     decode_superscript_number,
     duration_to_seconds,
     emoji_to_name,
+    GEM_SLOTS,
     load_weapon_rules,
+    normalize_gem_tier_pref,
     parse_battle,
     parse_checklist,
     parse_cowoncy,
@@ -66,6 +69,8 @@ from owo_parsers import (
     parse_weapon_shards,
     parse_zoo,
     parse_zoo_breakdown,
+    pick_gem_option,
+    resolve_gem_slot,
     strip_rarity,
 )
 
@@ -660,6 +665,18 @@ GEM_TYPE_NAMES = {"1": "Hunting", "3": "Empowering", "4": "Lucky", "star": "Spec
 
 def gem_type_name(slot):
     return GEM_TYPE_NAMES.get(str(slot), f"Slot {slot}")
+
+
+async def get_gem_tier_pref(slot) -> str:
+    """Sở thích tier khi thay gem của 1 loại: 'highest' | 'lowest' | tên tier ('Rare'...).
+    Lưu trong config `gem_tier_<slot>` (đặt bằng `,gemtier`); chưa đặt thì theo GEM_PICK_HIGHEST_TIER."""
+    raw = await get_config(f"gem_tier_{slot}", "")
+    pref = normalize_gem_tier_pref(raw) if raw else None
+    return pref or ("highest" if GEM_PICK_HIGHEST_TIER else "lowest")
+
+
+def gem_pref_label(pref) -> str:
+    return {"highest": "cao nhất", "lowest": "thấp nhất"}.get(pref, str(pref))
 
 
 def battle_owner_name(message):
@@ -2908,9 +2925,10 @@ async def remind_gem_replacements(message: discord.Message, slots, source_id):
 
     picks = []  # (slot, vien duoc chon)
     for slot in sorted(todo):
+        # Luon liet ke tier CAO -> THAP; viec chon vien nao do `,gemtier` quyet dinh (pick_gem_option).
         options = await mdb[COL_INVENTORY].find(
             {"is_gem": True, "gem_slot": slot, "count": {"$gt": 0}}
-        ).sort("gem_tier_rank", -1 if GEM_PICK_HIGHEST_TIER else 1).to_list(length=10)
+        ).sort("gem_tier_rank", -1).to_list(length=10)
         if slot in slots:  # chi nhac trong kenh cho slot MOI het, khong nhac lai slot cu
             if not options:
                 await message.channel.send(
@@ -2921,9 +2939,9 @@ async def remind_gem_replacements(message: discord.Message, slots, source_id):
                 await message.channel.send(
                     f"<@{source_id}> ⚠️ Gem {gem_type_name(slot)} vừa hết độ bền! Chọn 1 trong các lựa chọn còn lại:\n" + "\n".join(lines))
         if options:
-            # options da sap xep: tier CAO nhat dung dau. Tier chi con rat it vien thi giu lai (neu con tier khac)
+            # Tier chi con rat it vien thi giu lai (neu con tier khac), roi chon theo so thich tier cua loai gem nay
             usable = [o for o in options if (o.get("count") or 0) > GEM_KEEP_IF_COUNT_AT_MOST] or options
-            picks.append((slot, usable[0]))
+            picks.append((slot, pick_gem_option(usable, await get_gem_tier_pref(slot))))
 
     if not picks:
         return
@@ -3383,6 +3401,70 @@ async def gems_cmd(ctx):
                          value=f"{r['current']}/{r['max']} ({pct}%)", inline=True)
     embed.set_footer(text="Slot biến mất khỏi tin hunt = hết độ bền, bot sẽ tự nhắc owo use.")
     await ctx.send(embed=embed)
+
+
+GEMTIER_USAGE = (
+    "Dùng:\n"
+    "`,gemtier` — xem tier đang ưu tiên của từng loại gem (kèm gem còn trong kho)\n"
+    "`,gemtier <loại> <tier>` — vd `,gemtier hunting rare`, `,gemtier lucky epic`\n"
+    "`,gemtier <loại> cao` / `thấp` — luôn lấy tier cao nhất / thấp nhất còn viên\n"
+    "`,gemtier all <tier>` — đặt cho cả 4 loại · `,gemtier <loại|all> reset` — về mặc định (cao nhất)\n"
+    "Loại: `hunting` (1) · `empowering` (3) · `lucky` (4) · `special` (sao). "
+    "Tier: `common` `uncommon` `rare` `epic` `mythical` `legendary` `fabled` (hoặc chữ cái đầu `c u r e m l f`).")
+
+
+async def _gem_stock_text(slot) -> str:
+    rows = await mdb[COL_INVENTORY].find(
+        {"is_gem": True, "gem_slot": slot, "count": {"$gt": 0}}).sort("gem_tier_rank", -1).to_list(length=10)
+    return ", ".join(f"{r['gem_tier']} ×{r['count']}" for r in rows) if rows else "hết"
+
+
+@bot.command(name="gemtier")
+@is_owner()
+async def gemtier_cmd(ctx, *args):
+    """Chọn tier gem sẽ dùng khi thay gem hết độ bền, riêng cho từng loại (Hunting/Empowering/Lucky/Special).
+    Đúng tier mong muốn hết viên thì bot lấy tier gần nhất THẤP hơn, không còn mới lấy tier cao hơn."""
+    first = _fold(args[0]) if args else ""
+    if not args or first in ("xem", "status", "list"):
+        lines = []
+        for slot in GEM_SLOTS:
+            pref = await get_gem_tier_pref(slot)
+            lines.append(f"**{gem_type_name(slot)}** (slot {slot}): ưu tiên **{gem_pref_label(pref)}** · kho: {await _gem_stock_text(slot)}")
+        await ctx.send("🎚️ Tier gem khi thay:\n" + "\n".join(lines) + "\n\nĐổi bằng `,gemtier <loại> <tier>` (xem `,gemtier ?`).")
+        return
+    if first in ("?", "help", "huongdan"):
+        await ctx.send(GEMTIER_USAGE)
+        return
+
+    def is_reset(words):
+        return _fold(" ".join(words)) in ("reset", "xoa", "macdinh", "default")
+
+    if first in ("reset", "xoa", "macdinh", "default"):
+        slots = [resolve_gem_slot(args[1])] if len(args) > 1 else list(GEM_SLOTS)
+        rest = []
+    elif first in ("all", "tatca", "moi"):
+        slots, rest = list(GEM_SLOTS), list(args[1:])
+    else:
+        slots, rest = [resolve_gem_slot(args[0])], list(args[1:])
+    if None in slots or (rest == [] and first not in ("reset", "xoa", "macdinh", "default")):
+        await ctx.send("Mình chưa hiểu loại gem hoặc tier.\n" + GEMTIER_USAGE)
+        return
+    if first in ("reset", "xoa", "macdinh", "default") or is_reset(rest):
+        for slot in slots:
+            await set_config(f"gem_tier_{slot}", "")
+        names = ", ".join(gem_type_name(s) for s in slots)
+        await ctx.send(f"✅ Đã về mặc định (tier cao nhất) cho: {names}.")
+        return
+    pref = normalize_gem_tier_pref(" ".join(rest))
+    if pref is None:
+        await ctx.send(f"Không hiểu tier `{' '.join(rest)}`.\n" + GEMTIER_USAGE)
+        return
+    for slot in slots:
+        await set_config(f"gem_tier_{slot}", pref)
+    names = ", ".join(gem_type_name(s) for s in slots)
+    note = ("" if pref in ("highest", "lowest") else
+            " Hết đúng tier này thì bot lấy tier gần nhất thấp hơn, không còn mới lấy tier cao hơn.")
+    await ctx.send(f"✅ Gem {names}: ưu tiên tier **{gem_pref_label(pref)}**.{note}")
 
 
 _HB_PLAIN_CODE_RE = re.compile(r"^[A-Za-z0-9]{3,12}$")
@@ -4004,51 +4086,58 @@ async def ping_cmd(ctx):
     await ctx.send(f"🏓 Pong! `{ms}ms`")
 
 
+# Danh sách lệnh hiện trong `,help`. Mỗi nhóm: (tên lệnh, chữ hiện ra). Lệnh nào bot không có thì tự bỏ qua.
+# QUY ƯỚC: mỗi lần thêm / đổi / xóa lệnh phải cập nhật ở đây — test_help.py sẽ báo lỗi nếu quên.
+HELP_GROUPS = [
+    ("Theo dõi cá nhân", [
+        ("status", "`,status`"), ("huntbot", "`,huntbot`"), ("quests", "`,quests`"), ("team", "`,team`"),
+        ("teamcheck", "`,teamcheck` (owner): chấm đội hình đang đứng"),
+        ("inv", "`,inv [tìm]`"), ("gems", "`,gems`"),
+        ("gemtier", "`,gemtier [loại] [tier]` (owner): chọn tier gem dùng khi thay, riêng từng loại (hunting/empowering/lucky/special)")]),
+    ("Zoo", [
+        ("zoo", "`,zoo [tìm]`: zoo đang giữ"),
+        ("unlocked", "`,unlocked [tier]` (owner): pet đã mở khóa, không hiện số lượng"),
+        ("zoodiff", "`,zoodiff [d|now]` (owner): so 2 lần ghi zoo gần nhất, `d` = số đã bắt, `now` = đang giữ")]),
+    ("Vũ khí của tôi", [
+        ("myweapons", "`,myweapons [tìm]`"),
+        ("weaponscan", "`,weaponscan` (owner): quét lại kho vũ khí, nhớ dừng farm"),
+        ("weaponprobe", "`,weaponprobe` (owner): xếp lệnh `owo w <ID>` cho app từ danh sách đã quét"),
+        ("weaponlist", "`,weaponlist` (owner): gửi file danh sách vũ khí đã quét"),
+        ("dismantleplan", "`,dismantleplan` (owner): lập kế hoạch dọn vũ khí (giữ/rác/xám), CHƯA xóa gì"),
+        ("weaponknowledge", "`,weaponknowledge` (owner): gửi lại file kiến thức vũ khí"),
+        ("weaponadvice", "`,weaponadvice` (owner): gửi lại file lời khuyên vũ khí"),
+        ("weaponowner", "`,weaponowner` (owner): chỉ ghi vũ khí có tên chủ khớp tên Discord")]),
+    ("Huntbot và acc phụ", [
+        ("hbstart", "`,hbstart [24h|số cowoncy]`"), ("hbcode", "`,hbcode [24h] <mã>`"),
+        ("hbauto", "`,hbauto on|off` (owner)"), ("setalt", "`,setalt [id|xoa]` (owner)"),
+        ("testalt", "`,testalt` (owner)")]),
+    ("Chế độ và cảnh báo", [
+        ("off", "`,off` (owner): TẮT mọi hoạt động của app · `,off on` bật lại · `,off status` xem"),
+        ("eventmode", "`,eventmode on|off` (owner): bật khi có sự kiện, được dùng slot thứ 4"),
+        ("captcha", "`,captcha` xem cảnh báo · `,captcha clear` báo đã giải xong"),
+        ("autocheck", "`,autocheck on|off` (owner): app đang farm thì bot nhờ app gõ xen lệnh check cho mục dữ liệu đã cũ"),
+        ("hbalert", "`,hbalert on|off` (owner): DM acc phụ khi huntbot còn 10 phút (bản dự phòng cho thông báo trên app)")]),
+    ("Ghi chú", [("note", "`,note add <text>` · `,note list` · `,note done <id>`")]),
+    ("Pet (loài)", [
+        ("pet", "`,pet <tên>` / `,dex <tên>`"), ("pets", "`,pets [tìm]`"),
+        ("zoodex", "`,zoodex` nhờ app tra dex cho pet trong zoo chưa có dex · `,zoodex xem` chỉ liệt kê"),
+        ("petset", "`,petset <tên> <rank> <hp> <att> <pr> <wp> <mag> <mr>`")]),
+    ("Loại vũ khí", [
+        ("weapontype", "`,weapontype <tên>`"), ("weapontypes", "`,weapontypes [tìm]`"),
+        ("weapontypeset", "`,weapontypeset <tên> <mô tả>`")]),
+    ("Passive", [
+        ("passive", "`,passive <tên>`"), ("passives", "`,passives [tìm]`"),
+        ("passiveset", "`,passiveset <tên> <mô tả>`")]),
+    ("Cài đặt bot (owner)", [
+        ("track", "`,track @user`"), ("setprefixes", "`,setprefixes owo,o`"), ("setserver", "`,setserver here|<ID>|xoa`"), ("setchannel", "`,setchannel`"),
+        ("rawdump", "`,rawdump`"), ("debugnext", "`,debugnext`"), ("automacro", "`,automacro`")]),
+    ("Khác", [("ping", "`,ping`"), ("help", "`,help`")]),
+]
+
+
 @bot.command(name="help")
 async def help_cmd(ctx):
-    # Mỗi nhóm: (tên lệnh, chữ hiện ra). Lệnh nào bot không có thì tự bỏ qua, nên help không bao giờ nhắc lệnh không tồn tại.
-    groups = [
-        ("Theo dõi cá nhân", [
-            ("status", "`,status`"), ("huntbot", "`,huntbot`"), ("quests", "`,quests`"), ("team", "`,team`"),
-            ("teamcheck", "`,teamcheck` (owner): chấm đội hình đang đứng"),
-            ("inv", "`,inv [tìm]`"), ("gems", "`,gems`")]),
-        ("Zoo", [
-            ("zoo", "`,zoo [tìm]`: zoo đang giữ"),
-            ("unlocked", "`,unlocked [tier]` (owner): pet đã mở khóa, không hiện số lượng"),
-            ("zoodiff", "`,zoodiff [d|now]` (owner): so 2 lần ghi zoo gần nhất, `d` = số đã bắt, `now` = đang giữ")]),
-        ("Vũ khí của tôi", [
-            ("myweapons", "`,myweapons [tìm]`"),
-            ("weaponscan", "`,weaponscan` (owner): quét lại kho vũ khí, nhớ dừng farm"),
-            ("weaponprobe", "`,weaponprobe` (owner): xếp lệnh `owo w <ID>` cho app từ danh sách đã quét"),
-            ("weaponlist", "`,weaponlist` (owner): gửi file danh sách vũ khí đã quét"),
-            ("dismantleplan", "`,dismantleplan` (owner): lập kế hoạch dọn vũ khí (giữ/rác/xám), CHƯA xóa gì"),
-            ("weaponknowledge", "`,weaponknowledge` (owner): gửi lại file kiến thức vũ khí"),
-            ("weaponadvice", "`,weaponadvice` (owner): gửi lại file lời khuyên vũ khí"),
-            ("weaponowner", "`,weaponowner` (owner): chỉ ghi vũ khí có tên chủ khớp tên Discord")]),
-        ("Huntbot và acc phụ", [
-            ("hbstart", "`,hbstart [24h|số cowoncy]`"), ("hbcode", "`,hbcode [24h] <mã>`"),
-            ("hbauto", "`,hbauto on|off` (owner)"), ("setalt", "`,setalt [id|xoa]` (owner)"),
-            ("testalt", "`,testalt` (owner)")]),
-        ("Chế độ và cảnh báo", [
-            ("off", "`,off` (owner): TẮT mọi hoạt động của app · `,off on` bật lại · `,off status` xem"),
-            ("eventmode", "`,eventmode on|off` (owner): bật khi có sự kiện, được dùng slot thứ 4"),
-            ("captcha", "`,captcha` xem cảnh báo · `,captcha clear` báo đã giải xong")]),
-        ("Ghi chú", [("note", "`,note add <text>` · `,note list` · `,note done <id>`")]),
-        ("Pet (loài)", [
-            ("pet", "`,pet <tên>` / `,dex <tên>`"), ("pets", "`,pets [tìm]`"),
-            ("zoodex", "`,zoodex` nhờ app tra dex cho pet trong zoo chưa có dex · `,zoodex xem` chỉ liệt kê"),
-            ("petset", "`,petset <tên> <rank> <hp> <att> <pr> <wp> <mag> <mr>`")]),
-        ("Loại vũ khí", [
-            ("weapontype", "`,weapontype <tên>`"), ("weapontypes", "`,weapontypes [tìm]`"),
-            ("weapontypeset", "`,weapontypeset <tên> <mô tả>`")]),
-        ("Passive", [
-            ("passive", "`,passive <tên>`"), ("passives", "`,passives [tìm]`"),
-            ("passiveset", "`,passiveset <tên> <mô tả>`")]),
-        ("Cài đặt bot (owner)", [
-            ("track", "`,track @user`"), ("setprefixes", "`,setprefixes owo,o`"), ("setchannel", "`,setchannel`"),
-            ("rawdump", "`,rawdump`"), ("debugnext", "`,debugnext`"), ("automacro", "`,automacro`")]),
-        ("Khác", [("ping", "`,ping`"), ("help", "`,help`")]),
-    ]
+    groups = HELP_GROUPS
     embed = discord.Embed(
         title="OwO Tracker — danh sách lệnh",
         description="Prefix: `,` · (owner) = chỉ chủ bot dùng được",
