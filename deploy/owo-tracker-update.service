@@ -1,0 +1,15 @@
+# systemd unit chạy MỘT lần: kiểm tra GitHub và cập nhật bot nếu có commit mới. Do owo-tracker-update.timer gọi định kỳ.
+# setup-vps.sh điền @APP_DIR@ / @APP_USER@ rồi chép vào /etc/systemd/system/
+[Unit]
+Description=Tự cập nhật owo-tracker từ GitHub
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+Environment=APP_DIR=@APP_DIR@
+Environment=APP_USER=@APP_USER@
+ExecStart=/usr/bin/env bash @APP_DIR@/deploy/auto-update.sh
+# Chạy bằng root (cần để restart dịch vụ) nhưng mọi lệnh git/pip đều hạ xuống người dùng của bot (runuser trong script)
+Nice=10
+TimeoutStartSec=300

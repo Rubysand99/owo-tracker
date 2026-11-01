@@ -10,6 +10,7 @@
 #   APP_DIR     mặc định /opt/owo-tracker        APP_USER  mặc định owo
 #   ENV_FILE    mặc định /etc/owo-tracker.env    API_PORT  mặc định 8080
 #   SSH_PORT    cổng SSH để mở trên tường lửa (tự dò, mặc định 22)
+#   AUTO_UPDATE tự cập nhật khi có commit mới trên GitHub (mặc định 1; đặt 0 để không bật). Xem deploy/auto-update.sh
 #   SKIP_APT=1 SKIP_CADDY=1 SKIP_UFW=1 SKIP_SYSTEMD=1   bỏ qua từng bước tương ứng
 set -euo pipefail
 
@@ -25,6 +26,7 @@ SKIP_APT=${SKIP_APT:-0}
 SKIP_CADDY=${SKIP_CADDY:-0}
 SKIP_UFW=${SKIP_UFW:-0}
 SKIP_SYSTEMD=${SKIP_SYSTEMD:-0}
+AUTO_UPDATE=${AUTO_UPDATE:-1}
 
 log()  { printf '\n\033[1;32m==> %s\033[0m\n' "$*"; }
 warn() { printf '\033[1;33mLưu ý: %s\033[0m\n' "$*"; }
@@ -97,6 +99,23 @@ if [ "$SKIP_SYSTEMD" != 1 ]; then
   else
     systemctl restart owo-tracker
     STARTED=1
+  fi
+fi
+
+# ---------------------------------------------------------------- tự cập nhật (timer)
+if [ "$SKIP_SYSTEMD" != 1 ]; then
+  UNIT_DIR=$(dirname "$SERVICE_FILE")
+  if [ "$AUTO_UPDATE" = 1 ]; then
+    log "Bật tự cập nhật từ GitHub (kiểm tra mỗi ~3 phút)"
+    sed -e "s|@APP_DIR@|$APP_DIR|g" -e "s|@APP_USER@|$APP_USER|g" \
+        "$APP_DIR/deploy/owo-tracker-update.service" > "$UNIT_DIR/owo-tracker-update.service"
+    cp "$APP_DIR/deploy/owo-tracker-update.timer" "$UNIT_DIR/owo-tracker-update.timer"
+    install -d -m 700 /var/lib/owo-tracker-update
+    systemctl daemon-reload
+    systemctl enable --now owo-tracker-update.timer >/dev/null
+  else
+    systemctl disable --now owo-tracker-update.timer >/dev/null 2>&1 || true
+    warn "AUTO_UPDATE=0: không tự cập nhật. Cập nhật tay bằng: sudo bash $APP_DIR/deploy/update.sh"
   fi
 fi
 
