@@ -169,6 +169,47 @@ async def scenarios():
     check("tắt hết -> có báo trong kênh là các tier đang TẮT", any("đang TẮT" in (t or "") for t in said), True)
     check("tắt tier của loại khác (lucky) không ảnh hưởng hunting", await run_allow("al_other", [("tat", "lucky", "all")]), ["owo use 054"])
 
+    # ----- API cho app: GET/POST /gemtier -----
+    import json as _json
+    old_token, b.AUTOMACRO_API_TOKEN = b.AUTOMACRO_API_TOKEN, "t" * 30
+    try:
+        def req(body=None, token="t" * 30, bad_json=False):
+            async def j():
+                if bad_json: raise ValueError("no json")
+                return body
+            return NS(headers={"Authorization": f"Bearer {token}"}, json=j, remote="1.2.3.4")
+        fresh("gem_api")
+        await b.mdb[b.COL_INVENTORY].insert_one({"_id": "051", "is_gem": True, "gem_slot": "1", "count": 3,
+                                                  "gem_tier": "Common", "gem_tier_rank": 1})
+        r = await b.handle_get_gemtier(req(token="sai"))
+        check("GET /gemtier: sai token -> 401", r.status, 401)
+        r = await b.handle_get_gemtier(req())
+        data = _json.loads(r.text)
+        check("GET /gemtier: 200 + 4 loại + 7 tier", (r.status, [s["slot"] for s in data["slots"]], len(data["tiers"])),
+              (200, ["1", "3", "4", "star"], 7))
+        check("GET /gemtier: mặc định bật hết + có kho", (len(data["slots"][0]["allowed"]), data["slots"][0]["stock"]),
+              (7, [{"tier": "Common", "count": 3}]))
+        r = await b.handle_post_gemtier(req({"allowed": {"4": ["Rare", "Epic"], "1": []}}, token="sai"))
+        check("POST /gemtier: sai token -> 401", r.status, 401)
+        r = await b.handle_post_gemtier(req({"allowed": {"4": ["Rare", "Epic"], "1": []}}))
+        data = _json.loads(r.text)
+        by = {s["slot"]: s["allowed"] for s in data["slots"]}
+        check("POST /gemtier: lưu lucky=[Rare,Epic], hunting=[] (tắt hết)", (r.status, by["4"], by["1"]), (200, ["Rare", "Epic"], []))
+        check("POST /gemtier: loại không nằm trong body giữ nguyên", by["3"], list(b.GEM_TIERS))
+        check("POST /gemtier: khớp với lệnh Discord (get_gem_allowed)", (await b.get_gem_allowed("4"), await b.get_gem_allowed("1")),
+              ({"Rare", "Epic"}, set()))
+        r = await b.handle_post_gemtier(req({"allowed": {"3": ["Common"], "4": ["Zzz"]}}))
+        check("POST /gemtier: tier lạ -> 400 và KHÔNG đổi gì (kể cả loại hợp lệ đứng trước)",
+              (r.status, await b.get_gem_allowed("3")), (400, None))
+        r = await b.handle_post_gemtier(req({"allowed": {"9": ["Common"]}}))
+        check("POST /gemtier: loại lạ -> 400", r.status, 400)
+        r = await b.handle_post_gemtier(req(bad_json=True))
+        check("POST /gemtier: không có body -> 400", r.status, 400)
+        r = await b.handle_post_gemtier(req({"allowed": {}}))
+        check("POST /gemtier: allowed rỗng -> 400", r.status, 400)
+    finally:
+        b.AUTOMACRO_API_TOKEN = old_token
+
 asyncio.run(scenarios())
 if fails:
     print("\n❌ %d bài lỗi" % len(fails)); sys.exit(1)

@@ -1859,6 +1859,51 @@ async def handle_post_power(request: web.Request):
     return web.json_response({"on": body["on"], "off": not body["on"], "cancelled": cancelled})
 
 
+async def gemtier_snapshot():
+    """Cài đặt tier gem cho app: mỗi loại có các tier được phép (✅), ưu tiên và gem còn trong kho."""
+    slots = []
+    for slot in GEM_SLOTS:
+        allowed = await get_gem_allowed(slot)
+        rows = await mdb[COL_INVENTORY].find(
+            {"is_gem": True, "gem_slot": slot, "count": {"$gt": 0}}).sort("gem_tier_rank", -1).to_list(length=10)
+        slots.append({
+            "slot": slot, "name": gem_type_name(slot),
+            "allowed": [t for t in GEM_TIERS if allowed is None or t in allowed],
+            "pref": await get_gem_tier_pref(slot),
+            "stock": [{"tier": r.get("gem_tier"), "count": r.get("count")} for r in rows],
+        })
+    return {"tiers": list(GEM_TIERS), "slots": slots}
+
+
+async def handle_get_gemtier(request: web.Request):
+    if not _check_api_token(request):
+        return web.json_response({"error": "unauthorized"}, status=401)
+    return web.json_response(await gemtier_snapshot())
+
+
+async def handle_post_gemtier(request: web.Request):
+    """App lưu tier được phép. Body: {"allowed": {"1": ["Common","Rare"], "4": [...]}} — chỉ đổi các loại có trong body.
+    Danh sách rỗng = tắt hết tier loại đó. Tier/loại lạ -> 400 (không đổi gì)."""
+    if not _check_api_token(request):
+        return web.json_response({"error": "unauthorized"}, status=401)
+    try:
+        body = await request.json()
+    except ValueError:
+        body = {}
+    allowed = body.get("allowed") if isinstance(body, dict) else None
+    if not isinstance(allowed, dict) or not allowed:
+        return web.json_response({"error": "allowed phai la object {loai: [tier,...]}"}, status=400)
+    parsed = {}
+    for slot, tiers in allowed.items():
+        if slot not in GEM_SLOTS or not isinstance(tiers, list) or any(t not in GEM_TIERS for t in tiers):
+            return web.json_response({"error": "loai gem hoac tier khong hop le", "slot": str(slot)}, status=400)
+        parsed[slot] = set(tiers)
+    for slot, tiers in parsed.items():          # chi ghi khi TAT CA hop le
+        await set_gem_allowed(slot, tiers)
+    print(f"[tracker][gemtier] App luu tier duoc phep: { {s: sorted(t) for s, t in parsed.items()} }")
+    return web.json_response(await gemtier_snapshot())
+
+
 async def farm_watchdog():
     """Chay nen: canh chung khi app dang farm. Bao Ruby neu dien thoai mat ket noi hoac OwO im lang."""
     while True:
@@ -2323,6 +2368,8 @@ async def start_automacro_api_server():
     app.router.add_post("/notify", handle_post_notify)
     app.router.add_post("/event-mode", handle_post_event_mode)
     app.router.add_post("/power", handle_post_power)
+    app.router.add_get("/gemtier", handle_get_gemtier)
+    app.router.add_post("/gemtier", handle_post_gemtier)
     app.router.add_post("/weapon-advice", handle_post_weapon_advice)
     runner = web.AppRunner(app)
     await runner.setup()
