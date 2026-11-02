@@ -1882,25 +1882,39 @@ async def handle_get_gemtier(request: web.Request):
 
 
 async def handle_post_gemtier(request: web.Request):
-    """App lưu tier được phép. Body: {"allowed": {"1": ["Common","Rare"], "4": [...]}} — chỉ đổi các loại có trong body.
-    Danh sách rỗng = tắt hết tier loại đó. Tier/loại lạ -> 400 (không đổi gì)."""
+    """App lưu cài đặt tier. Body (có ít nhất 1 trong 2 khóa, chỉ đổi các loại có trong body):
+      {"allowed": {"1": ["Common","Rare"], "4": []},      # tier được phép; rỗng = tắt hết
+       "pref":    {"1": "highest", "4": "lowest", "3": "Rare"}}   # ưu tiên: highest | lowest | 1 tên tier
+    Tier/loại lạ -> 400 (không đổi gì)."""
     if not _check_api_token(request):
         return web.json_response({"error": "unauthorized"}, status=401)
     try:
         body = await request.json()
     except ValueError:
         body = {}
-    allowed = body.get("allowed") if isinstance(body, dict) else None
-    if not isinstance(allowed, dict) or not allowed:
-        return web.json_response({"error": "allowed phai la object {loai: [tier,...]}"}, status=400)
-    parsed = {}
-    for slot, tiers in allowed.items():
+    if not isinstance(body, dict):
+        body = {}
+    allowed, pref = body.get("allowed"), body.get("pref")
+    if not (isinstance(allowed, dict) and allowed) and not (isinstance(pref, dict) and pref):
+        return web.json_response({"error": "can allowed {loai: [tier,...]} va/hoac pref {loai: tier}"}, status=400)
+    parsed_allowed, parsed_pref = {}, {}
+    for slot, tiers in (allowed or {}).items() if isinstance(allowed, (dict, type(None))) else []:
         if slot not in GEM_SLOTS or not isinstance(tiers, list) or any(t not in GEM_TIERS for t in tiers):
             return web.json_response({"error": "loai gem hoac tier khong hop le", "slot": str(slot)}, status=400)
-        parsed[slot] = set(tiers)
-    for slot, tiers in parsed.items():          # chi ghi khi TAT CA hop le
+        parsed_allowed[slot] = set(tiers)
+    if allowed is not None and not isinstance(allowed, dict):
+        return web.json_response({"error": "allowed phai la object"}, status=400)
+    if pref is not None and not isinstance(pref, dict):
+        return web.json_response({"error": "pref phai la object"}, status=400)
+    for slot, value in (pref or {}).items():
+        if slot not in GEM_SLOTS or value not in ("highest", "lowest") + tuple(GEM_TIERS):
+            return web.json_response({"error": "loai gem hoac uu tien khong hop le", "slot": str(slot)}, status=400)
+        parsed_pref[slot] = value
+    for slot, tiers in parsed_allowed.items():          # chi ghi khi TAT CA hop le
         await set_gem_allowed(slot, tiers)
-    print(f"[tracker][gemtier] App luu tier duoc phep: { {s: sorted(t) for s, t in parsed.items()} }")
+    for slot, value in parsed_pref.items():
+        await set_config(f"gem_tier_{slot}", value)
+    print(f"[tracker][gemtier] App luu: duoc phep { {s: sorted(t) for s, t in parsed_allowed.items()} }, uu tien {parsed_pref}")
     return web.json_response(await gemtier_snapshot())
 
 

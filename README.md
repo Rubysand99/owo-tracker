@@ -142,7 +142,8 @@ Xem lệnh đang chờ / đã xử lý ngay trong Discord: `,automacro` (owner).
 - `POST /commands/{id}/ack` — báo đã xử lý xong, body `{"status": "done"}`
   hoặc `{"status": "failed"}`.
 - `GET /gemtier` / `POST /gemtier` — tier gem được phép dùng cho từng loại (app Star Hub dùng để bật/tắt từng tier). POST body
-  `{"allowed": {"1": ["Common","Rare"], "4": []}}`: chỉ đổi các loại có trong body, danh sách rỗng = tắt hết, tier/loại lạ -> 400.
+  `{"allowed": {"1": ["Common","Rare"], "4": []}, "pref": {"1": "highest"}}` (cần ít nhất 1 trong 2 khóa; `pref` = `highest` | `lowest` | tên tier):
+  chỉ đổi các loại có trong body, danh sách rỗng = tắt hết, tier/loại lạ -> 400 và không đổi gì.
 - `GET /hub` — trả về **toàn bộ dữ liệu mới nhất bot đã đọc được** để
   app AutoMacro hiện thành màn hình Hub: `daily` (giờ nhận kế tiếp, streak),
   `cowoncy`, `gems` (đang trang bị + gem dự

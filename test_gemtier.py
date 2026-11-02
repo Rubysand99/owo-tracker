@@ -207,6 +207,23 @@ async def scenarios():
         check("POST /gemtier: không có body -> 400", r.status, 400)
         r = await b.handle_post_gemtier(req({"allowed": {}}))
         check("POST /gemtier: allowed rỗng -> 400", r.status, 400)
+        # ----- ưu tiên (pref) -----
+        fresh("gem_api_pref")
+        r = await b.handle_post_gemtier(req({"pref": {"1": "Rare", "4": "lowest", "3": "highest"}}))
+        data = _json.loads(r.text)
+        prefs = {s["slot"]: s["pref"] for s in data["slots"]}
+        check("POST pref: lưu hunting=Rare, lucky=lowest, empowering=highest", (r.status, prefs["1"], prefs["4"], prefs["3"]),
+              (200, "Rare", "lowest", "highest"))
+        check("POST pref: khớp lệnh Discord (get_gem_tier_pref)", await b.get_gem_tier_pref("1"), "Rare")
+        r = await b.handle_post_gemtier(req({"allowed": {"1": ["Rare"]}, "pref": {"1": "Epic"}}))
+        data = _json.loads(r.text)
+        check("POST cả allowed + pref trong 1 lần", (data["slots"][0]["allowed"], data["slots"][0]["pref"]), (["Rare"], "Epic"))
+        r = await b.handle_post_gemtier(req({"allowed": {"3": ["Common"]}, "pref": {"4": "Zzz"}}))
+        check("POST pref sai -> 400 và KHÔNG đổi cả allowed hợp lệ đi kèm", (r.status, await b.get_gem_allowed("3")), (400, None))
+        r = await b.handle_post_gemtier(req({"pref": {"9": "highest"}}))
+        check("POST pref loại lạ -> 400", r.status, 400)
+        r = await b.handle_post_gemtier(req({"pref": "highest"}))
+        check("POST pref không phải object -> 400", r.status, 400)
     finally:
         b.AUTOMACRO_API_TOKEN = old_token
 
