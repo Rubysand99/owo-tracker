@@ -25,7 +25,8 @@ RANK_VI = {
 
 def parse_owodex(text: str):
     count_m = re.search(r"\*\*Count:\*\*\s*(\S+)", text)
-    rank_m = re.search(r"\*\*Rank:\*\*\s*([a-zA-Z ]+)", text)
+    # OwO ghi "Rank: <emoji> special" (emoji tuy chinh hoac unicode dung truoc chu) -> bo emoji roi lay chu rank
+    rank_m = re.search(r"\*\*Rank:\*\*\s*(?:<a?:\w+:\d+>|:\w+:|[^\w\s*])*\s*([a-zA-Z][a-zA-Z ]*)", text)
     alias_m = re.search(r"\*\*Alias:\*\*\s*([^\n]+)", text)
     rarity_m = re.search(r"\*\*Rarity:\*\*\s*([\d,]+)\s*total caught", text)
     points_m = re.search(r"\*\*Points:\*\*\s*(\d+)", text)

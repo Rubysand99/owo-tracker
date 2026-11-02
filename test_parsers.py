@@ -75,6 +75,25 @@ WP `1` MAG `2` MR `3`"""), {
     "sacrifice_essence": 10000, "sacrifice_killed_count": 53,
 })
 
+# Embed that: Rank co emoji dung truoc (ban chup man hinh: "Rank: 🌈 special"), Alias co dau phay cuoi, Sell ???
+_dx = bot_mod.parse_owodex("""*Happy Diwali!*
+
+Holiday pet created on November 2024 Holidays!
+
+**Count:** 0/3
+**Rank:** <a:special:123456789012345678> special
+**Rarity:** 196,091 total caught
+**Alias:** 2024nov_diwaliOwO, DiwaliOwO, Diwali2024
+**Points:** 500
+**Sell:** ???
+**Sacrifice:** 5000 Essence | 3 killed
+<:hp:1> `1` <:att:2> `15` <:pr:3> `1`
+<:wp:4> `1` <:mag:5> `1` <:mr:6> `1`""")
+check("parse_owodex: Rank có emoji phía trước vẫn đọc được rank",
+      (_dx["rank"], _dx["rank_vi"], _dx["name"], _dx["stats"]), ("Special", "Đặc biệt", "2024nov_diwaliOwO", [1, 15, 1, 1, 1, 1]))
+_dx2 = bot_mod.parse_owodex("**Count:** 0/8\n**Rank:** \U0001F308 special\n**Alias:** 2026oct_ghost,\n**Points:** 500\n`1` `1` `1`\n`1` `15` `1`")
+check("parse_owodex: emoji unicode + alias có dấu phẩy cuối", (_dx2["rank"], _dx2["aliases"]), ("Special", ["2026oct_ghost"]))
+
 # Pet không bán/hy sinh được (OwO hiện "???" thay vì số) — không được vỡ,
 # phải trả None cho các trường đó thay vì crash hoặc gán nhầm số.
 pet_unsellable = bot_mod.parse_owodex("""**Count:** 0/1
