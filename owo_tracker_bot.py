@@ -2677,6 +2677,42 @@ async def get_owo_prefixes():
     return [p.strip().lower() for p in raw.split(",") if p.strip()]
 
 
+async def dex_wanted_names() -> set:
+    """Ten pet (thuong) ma Tom dang CAN dex: pet dang giu trong zoo, pet vua nho app tra, lenh dex dang cho."""
+    wanted = set(_dex_requested)
+    zoo = await mdb[COL_ZOO].find_one({"_id": "latest"})
+    for p in (zoo or {}).get("pets", []):
+        if p.get("name"):
+            wanted.add(str(p["name"]).lower())
+    async for c in mdb[COL_AUTOMACRO_COMMANDS].find({"status": "pending", "action": "dex_pet"}):
+        wanted.add(str((c.get("params") or {}).get("pet", "")).lower())
+    wanted.discard("")
+    return wanted
+
+
+async def accept_dex_by_alias(message, tracked_id) -> bool:
+    """Embed owodex do OwO tra ve TRE (qua cua so doi lenh) hoac duoc SUA sau van duoc nhan, miễn là
+    alias trong embed khop ten/id cua 1 pet Tom dang can. Dex la thong tin chung cua game nen khong can
+    biet ai go lenh; rieng 'Count' la so cua nguoi go, nen tin cua nguoi khac thi bo Count.
+    Tra ve True neu da luu."""
+    text = flatten_message(message)
+    pet = parse_owodex(text)
+    if not pet:
+        return False
+    wanted = await dex_wanted_names()
+    if not wanted.intersection(str(a).lower() for a in (pet.get("aliases") or [pet["name"]])):
+        return False
+    verdict, _who = owner_verdict(text, tracked_id, await tracked_name_set(tracked_id))
+    if verdict == "other":
+        pet = dict(pet, count="")
+    await save_pet_species(pet, tracked_id)
+    await record_raw("owodex", text, pet, message)
+    for a in pet.get("aliases") or [pet["name"]]:
+        _dex_requested.pop(str(a).lower(), None)
+    print(f"[tracker] Đã nhận dex {pet['name']} theo alias (embed có thể đến trễ).")
+    return True
+
+
 @bot.event
 async def on_raw_message_edit(payload):
     """Bam tab Daily/Weekly/Quests trong Quest Log la SUA tin cu chu khong gui tin moi. Doc lai tin da sua
@@ -2693,6 +2729,8 @@ async def on_raw_message_edit(payload):
             return
         channel = bot.get_channel(payload.channel_id) or await bot.fetch_channel(payload.channel_id)
         message = await channel.fetch_message(payload.message_id)
+        if await accept_dex_by_alias(message, await get_config("tracked_user_id")):
+            return
         text = flatten_message(message)
         wlist = parse_weapon_list(text)
         if wlist:
@@ -2770,6 +2808,14 @@ async def on_message(message: discord.Message):
             await check_hb_password_message(message, tracked_id)
         except Exception as e:
             print(f"[tracker][hb] Loi chuyen mat khau huntbot: {e!r}")
+
+    if message.author.id == OWO_BOT_ID:
+        try:
+            if await accept_dex_by_alias(message, tracked_id):
+                await bot.process_commands(message)
+                return
+        except Exception as e:
+            print(f"[tracker][dex] Loi nhan dex theo alias: {e!r}")
 
     if message.author.id == OWO_BOT_ID and reply_target(message, tracked_id) == "nguoi_khac":
         # Chac chan OwO dang tra loi tin cua NGUOI KHAC -> bo qua, du loai tin nao (team, quest, ...)

@@ -91,6 +91,25 @@ async def run():
     await b.zoodex_cmd(ctx)
     check("đủ dex hết -> báo ✅, không xếp lệnh", ("✅" in last(), await pending_dex(db)), (True, []))
 
+    # --- embed dex đến TRỄ / của người khác: nhận miễn là alias khớp pet Tom đang cần ---
+    def dex_msg(alias_line, count="2/9"):
+        txt = ("*A late fox.*\n**Count:** %s\n**Rank:** common\n**Alias:** %s\n`10` `11` `12` `13` `14` `15`\n"
+               "**Rarity:** 1,234 total caught\n**Points:** 1" % (count, alias_line))
+        return NS(id=1, content=txt, embeds=[], components=[], channel=NS(id=99), reference=None)
+    await db[b.COL_PET_SPECIES].delete_many({}); b._dex_requested.clear()
+    await put_zoo(db, pets(("latefox", 1)))
+    b._dex_requested["latefox"] = 0          # nhờ từ lâu (đã quá cửa sổ đối lệnh)
+    got = await b.accept_dex_by_alias(dex_msg("latefox, lf"), "555")
+    row = await db[b.COL_PET_SPECIES].find_one({"_id": "latefox"})
+    check("dex trễ: alias khớp id pet trong zoo -> lưu (kể cả ngoài cửa sổ đối lệnh)",
+          (got, row and row["hp"], row and row["aliases"], "latefox" in b._dex_requested), (True, 10, ["latefox", "lf"], False))
+    check("dex trễ: pet có đủ dex -> hết thiếu", (await b.zoo_pets_missing_dex())["missing"], [])
+    got2 = await b.accept_dex_by_alias(dex_msg("stranger, st"), "555")
+    check("dex của pet Tom không cần (alias lạ) -> bỏ qua", (got2, await db[b.COL_PET_SPECIES].find_one({"_id": "stranger"})), (False, None))
+    await put_zoo(db, pets(("latefox", 1), ("other", 1)))
+    got3 = await b.accept_dex_by_alias(dex_msg("zzz, other"), "555")
+    check("dex khớp theo alias (không phải tên đầu) vẫn nhận", (got3, (await db[b.COL_PET_SPECIES].find_one({"_id": "zzz"})) is not None), (True, True))
+
     # --- nhiều pet: giới hạn mỗi lượt ---
     await db[b.COL_PET_SPECIES].delete_many({})
     many = [(f"pet{i:02d}", 1) for i in range(27)]
