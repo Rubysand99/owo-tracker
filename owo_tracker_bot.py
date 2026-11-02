@@ -271,10 +271,22 @@ async def set_config(key, value):
     await mdb[COL_CONFIG].update_one({"_id": key}, {"$set": {"value": value}}, upsert=True)
 
 
-def scope_allows(scope_guild, scope_channel, guild_id, channel_id) -> bool:
+def parse_id_list(raw) -> list:
+    """'123, 456' -> ['123', '456'] (bo trung, giu thu tu, chi nhan so)."""
+    out = []
+    for x in re.split(r"[,\s]+", str(raw or "")):
+        if x.isdigit() and x not in out:
+            out.append(x)
+    return out
+
+
+def scope_allows(scope_guild, scope_channel, guild_id, channel_id, ignored=None) -> bool:
     """Tin o (guild_id, channel_id) co thuoc pham vi theo doi khong?
     Gioi han theo SERVER (,setserver) thang gioi han theo 1 KENH (,setchannel); ca hai trong = moi noi.
-    Tin rieng (guild_id None) khong thuoc pham vi nao khi da dat gioi han."""
+    Tin rieng (guild_id None) khong thuoc pham vi nao khi da dat gioi han.
+    `ignored` = danh sach kenh BO QUA (,ignorechannel): tin o kenh do khong bao gio duoc theo doi."""
+    if ignored and str(channel_id) in {str(x) for x in ignored}:
+        return False
     if scope_guild:
         return guild_id is not None and str(guild_id) == str(scope_guild)
     if scope_channel:
@@ -2756,7 +2768,8 @@ async def on_raw_message_edit(payload):
         if str(author_id) != str(OWO_BOT_ID):
             return
         scope_guild, scope_channel = await tracking_scope()
-        if not scope_allows(scope_guild, scope_channel, getattr(payload, "guild_id", None), payload.channel_id):
+        if not scope_allows(scope_guild, scope_channel, getattr(payload, "guild_id", None), payload.channel_id,
+                            parse_id_list(await get_config("ignored_channel_ids"))):
             return
         channel = bot.get_channel(payload.channel_id) or await bot.fetch_channel(payload.channel_id)
         message = await channel.fetch_message(payload.message_id)
@@ -2802,7 +2815,8 @@ async def on_message(message: discord.Message):
     # do). Lenh cua chinh bot nay (,status, ,setchannel, ,debugnext...) van
     # chay duoc o moi kenh, vi do la lenh quan tri, khong phai theo doi OwO.
     scope_guild, scope_channel = await tracking_scope()
-    if not scope_allows(scope_guild, scope_channel, getattr(message.guild, "id", None) if message.guild else None, message.channel.id):
+    if not scope_allows(scope_guild, scope_channel, getattr(message.guild, "id", None) if message.guild else None, message.channel.id,
+                        parse_id_list(await get_config("ignored_channel_ids"))):
         await bot.process_commands(message)
         return
     scoped = bool(scope_guild or scope_channel)
@@ -3337,6 +3351,7 @@ async def rawdump_cmd(ctx, *, arg: str = ""):
         "tao_luc": _utcnow().isoformat() + "Z",
         "kenh_gioi_han": await get_config("tracked_channel_id") or None,
         "server_gioi_han": await get_config("tracked_guild_id") or None,
+        "kenh_bo_qua": parse_id_list(await get_config("ignored_channel_ids")),
         "chua_thay_loai_nao": missing,
         "mau": samples,
     }
@@ -3570,6 +3585,57 @@ async def setserver_cmd(ctx, *, arg: str = ""):
     g = bot.get_guild(int(gid))
     await ctx.send(f"Đã chuyển sang theo dõi cả server **{g.name if g else gid}** — bot giờ đọc lệnh owo và tin OwO ở MỌI kênh "
                    f"của server này (server khác bị bỏ qua).")
+
+
+@bot.command(name="ignorechannel", aliases=["boqua"])
+@is_owner()
+async def ignorechannel_cmd(ctx, *, arg: str = ""):
+    """Bo qua 1 kenh trong server dang theo doi: Tom khong doc lenh owo cua ban va tin OwO o kenh do.
+    Dung: ,ignorechannel here (kenh dang go) · ,ignorechannel #kenh (hoac ID) · ,ignorechannel xoa #kenh (bo bo qua)
+    · ,ignorechannel xoa (bo het) · khong kem gi: xem danh sach. Lenh cua chinh Tom van dung duoc o moi kenh."""
+    arg = arg.strip()
+    current = parse_id_list(await get_config("ignored_channel_ids"))
+    low = arg.lower()
+    if not arg or low in ("list", "ds", "xem"):
+        if current:
+            await ctx.send("🙈 Tom đang BỎ QUA các kênh: " + ", ".join(f"<#{c}>" for c in current)
+                           + "\nBỏ qua thêm: `,ignorechannel here` · Bỏ bớt: `,ignorechannel xoa #kênh`")
+        else:
+            await ctx.send("Chưa bỏ qua kênh nào. Bỏ qua kênh này: `,ignorechannel here` (gõ ngay trong kênh đó).")
+        return
+    remove = False
+    for w in ("xoa", "xóa", "clear", "bo", "bỏ"):
+        if low == w or low.startswith(w + " "):
+            remove, arg = True, arg[len(w):].strip()
+            break
+    if remove and not arg:
+        await set_config("ignored_channel_ids", "")
+        await ctx.send("Đã bỏ danh sách kênh bị bỏ qua — Tom theo dõi lại mọi kênh trong phạm vi.")
+        return
+    if arg.lower() in ("here", "day", "đây", "nay"):
+        cid = str(ctx.channel.id)
+    else:
+        cid = arg.strip("<#>").strip()
+    if not cid.isdigit():
+        await ctx.send("Không đọc được kênh. Dùng: `,ignorechannel here`, `,ignorechannel #kênh` hoặc dán ID kênh.")
+        return
+    if remove:
+        if cid not in current:
+            await ctx.send(f"<#{cid}> vốn không nằm trong danh sách bỏ qua.")
+            return
+        current.remove(cid)
+        await set_config("ignored_channel_ids", ",".join(current))
+        await ctx.send(f"Đã theo dõi lại <#{cid}>.")
+        return
+    scope_guild, scope_channel = await tracking_scope()
+    if scope_channel and scope_channel == cid:
+        await ctx.send(f"<#{cid}> đang là kênh duy nhất được theo dõi (`,setchannel`). Muốn tắt hẳn thì dùng `,setchannel xoa`.")
+        return
+    if cid not in current:
+        current.append(cid)
+    await set_config("ignored_channel_ids", ",".join(current))
+    note = "" if (scope_guild or scope_channel) else "\n(Chưa đặt giới hạn server/kênh nên Tom vẫn theo dõi mọi nơi khác.)"
+    await ctx.send(f"🙈 Tom sẽ BỎ QUA <#{cid}>: không đọc lệnh owo của bạn và tin OwO ở đó. Lệnh `,` của Tom vẫn dùng được.{note}")
 
 
 @bot.command(name="weaponowner")
@@ -4509,6 +4575,7 @@ HELP_GROUPS = [
         ("setprefixes", "`,setprefixes owo,o` (owner): khai báo prefix OwO của bạn — bắt buộc nếu bạn gõ tắt (vd `o`)"),
         ("setserver", "`,setserver here|<ID>|xoa` (owner): theo dõi cả 1 server (mọi kênh); `here` = server đang gõ, `xoa` = bỏ giới hạn"),
         ("setchannel", "`,setchannel [#kênh|xoa]` (owner): chỉ theo dõi 1 kênh; không kèm gì = xem trạng thái"),
+        ("ignorechannel", "`,ignorechannel here|#kênh|xoa [#kênh]` / `,boqua` (owner): Tom BỎ QUA 1 kênh trong server đang theo dõi (không đọc lệnh owo và tin OwO ở đó); không kèm gì = xem danh sách"),
         ("rawdump", "`,rawdump [xoa]` (owner): gửi qua DM file tin OwO nguyên văn bot đọc được để đối chiếu; `xoa` = xóa mẫu cũ"),
         ("debugnext", "`,debugnext` (owner): in nội dung tin OwO kế tiếp ra console để gỡ lỗi"),
         ("automacro", "`,automacro [clear]` (owner): xem lệnh đang chờ / đã xử lý của app; `clear` = hủy hết lệnh đang chờ")]),

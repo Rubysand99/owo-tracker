@@ -30,6 +30,11 @@ check("phạm vi: theo kênh, đúng kênh", S("", "42", 1, 42), True)
 check("phạm vi: theo kênh, kênh khác -> bỏ", S("", "42", 1, 43), False)
 check("phạm vi: server thắng kênh khi đặt cả hai", S("900", "42", 900, 7), True)
 
+check("bỏ qua kênh: kênh trong danh sách bị loại dù đúng server", S("900", "", 900, 5, ["5", "6"]), False)
+check("bỏ qua kênh: kênh khác trong server vẫn được", S("900", "", 900, 7, ["5", "6"]), True)
+check("bỏ qua kênh: danh sách rỗng = không ảnh hưởng", S("900", "", 900, 5, []), True)
+check("bỏ qua kênh: đọc danh sách ID (bỏ trùng, bỏ chữ lạ)", b.parse_id_list("5, 6 6 abc,7"), ["5", "6", "7"])
+
 async def scenarios():
     db = b.mdb = AsyncMongoMockClient()["scope_test"]
     await b.set_config("tracked_user_id", "555")
@@ -53,6 +58,19 @@ async def scenarios():
         check("server: kênh 111 của server 900 được đọc", await cash(), 500)
         await b.on_message(cmd("owo cash", 222, 900)); await b.on_message(owo("Ruby, you currently have 700 cowoncy!", 222, 900))
         check("server: kênh 222 (kênh KHÁC, cùng server) cũng được đọc", await cash(), 700)
+        # kênh bị BỎ QUA trong server đang theo dõi
+        said = []
+        async def send(text=None, **kw): said.append(text)
+        await b.ignorechannel_cmd(NS(send=send, channel=NS(id=222), guild=NS(id=900)), arg="here")
+        check("ignorechannel here: lưu kênh", (await b.get_config("ignored_channel_ids"), "BỎ QUA" in said[-1]), ("222", True))
+        await b.on_message(cmd("owo cash", 222, 900)); await b.on_message(owo("Ruby, you currently have 123 cowoncy!", 222, 900))
+        check("kênh bị bỏ qua: không đọc tin OwO ở đó", await cash(), 700)
+        await b.on_message(cmd("owo cash", 111, 900)); await b.on_message(owo("Ruby, you currently have 710 cowoncy!", 111, 900))
+        check("kênh khác trong server vẫn được đọc", await cash(), 710)
+        await b.ignorechannel_cmd(NS(send=send, channel=NS(id=1), guild=NS(id=900)), arg="xoa <#222>")
+        check("ignorechannel xoa #kênh: theo dõi lại", await b.get_config("ignored_channel_ids"), "")
+        await b.on_message(cmd("owo cash", 222, 900)); await b.on_message(owo("Ruby, you currently have 700 cowoncy!", 222, 900))
+        check("sau khi bỏ bỏ-qua, kênh 222 đọc lại được", await cash(), 700)
         await b.on_message(cmd("owo cash", 333, 800)); await b.on_message(owo("Ruby, you currently have 999999 cowoncy!", 333, 800))
         check("server: server khác (800) bị bỏ qua", await cash(), 700)
         check("server: lệnh ở server khác không tính là lệnh chờ", 333 in b.pending_commands, False)

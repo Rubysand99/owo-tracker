@@ -288,6 +288,7 @@ Mục `weapon` luôn được ghi mẫu kể cả khi vũ khí không phải c�
 **mọi kênh** của server đó (kể cả kênh bạn chưa gõ lệnh), bỏ qua server khác và tin nhắn riêng. Bot nhớ kênh gần nhất
 bạn gõ lệnh để nhắn tag / mở Discord đúng chỗ. `,setserver` xem trạng thái · `,setserver xoa` bỏ giới hạn.
 `,setserver` và `,setchannel` thay thế nhau (đặt cái này thì cái kia bị bỏ).
+`,ignorechannel here|#kênh` (alias `,boqua`): Tom BỎ QUA 1 kênh trong server đang theo dõi (không đọc lệnh owo và tin OwO ở đó); `,ignorechannel xoa #kênh` theo dõi lại, `xoa` một mình bỏ hết, không kèm gì = xem danh sách.
 
 ### Hub nổi bật/tắt = bot ON/OFF
 App báo cho bot mỗi khi **bật Hub nổi** (ON) hoặc **tắt Hub nổi** (OFF). OFF chỉ nghĩa là **bot ngừng gửi yêu cầu cho app**
