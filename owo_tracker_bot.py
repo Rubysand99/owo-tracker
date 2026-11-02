@@ -48,8 +48,13 @@ from owo_parsers import (
     duration_to_seconds,
     emoji_to_name,
     GEM_SLOTS,
+    GEM_TIERS,
+    decode_allowed_tiers,
+    encode_allowed_tiers,
+    filter_allowed_gems,
     load_weapon_rules,
     normalize_gem_tier_pref,
+    parse_gem_tier_words,
     parse_battle,
     parse_checklist,
     parse_cowoncy,
@@ -752,6 +757,21 @@ async def get_gem_tier_pref(slot) -> str:
     raw = await get_config(f"gem_tier_{slot}", "")
     pref = normalize_gem_tier_pref(raw) if raw else None
     return pref or ("highest" if GEM_PICK_HIGHEST_TIER else "lowest")
+
+
+async def get_gem_allowed(slot):
+    """Các tier ĐƯỢC PHÉP dùng khi thay gem loại này: set tên tier, hoặc None = mọi tier (mặc định)."""
+    return decode_allowed_tiers(await get_config(f"gem_allow_{slot}", ""))
+
+
+async def set_gem_allowed(slot, allowed):
+    await set_config(f"gem_allow_{slot}", encode_allowed_tiers(allowed))
+
+
+def gem_allowed_text(allowed) -> str:
+    """'✅Common ⛔Uncommon ✅Rare ...' — bật/tắt từng tier."""
+    allowed = set(GEM_TIERS) if allowed is None else allowed
+    return " ".join(f"{'✅' if t in allowed else '⛔'}{t}" for t in GEM_TIERS)
 
 
 def gem_pref_label(pref) -> str:
@@ -3018,8 +3038,16 @@ async def remind_gem_replacements(message: discord.Message, slots, source_id):
         options = await mdb[COL_INVENTORY].find(
             {"is_gem": True, "gem_slot": slot, "count": {"$gt": 0}}
         ).sort("gem_tier_rank", -1).to_list(length=10)
+        in_stock = options
+        # Chi dung tier da BAT cho loai gem nay (`,gemtier bat/tat`); mac dinh bat het
+        options = filter_allowed_gems(options, await get_gem_allowed(slot))
         if slot in slots:  # chi nhac trong kenh cho slot MOI het, khong nhac lai slot cu
-            if not options:
+            if in_stock and not options:
+                stock_text = ", ".join("%s ×%s" % (o["gem_tier"], o["count"]) for o in in_stock)
+                await message.channel.send(
+                    f"<@{source_id}> ⚠️ Gem {gem_type_name(slot)} vừa hết độ bền, kho còn {stock_text} "
+                    f"nhưng các tier này đang TẮT (`,gemtier bat {slot} <tier>` để cho phép). Bot không tự thay.")
+            elif not options:
                 await message.channel.send(
                     f"<@{source_id}> ⚠️ Gem {gem_type_name(slot)} vừa hết, và trong kho không còn viên nào cùng loại để thay. "
                     f"Cần farm/mua thêm.")
@@ -3498,7 +3526,9 @@ GEMTIER_USAGE = (
     "`,gemtier` — xem tier đang ưu tiên của từng loại gem (kèm gem còn trong kho)\n"
     "`,gemtier <loại> <tier>` — vd `,gemtier hunting rare`, `,gemtier lucky epic`\n"
     "`,gemtier <loại> cao` / `thấp` — luôn lấy tier cao nhất / thấp nhất còn viên\n"
-    "`,gemtier all <tier>` — đặt cho cả 4 loại · `,gemtier <loại|all> reset` — về mặc định (cao nhất)\n"
+    "`,gemtier all <tier>` — đặt cho cả 4 loại · `,gemtier <loại|all> reset` — về mặc định (ưu tiên cao nhất, bật mọi tier)\n"
+    "`,gemtier tat <loại|all> <tier...>` — TẮT tier (không bao giờ dùng), vd `,gemtier tat lucky common uncommon`\n"
+    "`,gemtier bat <loại|all> <tier...>` — BẬT lại; `all` ở chỗ tier = mọi tier, vd `,gemtier bat hunting all`\n"
     "Loại: `hunting` (1) · `empowering` (3) · `lucky` (4) · `special` (sao). "
     "Tier: `common` `uncommon` `rare` `epic` `mythical` `legendary` `fabled` (hoặc chữ cái đầu `c u r e m l f`).")
 
@@ -3519,11 +3549,37 @@ async def gemtier_cmd(ctx, *args):
         lines = []
         for slot in GEM_SLOTS:
             pref = await get_gem_tier_pref(slot)
-            lines.append(f"**{gem_type_name(slot)}** (slot {slot}): ưu tiên **{gem_pref_label(pref)}** · kho: {await _gem_stock_text(slot)}")
-        await ctx.send("🎚️ Tier gem khi thay:\n" + "\n".join(lines) + "\n\nĐổi bằng `,gemtier <loại> <tier>` (xem `,gemtier ?`).")
+            allowed = await get_gem_allowed(slot)
+            lines.append(f"**{gem_type_name(slot)}** (slot {slot}): ưu tiên **{gem_pref_label(pref)}** · kho: {await _gem_stock_text(slot)}\n"
+                         f"　{gem_allowed_text(allowed)}")
+        await ctx.send("🎚️ Tier gem khi thay (✅ = được dùng, ⛔ = tắt):\n" + "\n".join(lines)
+                       + "\n\nĐổi ưu tiên: `,gemtier <loại> <tier>` · bật/tắt tier: `,gemtier tat lucky common` / `,gemtier bat lucky common` (xem `,gemtier ?`).")
         return
     if first in ("?", "help", "huongdan"):
         await ctx.send(GEMTIER_USAGE)
+        return
+
+    if first in ("bat", "on", "allow", "tat", "off", "deny"):
+        turn_on = first in ("bat", "on", "allow")
+        if len(args) < 3:
+            await ctx.send("Thiếu loại gem hoặc tier.\n" + GEMTIER_USAGE)
+            return
+        target = _fold(args[1])
+        slots = list(GEM_SLOTS) if target in ("all", "tatca", "moi") else [resolve_gem_slot(args[1])]
+        tiers, unknown = parse_gem_tier_words(args[2:])
+        if None in slots or unknown or not tiers:
+            bad = ", ".join(f"`{u}`" for u in unknown) if unknown else ""
+            await ctx.send((f"Không hiểu tier {bad}.\n" if bad else "Mình chưa hiểu loại gem hoặc tier.\n") + GEMTIER_USAGE)
+            return
+        lines = []
+        for slot in slots:
+            cur = await get_gem_allowed(slot)
+            cur = set(GEM_TIERS) if cur is None else set(cur)
+            cur = (cur | set(tiers)) if turn_on else (cur - set(tiers))
+            await set_gem_allowed(slot, cur)
+            warn = "  ⚠️ đã tắt HẾT tier: bot sẽ không tự thay gem loại này" if not cur else ""
+            lines.append(f"**{gem_type_name(slot)}**: {gem_allowed_text(cur)}{warn}")
+        await ctx.send(f"✅ Đã {'BẬT' if turn_on else 'TẮT'} {', '.join(tiers)}:\n" + "\n".join(lines))
         return
 
     def is_reset(words):
@@ -3542,8 +3598,9 @@ async def gemtier_cmd(ctx, *args):
     if first in ("reset", "xoa", "macdinh", "default") or is_reset(rest):
         for slot in slots:
             await set_config(f"gem_tier_{slot}", "")
+            await set_config(f"gem_allow_{slot}", "")
         names = ", ".join(gem_type_name(s) for s in slots)
-        await ctx.send(f"✅ Đã về mặc định (tier cao nhất) cho: {names}.")
+        await ctx.send(f"✅ Đã về mặc định (ưu tiên tier cao nhất, bật mọi tier) cho: {names}.")
         return
     pref = normalize_gem_tier_pref(" ".join(rest))
     if pref is None:
@@ -4183,7 +4240,7 @@ HELP_GROUPS = [
         ("status", "`,status`"), ("huntbot", "`,huntbot`"), ("quests", "`,quests`"), ("team", "`,team`"),
         ("teamcheck", "`,teamcheck` (owner): chấm đội hình đang đứng"),
         ("inv", "`,inv [tìm]`"), ("gems", "`,gems`"),
-        ("gemtier", "`,gemtier [loại] [tier]` (owner): chọn tier gem dùng khi thay, riêng từng loại (hunting/empowering/lucky/special)")]),
+        ("gemtier", "`,gemtier [loại] [tier]` (owner): chọn tier gem dùng khi thay, riêng từng loại (hunting/empowering/lucky/special) · `,gemtier tat|bat <loại> <tier>` bật/tắt tier được phép dùng")]),
     ("Zoo", [
         ("zoo", "`,zoo [tìm]`: zoo đang giữ"),
         ("unlocked", "`,unlocked [tier]` (owner): pet đã mở khóa, không hiện số lượng"),

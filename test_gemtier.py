@@ -113,6 +113,62 @@ async def scenarios():
           await run_swap("sw_leg", ("hunting", "legendary")), ["owo use 054"])
     check("thay gem: đặt cho loại KHÁC (lucky) không ảnh hưởng hunting", await run_swap("sw_other", ("lucky", "common")), ["owo use 054"])
 
+    # ----- bật / tắt tier được phép dùng -----
+    fresh("gem_allow")
+    check("mặc định: mọi tier đều được phép (None)", await b.get_gem_allowed("4"), None)
+    await b.gemtier_cmd(ctx, "tat", "lucky", "common", "uncommon")
+    check("tắt Common+Uncommon cho lucky", sorted(await b.get_gem_allowed("4")), sorted(set(b.GEM_TIERS) - {"Common", "Uncommon"}))
+    check("tắt lucky không đụng loại khác", await b.get_gem_allowed("1"), None)
+    check("trả lời nêu tier đã tắt + trạng thái ✅/⛔", ("TẮT" in said[-1], "⛔Common" in said[-1], "✅Rare" in said[-1]), (True, True, True))
+    await b.gemtier_cmd(ctx, "bat", "lucky", "common")
+    check("bật lại Common cho lucky", "Common" in await b.get_gem_allowed("4") and "Uncommon" not in await b.get_gem_allowed("4"), True)
+    await b.gemtier_cmd(ctx, "tat", "all", "mythical,legendary")
+    check("tắt cho cả 4 loại (nhiều tier bằng dấu phẩy)",
+          [("Mythical" in (await b.get_gem_allowed(s)), "Legendary" in (await b.get_gem_allowed(s))) for s in ("1", "3", "4", "star")], [(False, False)] * 4)
+    await b.gemtier_cmd(ctx, "bat", "hunting", "all")
+    check("bật 'all' tier cho hunting -> về mặc định (None)", await b.get_gem_allowed("1"), None)
+    await b.gemtier_cmd(ctx, "tat", "special", "all")
+    check("tắt hết tier -> tập rỗng + cảnh báo", (await b.get_gem_allowed("star"), "HẾT" in said[-1]), (set(), True))
+    said.clear()
+    await b.gemtier_cmd(ctx, "tat", "lucky", "tierlalam")
+    check("tier lạ -> báo không hiểu", ("Không hiểu tier" in said[-1], "tierlalam" in said[-1]), (True, True))
+    said.clear()
+    await b.gemtier_cmd(ctx, "tat", "lucky")
+    check("thiếu tier -> hướng dẫn", "Thiếu" in said[-1], True)
+    await b.gemtier_cmd(ctx, "reset")
+    check("reset đưa tier được phép về mặc định cả 4 loại", [await b.get_gem_allowed(s) for s in ("1", "3", "4", "star")], [None] * 4)
+    said.clear()
+    await b.mdb[b.COL_INVENTORY].insert_one({"_id": "051", "is_gem": True, "gem_slot": "1", "count": 3,
+                                              "gem_tier": "Common", "gem_tier_rank": 1})
+    await b.gemtier_cmd(ctx, "tat", "hunting", "uncommon")
+    await b.gemtier_cmd(ctx)
+    check("xem: hiện ⛔Uncommon của hunting", "⛔Uncommon" in said[-1], True)
+
+    # ----- đầu-cuối: tier bị tắt thì KHÔNG được chọn -----
+    async def run_allow(db_name, setup):
+        fresh(db_name)
+        await b.mdb[b.COL_INVENTORY].insert_many([
+            {"_id": "051", "is_gem": True, "gem_slot": "1", "count": 3, "gem_tier": "Common", "gem_tier_rank": 1},
+            {"_id": "053", "is_gem": True, "gem_slot": "1", "count": 2, "gem_tier": "Rare", "gem_tier_rank": 3},
+            {"_id": "054", "is_gem": True, "gem_slot": "1", "count": 1, "gem_tier": "Epic", "gem_tier_rank": 4}])
+        for args in setup:
+            await b.gemtier_cmd(ctx, *args)
+        said.clear()
+        msg = NS(channel=NS(send=send, id=1))
+        await b.remind_gem_replacements(msg, {"1"}, "555")
+        cmds = [c async for c in b.mdb[b.COL_AUTOMACRO_COMMANDS].find({"status": "pending"})]
+        return [c["params"]["command_text"] for c in cmds]
+
+    check("tắt Epic -> mặc định (cao nhất) rơi xuống Rare 053", await run_allow("al_epic", [("tat", "hunting", "epic")]), ["owo use 053"])
+    check("tắt Epic+Rare -> còn Common 051", await run_allow("al_er", [("tat", "hunting", "epic", "rare")]), ["owo use 051"])
+    check("ưu tiên Epic nhưng Epic bị tắt -> lấy tier thấp hơn gần nhất được phép (Rare)",
+          await run_allow("al_pref", [("hunting", "epic"), ("tat", "hunting", "epic")]), ["owo use 053"])
+    check("chỉ bật Common -> dùng Common", await run_allow("al_only", [("tat", "hunting", "all"), ("bat", "hunting", "common")]), ["owo use 051"])
+    out = await run_allow("al_none", [("tat", "hunting", "all")])
+    check("tắt hết -> KHÔNG tạo lệnh thay gem", out, [])
+    check("tắt hết -> có báo trong kênh là các tier đang TẮT", any("đang TẮT" in (t or "") for t in said), True)
+    check("tắt tier của loại khác (lucky) không ảnh hưởng hunting", await run_allow("al_other", [("tat", "lucky", "all")]), ["owo use 054"])
+
 asyncio.run(scenarios())
 if fails:
     print("\n❌ %d bài lỗi" % len(fails)); sys.exit(1)

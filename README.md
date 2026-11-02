@@ -86,6 +86,8 @@ trong cùng kênh thì vẫn có thể lẫn; tin `owo team` cũng chưa có tê
 Lucky / Special) có tier ưu tiên riêng; mặc định là cao nhất còn viên. Nếu đã chọn 1 tier cụ thể mà hết viên đó, bot lấy tier
 gần nhất **thấp hơn** trước (đỡ phí gem xịn), không còn thấp hơn mới lấy tier cao hơn. Cài đặt lưu trong MongoDB nên không mất khi bot khởi động lại.
 
+**Bật/tắt tier được phép (`,gemtier tat|bat`):** mỗi loại gem có thêm danh sách tier được phép dùng (mặc định bật hết, `,gemtier` hiện ✅/⛔). Tier bị TẮT thì bot không bao giờ chọn, dù chỉ còn mỗi viên đó; việc chọn ưu tiên/tier gần nhất chỉ xét trong các tier đang bật. Tắt hết tier của 1 loại thì bot không tự thay gem loại đó và báo trong kênh khi gem hết độ bền.
+
 ## Huntbot: nhắc còn 10 phút & tự cập nhật khi đang farm
 
 **Nhắc còn 10 phút:** app AutoMacro hỏi bot mỗi phút (kể cả khi Hub nổi đang tắt) và hiện thông báo trên điện thoại khi
@@ -175,7 +177,9 @@ vũ khí chỉ có những cây bạn từng xem bằng `owo weapon <ID>`.
 ,gemtier                   → xem tier gem đang ưu tiên của từng loại (kèm gem còn trong kho) (chỉ owner)
 ,gemtier hunting rare      → khi gem Hunting hết độ bền, bot nhờ app dùng viên tier Rare (chỉ owner)
 ,gemtier lucky thấp        → luôn lấy tier thấp nhất còn viên · `cao` = cao nhất · `all <tier>` = cả 4 loại
-,gemtier hunting reset     → về mặc định (cao nhất)
+,gemtier hunting reset     → về mặc định (ưu tiên cao nhất, bật mọi tier)
+,gemtier tat lucky common uncommon → TẮT tier: bot không bao giờ dùng Common/Uncommon cho gem Lucky
+,gemtier bat lucky common  → bật lại · `all` = cả 4 loại hoặc mọi tier (vd `,gemtier bat all all`)
 
 ,note add Bắt gowl       → thêm việc cần làm
 ,note list / ,note done 1

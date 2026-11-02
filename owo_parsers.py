@@ -784,6 +784,52 @@ def normalize_gem_tier_pref(text):
     return _GEM_TIER_ALIASES.get(key)
 
 
+GEM_TIERS = tuple(sorted(_GEM_TIER_RANK, key=_GEM_TIER_RANK.get))   # Common ... Fabled (thấp -> cao)
+
+
+def parse_gem_tier_words(words):
+    """['rare', 'epic,mythic', 'xyz'] -> (['Rare','Epic','Mythical'], ['xyz']). 'all'/'tatca' = mọi tier.
+    Trả (danh sách tier theo thứ tự thấp -> cao, không trùng; danh sách từ không hiểu)."""
+    found, unknown = set(), []
+    for chunk in words:
+        for w in re.split(r"[,\s;]+", str(chunk or "")):
+            if not w:
+                continue
+            if _fold(w) in ("all", "tatca", "moi", "het"):
+                found.update(GEM_TIERS)
+                continue
+            t = normalize_gem_tier_pref(w)
+            if t in _GEM_TIER_RANK:        # loại 'highest'/'lowest' (không phải tên tier)
+                found.add(t)
+            else:
+                unknown.append(w)
+    return [t for t in GEM_TIERS if t in found], unknown
+
+
+def encode_allowed_tiers(allowed):
+    """Tập tier được phép -> chuỗi lưu config. None = mọi tier (chưa chỉnh) -> ''; tập rỗng = tắt hết -> '-'."""
+    if allowed is None or set(allowed) >= set(GEM_TIERS):
+        return ""
+    return ",".join(t for t in GEM_TIERS if t in allowed) or "-"
+
+
+def decode_allowed_tiers(raw):
+    """Ngược lại của encode_allowed_tiers. '' / None = None (mọi tier); '-' = tập rỗng (tắt hết)."""
+    raw = (raw or "").strip()
+    if not raw:
+        return None
+    if raw == "-":
+        return set()
+    return {t for t in (x.strip() for x in raw.split(",")) if t in _GEM_TIER_RANK}
+
+
+def filter_allowed_gems(options, allowed):
+    """Giữ lại các viên có tier được phép. allowed=None = không lọc."""
+    if allowed is None:
+        return list(options or [])
+    return [o for o in (options or []) if o.get("gem_tier") in allowed]
+
+
 def pick_gem_option(options, pref):
     """Chọn 1 viên gem trong `options` (mỗi phần tử có `gem_tier_rank`) theo sở thích `pref`.
     - 'highest' / không rõ: tier CAO nhất còn viên.   - 'lowest': tier THẤP nhất.
