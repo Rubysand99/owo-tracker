@@ -3328,23 +3328,52 @@ def _dex_name_ok(name) -> bool:
     return bool(re.fullmatch(r"[A-Za-z0-9_]{1,32}", str(name)))
 
 
+def dex_gaps(row) -> list:
+    """Dex cua 1 loai pet con THIEU gi? Tra ve danh sach ten truong thieu ([] = day du).
+    Ban ghi co ton tai nhung thieu rank / chi so / nguon owodex (vd nhap tay bang ,petset) van tinh la thieu,
+    vi `owo dex` moi cho du chi so, flavor, diem, gia ban..."""
+    gaps = []
+    if not str(row.get("rank") or "").strip():
+        gaps.append("rank")
+    if any(not isinstance(row.get(k), int) for k in ("hp", "att", "pr", "wp", "mag", "mr")):
+        gaps.append("chỉ số")
+    if row.get("source") not in ("owodex", "manual"):
+        gaps.append("không rõ nguồn")
+    elif row.get("source") == "manual":
+        gaps.append("nhập tay, chưa tra owodex")
+    return gaps
+
+
 async def zoo_pets_missing_dex():
-    """Tu ZOO HIEN TAI: pet nao dang giu (so luong > 0) ma chua co dex. Khop theo ten HOAC bi danh trong dex.
-    Tra ve None neu chua co zoo; nguoc lai {"missing": [...], "held": so_pet_dang_giu, "updated_at": ...}."""
+    """Tu ZOO HIEN TAI: pet nao dang giu (so luong > 0) ma chua co dex HOAC dex con thieu thong tin.
+    Khop theo ten HOAC bi danh trong dex. Tra ve None neu chua co zoo; nguoc lai
+    {"missing": [ten...], "incomplete": {ten: [truong thieu]}, "held": so_pet_dang_giu, "updated_at": ...}.
+    `missing` gom ca pet chua co dex lan pet co dex thieu (de nho app tra lai)."""
     zoo = await mdb[COL_ZOO].find_one({"_id": "latest"})
     if not zoo or not zoo.get("pets"):
         return None
-    known = set()
+    known = {}      # ten/bi danh (thuong) -> ban ghi dex
     async for r in mdb[COL_PET_SPECIES].find({}):
-        known.add(str(r["_id"]).lower())
+        known[str(r["_id"]).lower()] = r
+        known.setdefault(str(r.get("display_name") or "").lower(), r)
         for a in r.get("aliases") or []:
-            known.add(str(a).lower())
+            known.setdefault(str(a).lower(), r)
     held = {}
     for p in zoo["pets"]:
         if p.get("name") and (p.get("count") or 0) > 0:
             held.setdefault(str(p["name"]).lower(), str(p["name"]))
-    missing = sorted((n for k, n in held.items() if k not in known), key=str.lower)
-    return {"missing": missing, "held": len(held), "updated_at": zoo.get("updated_at")}
+    absent, incomplete = [], {}
+    for k, n in held.items():
+        row = known.get(k)
+        if row is None:
+            absent.append(n)
+        else:
+            gaps = dex_gaps(row)
+            if gaps:
+                incomplete[n] = gaps
+    missing = sorted(absent + list(incomplete), key=str.lower)
+    return {"missing": missing, "absent": sorted(absent, key=str.lower), "incomplete": incomplete,
+            "held": len(held), "updated_at": zoo.get("updated_at")}
 
 
 @bot.command(name="zoodex", aliases=["dexzoo"])
@@ -3362,12 +3391,20 @@ async def zoodex_cmd(ctx, mode: str = ""):
         stale = f"\n⚠️ Zoo đọc lần cuối cách đây {int((_utcnow() - updated).total_seconds() // 3600)} giờ — nên gõ `owo zoo` lại cho đúng."
     missing = info["missing"]
     if not missing:
-        await ctx.send(f"✅ Cả {info['held']} loại pet đang giữ trong zoo đều đã có thông tin dex.{stale}")
+        await ctx.send(f"✅ Cả {info['held']} loại pet đang giữ trong zoo đều đã có dex đầy đủ.{stale}")
         return
+    inc = info["incomplete"]
     if mode.strip().lower() in ("xem", "list", "ds"):
-        shown = ", ".join(f"`{n}`" for n in missing[:60]) + (f" … (+{len(missing) - 60})" if len(missing) > 60 else "")
-        await ctx.send(f"📖 {len(missing)}/{info['held']} loại pet trong zoo chưa có dex: {shown}\n"
-                       f"Gõ `,zoodex` để nhờ app tra.{stale}")
+        absent = info["absent"]
+        parts = [f"📖 {len(missing)}/{info['held']} loại pet trong zoo cần tra dex "
+                 f"({len(absent)} chưa có, {len(inc)} có nhưng thiếu)."]
+        if absent:
+            parts.append("Chưa có: " + ", ".join(f"`{n}`" for n in absent[:40]) + (f" … (+{len(absent) - 40})" if len(absent) > 40 else ""))
+        if inc:
+            items = list(inc.items())
+            parts.append("Thiếu: " + ", ".join(f"`{n}` ({'/'.join(g)})" for n, g in items[:25]) + (f" … (+{len(items) - 25})" if len(items) > 25 else ""))
+        parts.append("Gõ `,zoodex` để nhờ app tra." + stale)
+        await ctx.send("\n".join(parts)[:1900])
         return
 
     now_ts = time.time()
@@ -3386,7 +3423,7 @@ async def zoodex_cmd(ctx, mode: str = ""):
             break
         _dex_requested[n.lower()] = now_ts
         queued.append(n)
-    lines = [f"📖 Zoo có {info['held']} loại pet, **{len(missing)}** chưa có dex."]
+    lines = [f"📖 Zoo có {info['held']} loại pet, **{len(missing)}** cần tra dex ({len(info['absent'])} chưa có, {len(inc)} có nhưng thiếu thông tin)."]
     if queued:
         secs = len(queued) * 7
         lines.append(f"Đã nhờ app gõ `owo dex` cho **{len(queued)}** pet: " + ", ".join(f"`{n}`" for n in queued[:30])
@@ -4364,7 +4401,7 @@ HELP_GROUPS = [
     ("Pet (loài)", [
         ("pet", "`,pet <tên>` / `,dex <tên>` (owner): tra dex đầy đủ 1 loài (rank, chỉ số, giá bán...)"),
         ("pets", "`,pets [tìm]` (owner): liệt kê pet đã ghi nhận, tìm theo tên hoặc rank"),
-        ("zoodex", "`,zoodex` / `,dexzoo` (owner): nhờ app tra dex cho pet trong zoo chưa có dex · `,zoodex xem` chỉ liệt kê"),
+        ("zoodex", "`,zoodex` / `,dexzoo` (owner): nhờ app tra dex cho pet trong zoo chưa có dex hoặc dex còn thiếu (rank/chỉ số/nhập tay) · `,zoodex xem` chỉ liệt kê"),
         ("petset", "`,petset <tên> <rank> <hp> <att> <pr> <wp> <mag> <mr>` (owner): nhập tay 1 pet khi chưa có dex")]),
     ("Loại vũ khí", [
         ("weapontype", "`,weapontype <tên>` (owner): xem 1 loại vũ khí đã ghi nhận (hiệu ứng cố định...)"),

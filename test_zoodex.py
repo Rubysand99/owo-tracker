@@ -29,7 +29,8 @@ async def put_zoo(db, plist, age_hours=0):
 
 async def put_dex(db, name, aliases=None):
     await db[b.COL_PET_SPECIES].replace_one({"_id": name.lower()}, {"_id": name.lower(), "display_name": name,
-                                            "aliases": aliases or [name]}, upsert=True)
+                                            "aliases": aliases or [name], "rank": "Common", "source": "owodex",
+                                            "hp": 1, "att": 2, "pr": 3, "wp": 4, "mag": 5, "mr": 6}, upsert=True)
 
 async def pending_dex(db):
     return [(c["action"], c["params"]["command_text"], c["params"]["pet"])
@@ -54,6 +55,18 @@ async def run():
     info = await b.zoo_pets_missing_dex()
     check("thiếu dex: chỉ pet đang giữ (count>0) mà chưa có dex; bí danh cũng tính là có",
           (info["missing"], info["held"]), (["dboar", "Fox"], 4))
+
+    # --- dex có bản ghi nhưng THIẾU thông tin vẫn bị tính là thiếu ---
+    await put_zoo(db, pets(("gowl", 1), ("hole", 1), ("manu", 1), ("noss", 1)))
+    await db[b.COL_PET_SPECIES].replace_one({"_id": "hole"}, {"_id": "hole", "display_name": "hole", "aliases": ["hole"]}, upsert=True)
+    await db[b.COL_PET_SPECIES].replace_one({"_id": "manu"}, {"_id": "manu", "display_name": "manu", "aliases": ["manu"], "rank": "Rare",
+                                            "hp": 1, "att": 1, "pr": 1, "wp": 1, "mag": 1, "mr": 1, "source": "manual"}, upsert=True)
+    info2 = await b.zoo_pets_missing_dex()
+    check("dex thiếu rank/chỉ số hoặc nhập tay -> vẫn tính cần tra; pet đầy đủ thì không",
+          (info2["missing"], sorted(info2["incomplete"]), info2["absent"]), (["hole", "manu", "noss"], ["hole", "manu"], ["noss"]))
+    await b.zoodex_cmd(ctx, mode="xem")
+    check("zoodex xem: phân biệt chưa có / có nhưng thiếu", ("1 chưa có" in last() and "2 có nhưng thiếu" in last() and "`hole`" in last()), True)
+    await put_zoo(db, pets(("gowl", 3), ("dboar", 1), ("cat2", 0), ("slothbot", 2), ("Fox", 5)))
 
     # --- xem (không xếp lệnh) ---
     await b.zoodex_cmd(ctx, mode="xem")
