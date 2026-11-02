@@ -68,7 +68,8 @@ for t in test_*.py; do python "$t" || break; done
 Mỗi lần push lên `main` (hoặc mở pull request), GitHub Actions tự chạy lại toàn bộ test (`.github/workflows/tests.yml`).
 
 **Quy ước mỗi lần cập nhật:** thêm / đổi / xóa lệnh nào thì sửa luôn `HELP_GROUPS` (danh sách của `,help` trong
-`owo_tracker_bot.py`) và mục "Dùng thử" ở file này. `test_help.py` sẽ báo lỗi nếu có lệnh mới mà `,help` chưa nhắc tới.
+`owo_tracker_bot.py`) và mục "Dùng thử" ở file này. `test_help.py` sẽ báo lỗi nếu có lệnh mới mà `,help` chưa nhắc tới, hoặc lệnh nào thiếu mô tả. `,help` tự chia thành nhiều embed khi dài.
+Mỗi lần bot khởi động còn ghi số phiên bản vào **trạng thái** ("v1.13 · ,help") và **mô tả ứng dụng** (About me) trên Discord; lỗi quyền thì chỉ in cảnh báo.
 
 **Số phiên bản tự tăng:** file `VERSION` (dạng `1.12`) do GitHub Actions (`.github/workflows/version.yml`) tự tăng 1 sau mỗi lần
 push lên `main` mà bộ test xanh, bằng 1 commit `chore(version): v1.13`. Bot hiện số này ở `,ping`, `,status`, chân trang `,help`,

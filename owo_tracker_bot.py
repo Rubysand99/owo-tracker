@@ -2606,9 +2606,36 @@ async def save_cowoncy(c, source_id=None):
 # ----------------------------------------------------------------------
 # LẮNG NGHE
 # ----------------------------------------------------------------------
+def bot_profile_text() -> str:
+    """Mô tả bot hiện trên hồ sơ Discord (tối đa 400 ký tự), có số phiên bản."""
+    return ("OwO Tracker " + bot_version_text() + " — theo dõi tài khoản chơi OwO, lưu vào MongoDB và trả lời qua lệnh Discord. "
+            "Gõ ,help để xem danh sách lệnh.")[:400]
+
+
+_profile_synced = {"done": False}
+
+
+async def update_bot_profile():
+    """Ghi số phiên bản vào TRẠNG THÁI bot và MÔ TẢ (About me) của ứng dụng. Chạy 1 lần mỗi lần bot khởi động;
+    mỗi bước lỗi riêng thì chỉ in cảnh báo, không làm hỏng bot."""
+    if _profile_synced["done"]:
+        return
+    _profile_synced["done"] = True
+    try:
+        await bot.change_presence(activity=discord.CustomActivity(name=bot_version_text() + " · ,help"))
+    except Exception as e:
+        print(f"[tracker] Không đặt được trạng thái bot: {e!r}")
+    try:
+        await bot.http.request(discord.http.Route("PATCH", "/applications/@me"), json={"description": bot_profile_text()})
+        print("[tracker] Đã cập nhật mô tả bot: " + bot_profile_text())
+    except Exception as e:
+        print(f"[tracker] Không cập nhật được mô tả bot (không sao, vẫn chạy bình thường): {e!r}")
+
+
 @bot.event
 async def on_ready():
     print(f"[tracker] Đăng nhập: {bot.user} · bot {bot_version_text()} (discord.py {discord.__version__})")
+    await update_bot_profile()
     if mdb is None:
         print("[tracker] CẢNH BÁO: chưa có MONGODB_URI — bot sẽ lỗi khi cố lưu/đọc dữ liệu.")
         return
@@ -4298,72 +4325,122 @@ async def ping_cmd(ctx):
 # QUY ƯỚC: mỗi lần thêm / đổi / xóa lệnh phải cập nhật ở đây — test_help.py sẽ báo lỗi nếu quên.
 HELP_GROUPS = [
     ("Theo dõi cá nhân", [
-        ("status", "`,status`"), ("huntbot", "`,huntbot`"), ("quests", "`,quests`"), ("team", "`,team`"),
+        ("status", "`,status` (owner): đang theo dõi ai, phạm vi (kênh/server), phiên bản bot và tình trạng huntbot"),
+        ("huntbot", "`,huntbot` (owner): trạng thái HuntBot — tiến độ, số pet bắt được, còn bao lâu nữa về"),
+        ("quests", "`,quests` (owner): quest hôm nay và tiến độ từng quest"),
+        ("team", "`,team` (owner): đội hình gần nhất bot đọc được"),
         ("teamcheck", "`,teamcheck` (owner): chấm đội hình đang đứng"),
-        ("inv", "`,inv [tìm]`"), ("gems", "`,gems`"),
-        ("gemtier", "`,gemtier [loại] [tier]` (owner): chọn tier gem dùng khi thay, riêng từng loại (hunting/empowering/lucky/special) · `,gemtier tat|bat <loại> <tier>` bật/tắt tier được phép dùng")]),
+        ("inv", "`,inv [tìm]` (owner): kho đồ đã ghi nhận, lọc theo tên"),
+        ("gems", "`,gems` (owner): độ bền từng slot gem đang trang bị"),
+        ("gemtier", "`,gemtier [loại] [tier]` (owner): chọn tier gem dùng khi thay, riêng từng loại (hunting/empowering/lucky/special) · "
+                    "`,gemtier tat|bat <loại> <tier>` bật/tắt tier được phép dùng · `,gemtier ?` xem hướng dẫn")]),
     ("Zoo", [
-        ("zoo", "`,zoo [tìm]`: zoo đang giữ"),
+        ("zoo", "`,zoo [tìm]` (owner): zoo đang giữ, lọc theo tên pet"),
         ("unlocked", "`,unlocked [tier]` (owner): pet đã mở khóa, không hiện số lượng"),
         ("zoodiff", "`,zoodiff [d|now]` (owner): so 2 lần ghi zoo gần nhất, `d` = số đã bắt, `now` = đang giữ")]),
     ("Vũ khí của tôi", [
-        ("myweapons", "`,myweapons [tìm]`"),
+        ("myweapons", "`,myweapons [tìm]` (owner): vũ khí bạn đang sở hữu, tìm theo tên"),
         ("weaponscan", "`,weaponscan` (owner): quét lại kho vũ khí, nhớ dừng farm"),
         ("weaponprobe", "`,weaponprobe` (owner): xếp lệnh `owo w <ID>` cho app từ danh sách đã quét"),
         ("weaponlist", "`,weaponlist` (owner): gửi file danh sách vũ khí đã quét"),
         ("dismantleplan", "`,dismantleplan` (owner): lập kế hoạch dọn vũ khí (giữ/rác/xám), CHƯA xóa gì"),
         ("weaponknowledge", "`,weaponknowledge` (owner): gửi lại file kiến thức vũ khí"),
         ("weaponadvice", "`,weaponadvice` (owner): gửi lại file lời khuyên vũ khí"),
-        ("weaponowner", "`,weaponowner` (owner): chỉ ghi vũ khí có tên chủ khớp tên Discord")]),
+        ("weaponowner", "`,weaponowner [Tên1, Tên2|xoa]` (owner): chỉ ghi vũ khí có tên chủ khớp tên Discord; thêm tên khác hoặc xóa tên đã thêm")]),
     ("Huntbot và acc phụ", [
-        ("hbstart", "`,hbstart [24h|số cowoncy]`"), ("hbcode", "`,hbcode [24h] <mã>`"),
-        ("hbauto", "`,hbauto on|off` (owner)"), ("setalt", "`,setalt [id|xoa]` (owner)"),
-        ("testalt", "`,testalt` (owner)")]),
+        ("hbstart", "`,hbstart [24h|số cowoncy]`: nhờ app gõ `owo hb <số>` để OwO đưa mật khẩu huntbot (mặc định 24h)"),
+        ("hbcode", "`,hbcode [24h] <mã>`: nhập mã mật khẩu huntbot bạn đã đọc, app sẽ gõ `owo hb <số> <mã>` (bot không tự giải mã)"),
+        ("hbauto", "`,hbauto on|off` (owner): bật/tắt tự nhờ app chạy lại huntbot khi vừa về; không kèm gì = xem trạng thái"),
+        ("hbalert", "`,hbalert on|off` (owner): DM acc phụ khi huntbot còn 10 phút (bản dự phòng cho thông báo trên app)"),
+        ("setalt", "`,setalt [id|xoa]` (owner): xem / đặt / tắt acc phụ nhận DM nhắc huntbot"),
+        ("testalt", "`,testalt` (owner): thử gửi 1 tin DM vào acc phụ để kiểm tra có nhận được không")]),
     ("Chế độ và cảnh báo", [
         ("off", "`,off` (owner): TẮT mọi hoạt động của app · `,off on` bật lại · `,off status` xem"),
         ("eventmode", "`,eventmode on|off` (owner): bật khi có sự kiện, được dùng slot thứ 4"),
         ("captcha", "`,captcha` xem cảnh báo · `,captcha clear` báo đã giải xong"),
-        ("autocheck", "`,autocheck on|off` (owner): app đang farm thì bot nhờ app gõ xen lệnh check cho mục dữ liệu đã cũ"),
-        ("hbalert", "`,hbalert on|off` (owner): DM acc phụ khi huntbot còn 10 phút (bản dự phòng cho thông báo trên app)")]),
-    ("Ghi chú", [("note", "`,note add <text>` · `,note list` · `,note done <id>`")]),
+        ("autocheck", "`,autocheck on|off` (owner): app đang farm thì bot nhờ app gõ xen lệnh check cho mục dữ liệu đã cũ")]),
+    ("Ghi chú", [
+        ("note", "`,note add <text>` · `,note list` · `,note done <id>` (owner): ghi việc cần làm, xem danh sách, đánh dấu đã xong")]),
     ("Pet (loài)", [
-        ("pet", "`,pet <tên>` / `,dex <tên>`"), ("pets", "`,pets [tìm]`"),
-        ("zoodex", "`,zoodex` nhờ app tra dex cho pet trong zoo chưa có dex · `,zoodex xem` chỉ liệt kê"),
-        ("petset", "`,petset <tên> <rank> <hp> <att> <pr> <wp> <mag> <mr>`")]),
+        ("pet", "`,pet <tên>` / `,dex <tên>` (owner): tra dex đầy đủ 1 loài (rank, chỉ số, giá bán...)"),
+        ("pets", "`,pets [tìm]` (owner): liệt kê pet đã ghi nhận, tìm theo tên hoặc rank"),
+        ("zoodex", "`,zoodex` / `,dexzoo` (owner): nhờ app tra dex cho pet trong zoo chưa có dex · `,zoodex xem` chỉ liệt kê"),
+        ("petset", "`,petset <tên> <rank> <hp> <att> <pr> <wp> <mag> <mr>` (owner): nhập tay 1 pet khi chưa có dex")]),
     ("Loại vũ khí", [
-        ("weapontype", "`,weapontype <tên>`"), ("weapontypes", "`,weapontypes [tìm]`"),
-        ("weapontypeset", "`,weapontypeset <tên> <mô tả>`")]),
+        ("weapontype", "`,weapontype <tên>` (owner): xem 1 loại vũ khí đã ghi nhận (hiệu ứng cố định...)"),
+        ("weapontypes", "`,weapontypes [tìm]` (owner): liệt kê các loại vũ khí đã biết"),
+        ("weapontypeset", "`,weapontypeset <tên> <mô tả>` (owner): nhập/sửa tay mô tả 1 loại vũ khí")]),
     ("Passive", [
-        ("passive", "`,passive <tên>`"), ("passives", "`,passives [tìm]`"),
-        ("passiveset", "`,passiveset <tên> <mô tả>`")]),
+        ("passive", "`,passive <tên>` (owner): tra 1 passive đã ghi nhận"),
+        ("passives", "`,passives [tìm]` (owner): liệt kê các passive đã biết"),
+        ("passiveset", "`,passiveset <tên> <mô tả>` (owner): nhập/sửa tay mô tả 1 passive")]),
     ("Cài đặt bot (owner)", [
-        ("track", "`,track @user`"), ("setprefixes", "`,setprefixes owo,o`"), ("setserver", "`,setserver here|<ID>|xoa`"), ("setchannel", "`,setchannel`"),
-        ("rawdump", "`,rawdump`"), ("debugnext", "`,debugnext`"), ("automacro", "`,automacro`")]),
-    ("Khác", [("ping", "`,ping`"), ("help", "`,help`")]),
+        ("track", "`,track @user` (owner): chọn tài khoản OwO cần theo dõi"),
+        ("setprefixes", "`,setprefixes owo,o` (owner): khai báo prefix OwO của bạn — bắt buộc nếu bạn gõ tắt (vd `o`)"),
+        ("setserver", "`,setserver here|<ID>|xoa` (owner): theo dõi cả 1 server (mọi kênh); `here` = server đang gõ, `xoa` = bỏ giới hạn"),
+        ("setchannel", "`,setchannel [#kênh|xoa]` (owner): chỉ theo dõi 1 kênh; không kèm gì = xem trạng thái"),
+        ("rawdump", "`,rawdump [xoa]` (owner): gửi qua DM file tin OwO nguyên văn bot đọc được để đối chiếu; `xoa` = xóa mẫu cũ"),
+        ("debugnext", "`,debugnext` (owner): in nội dung tin OwO kế tiếp ra console để gỡ lỗi"),
+        ("automacro", "`,automacro [clear]` (owner): xem lệnh đang chờ / đã xử lý của app; `clear` = hủy hết lệnh đang chờ")]),
+    ("Khác", [
+        ("ping", "`,ping`: kiểm tra bot còn sống, độ trễ và phiên bản"),
+        ("help", "`,help`: xem lại danh sách lệnh này")]),
 ]
+
+
+HELP_PAGE_CHARS = 5200   # mỗi embed Discord tối đa 6000 ký tự; chừa chỗ cho tiêu đề / chân trang
+
+
+def build_help_pages(has_command=None):
+    """Chia HELP_GROUPS thành các trang (mỗi trang là 1 embed): [[(tên_field, nội_dung), ...], ...].
+    Mỗi lệnh 1 dòng; field <= 1000 ký tự, trang <= HELP_PAGE_CHARS. Lệnh bot không có thì tự bỏ qua."""
+    has_command = has_command or (lambda name: True)
+    fields = []
+    for title, items in HELP_GROUPS:
+        lines = ["• " + txt for name, txt in items if has_command(name)]
+        cur, size, part = [], 0, 0
+        for ln in lines + [None]:
+            if ln is None or (cur and size + len(ln) + 1 > 1000):
+                if cur:
+                    fields.append((title if part == 0 else title + " (tiếp)", "\n".join(cur)))
+                    part += 1
+                cur, size = [], 0
+            if ln is not None:
+                cur.append(ln)
+                size += len(ln) + 1
+    pages, page, size = [], [], 0
+    for name, value in fields:
+        cost = len(name) + len(value)
+        if page and size + cost > HELP_PAGE_CHARS:
+            pages.append(page)
+            page, size = [], 0
+        page.append((name, value))
+        size += cost
+    if page:
+        pages.append(page)
+    return pages
 
 
 @bot.command(name="help")
 async def help_cmd(ctx):
     groups = HELP_GROUPS
-    embed = discord.Embed(
-        title="OwO Tracker — danh sách lệnh",
-        description="Prefix: `,` · (owner) = chỉ chủ bot dùng được",
-        color=0xD9A227,
-    )
-    covered = set()
-    for title, items in groups:
-        covered.update(name for name, _ in items)
-        shown = [txt for name, txt in items if bot.get_command(name)]
-        if shown:
-            embed.add_field(name=title, value=" · ".join(shown)[:1024], inline=False)
+    pages = build_help_pages(lambda name: bot.get_command(name) is not None)
+    covered = {name for _, items in groups for name, _ in items}
     # Lưới an toàn: lệnh nào mới thêm mà chưa có trong danh sách trên thì tự hiện ra, help không bao giờ lỗi thời im lặng
     extra = sorted(c.name for c in bot.commands if c.name not in covered)
-    if extra:
-        embed.add_field(name="Lệnh mới (chưa có mô tả trong ,help)",
-                        value=" · ".join(f"`,{n}`" for n in extra)[:1024], inline=False)
-    embed.set_footer(text=f"Bot {bot_version_text()} · Chỉ thấy được server đã mời nó vào — không tự theo dõi ở nơi khác.")
-    await ctx.send(embed=embed)
+    if extra and pages:
+        pages[-1].append(("Lệnh mới (chưa có mô tả trong ,help)", " · ".join(f"`,{n}`" for n in extra)[:1000]))
+    for i, fields in enumerate(pages):
+        embed = discord.Embed(
+            title=f"OwO Tracker {bot_version_text()} — danh sách lệnh" if i == 0 else "OwO Tracker — danh sách lệnh (tiếp)",
+            description="Prefix: `,` · (owner) = chỉ chủ bot dùng được" if i == 0 else None,
+            color=0xD9A227,
+        )
+        for name, value in fields:
+            embed.add_field(name=name, value=value, inline=False)
+        if i == len(pages) - 1:
+            embed.set_footer(text=f"Bot {bot_version_text()} · Chỉ thấy được server đã mời nó vào — không tự theo dõi ở nơi khác.")
+        await ctx.send(embed=embed)
 
 
 # ----------------------------------------------------------------------

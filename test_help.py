@@ -30,8 +30,20 @@ check("help: mọi lệnh của bot đều có mô tả trong ,help", sorted(com
 check("help: không nhắc lệnh đã bị xóa", sorted(set(in_help) - commands_in_code), [])
 check("help: chữ hiện ra của mỗi lệnh bắt đầu bằng `,tênlệnh",
       sorted(n for _, items in b.HELP_GROUPS for n, txt in items if not txt.startswith(f"`,{n}")), [])
-check("help: mỗi nhóm vừa 1 field embed (<= 1024 ký tự)",
-      [t for t, items in b.HELP_GROUPS if len(" · ".join(txt for _, txt in items)) > 1024], [])
+check("help: mỗi lệnh có mô tả (sau cú pháp phải còn chữ giải thích >= 15 ký tự)",
+      sorted(n for _, items in b.HELP_GROUPS for n, txt in items
+             if len(re.sub(r"`[^`]*`", "", txt).replace("(owner)", "").strip(" :·/")) < 15), [])
+check("help: lệnh có tên phụ thì nhắc tên phụ (dex, dexzoo)",
+      [a for a, n in (("dex", "pet"), ("dexzoo", "zoodex"))
+       if not any(a in txt for nn, txt in [(x, y) for _, it in b.HELP_GROUPS for x, y in it] if nn == n) and a in src], [])
+pages = b.build_help_pages()
+check("help: chia trang — mỗi field <= 1024, mỗi trang <= 5800 ký tự",
+      [i for i, pg in enumerate(pages) if any(len(v) > 1024 for _, v in pg)
+       or sum(len(n) + len(v) for n, v in pg) > 5800], [])
+check("help: mọi lệnh đều có mặt trong các trang",
+      sorted(n for n in in_help if not any("`," + n in v for pg in pages for _, v in pg)), [])
+check("mô tả bot có số phiên bản và <= 400 ký tự",
+      (b.bot_version_text() in b.bot_profile_text(), len(b.bot_profile_text()) <= 400), (True, True))
 check("help: có lệnh mới của bản này (gemtier, setserver, autocheck, hbalert)",
       sorted({"gemtier", "setserver", "autocheck", "hbalert"} - set(in_help)), [])
 
