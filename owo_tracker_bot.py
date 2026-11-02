@@ -3404,10 +3404,12 @@ async def zoo_pets_missing_dex():
         known.setdefault(str(r.get("display_name") or "").lower(), r)
         for a in r.get("aliases") or []:
             known.setdefault(str(a).lower(), r)
-    held = {}
+    held, tier_of = {}, {}
     for p in zoo["pets"]:
-        if p.get("name") and (p.get("count") or 0) > 0:
+        # KE CA pet so luong 0 (da hy sinh het): van la loai pet that, dex van tra duoc va can co
+        if p.get("name"):
             held.setdefault(str(p["name"]).lower(), str(p["name"]))
+            tier_of.setdefault(str(p["name"]).lower(), p.get("tier") or "?")
     absent, incomplete = [], {}
     for k, n in held.items():
         row = known.get(k)
@@ -3418,8 +3420,14 @@ async def zoo_pets_missing_dex():
             if gaps:
                 incomplete[n] = gaps
     missing = sorted(absent + list(incomplete), key=str.lower)
+    by_tier = {}
+    for n in missing:
+        by_tier.setdefault(tier_of.get(n.lower(), "?"), []).append(n)
+    # Tier ma OwO bao co pet (dong tong ket cuoi zoo) nhung bot khong doc duoc ten pet nao -> khong the check dex
+    read_tiers = set(tier_of.values())
+    unread = sorted(t for t, c in parse_zoo_breakdown(zoo.get("breakdown_raw")).items() if c > 0 and t not in read_tiers)
     return {"missing": missing, "absent": sorted(absent, key=str.lower), "incomplete": incomplete,
-            "held": len(held), "updated_at": zoo.get("updated_at")}
+            "held": len(held), "updated_at": zoo.get("updated_at"), "by_tier": by_tier, "unread_tiers": unread}
 
 
 @bot.command(name="zoodex", aliases=["dexzoo"])
@@ -3435,6 +3443,9 @@ async def zoodex_cmd(ctx, mode: str = ""):
     updated = _parse_utc(info["updated_at"])
     if updated and (_utcnow() - updated).total_seconds() > ZOO_STALE_SECONDS:
         stale = f"\n⚠️ Zoo đọc lần cuối cách đây {int((_utcnow() - updated).total_seconds() // 3600)} giờ — nên gõ `owo zoo` lại cho đúng."
+    if info["unread_tiers"]:
+        stale += ("\n⚠️ Chưa đọc được tên pet của tier: " + ", ".join(info["unread_tiers"])
+                  + " — các pet đó chưa check dex được; gõ lại `owo zoo` (đủ các trang).")
     missing = info["missing"]
     if not missing:
         await ctx.send(f"✅ Cả {info['held']} loại pet đang giữ trong zoo đều đã có dex đầy đủ.{stale}")
@@ -3449,6 +3460,11 @@ async def zoodex_cmd(ctx, mode: str = ""):
         if inc:
             items = list(inc.items())
             parts.append("Thiếu: " + ", ".join(f"`{n}` ({'/'.join(g)})" for n, g in items[:25]) + (f" … (+{len(items) - 25})" if len(items) > 25 else ""))
+        if info["by_tier"]:
+            parts.append("Theo tier: " + " · ".join(f"{t} {len(v)}" for t, v in sorted(info["by_tier"].items())))
+        if info["unread_tiers"]:
+            parts.append("⚠️ Tier OwO báo có pet nhưng bot CHƯA đọc được tên pet nào: " + ", ".join(info["unread_tiers"])
+                         + " — gõ lại `owo zoo` (đủ các trang) để bot đọc.")
         parts.append("Gõ `,zoodex` để nhờ app tra." + stale)
         await ctx.send("\n".join(parts)[:1900])
         return

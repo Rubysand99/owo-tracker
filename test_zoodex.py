@@ -49,11 +49,11 @@ async def run():
     check("chưa có zoo -> hướng dẫn gõ owo zoo, không xếp lệnh", ("owo zoo" in last(), await pending_dex(db)), (True, []))
 
     # --- tìm pet thiếu dex ---
-    await put_zoo(db, pets(("gowl", 3), ("dboar", 1), ("cat2", 0), ("slothbot", 2), ("Fox", 5)))
+    await put_zoo(db, pets(("gowl", 3), ("dboar", 1), ("slothbot", 2), ("Fox", 5)))
     await put_dex(db, "gowl", ["gowl", "owl"])            # có dex theo tên
     await put_dex(db, "sloth", ["sloth", "slothbot"])     # có dex theo BÍ DANH
     info = await b.zoo_pets_missing_dex()
-    check("thiếu dex: chỉ pet đang giữ (count>0) mà chưa có dex; bí danh cũng tính là có",
+    check("thiếu dex: pet trong zoo chưa có dex; bí danh cũng tính là có",
           (info["missing"], info["held"]), (["dboar", "Fox"], 4))
 
     # --- dex có bản ghi nhưng THIẾU thông tin vẫn bị tính là thiếu ---
@@ -66,7 +66,15 @@ async def run():
           (info2["missing"], sorted(info2["incomplete"]), info2["absent"]), (["hole", "manu", "noss"], ["hole", "manu"], ["noss"]))
     await b.zoodex_cmd(ctx, mode="xem")
     check("zoodex xem: phân biệt chưa có / có nhưng thiếu", ("1 chưa có" in last() and "2 có nhưng thiếu" in last() and "`hole`" in last()), True)
-    await put_zoo(db, pets(("gowl", 3), ("dboar", 1), ("cat2", 0), ("slothbot", 2), ("Fox", 5)))
+    await put_zoo(db, pets(("gowl", 3), ("dboar", 1), ("slothbot", 2), ("Fox", 5)))
+
+    # --- tier: pet số lượng 0 vẫn check; báo tier chưa đọc được ---
+    await db[b.COL_ZOO].replace_one({"_id": "latest"}, {"_id": "latest", "updated_at": b._utcnow().isoformat(),
+        "breakdown_raw": "F-3, G-2, C-10", "pets": [{"name": "zerofox", "count": 0, "tier": "common"}]}, upsert=True)
+    info3 = await b.zoo_pets_missing_dex()
+    check("pet số lượng 0 vẫn được check dex; tier có pet mà chưa đọc được tên thì cảnh báo",
+          (info3["missing"], info3["by_tier"], info3["unread_tiers"]), (["zerofox"], {"common": ["zerofox"]}, ["fabled", "gem"]))
+    await put_zoo(db, pets(("gowl", 3), ("dboar", 1), ("slothbot", 2), ("Fox", 5)))
 
     # --- xem (không xếp lệnh) ---
     await b.zoodex_cmd(ctx, mode="xem")
