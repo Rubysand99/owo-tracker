@@ -118,6 +118,29 @@ async def run():
     got3 = await b.accept_dex_by_alias(dex_msg("zzz, other"), "555")
     check("dex khớp theo alias (không phải tên đầu) vẫn nhận", (got3, (await db[b.COL_PET_SPECIES].find_one({"_id": "zzz"})) is not None), (True, True))
 
+    # --- zoo gọi pet bằng TÊN EMOJI khác dòng Alias của dex: học tên đã gõ làm bí danh ---
+    await db[b.COL_PET_SPECIES].delete_many({}); b._dex_requested.clear(); b.recent_owo_commands.clear()
+    await put_zoo(db, pets(("cpwolfy", 2)))
+    b._dex_requested["cpwolfy"] = 0
+    m = dex_msg("wolf, wf")
+    m.reference = NS(resolved=NS(content="owo dex cpwolfy"))
+    got = await b.accept_dex_by_alias(m, "555")
+    row = await db[b.COL_PET_SPECIES].find_one({"_id": "wolf"})
+    check("tên đã gõ (từ tin reply) được học làm bí danh -> zoo khớp, hết thiếu",
+          (got, row and row["aliases"], (await b.zoo_pets_missing_dex())["missing"]), (True, ["wolf", "wf", "cpwolfy"], []))
+    # không có reply: chỉ 1 lệnh dex gần đây trong kênh -> dùng; nhiều lệnh -> không đoán
+    await db[b.COL_PET_SPECIES].delete_many({}); b._dex_requested.clear()
+    await put_zoo(db, pets(("cpone", 1), ("cptwo", 1)))
+    b._dex_requested.update({"cpone": 0, "cptwo": 0})
+    b.recent_owo_commands[99] = [(b.time.time(), "dex cpone")]
+    got = await b.accept_dex_by_alias(dex_msg("one, o1"), "555")
+    check("1 lệnh dex gần đây trong kênh -> học bí danh", (got, (await b.zoo_pets_missing_dex())["missing"]), (True, ["cptwo"]))
+    await db[b.COL_PET_SPECIES].delete_many({}); b._dex_requested.update({"cpone": 0, "cptwo": 0})
+    b.recent_owo_commands[99] = [(b.time.time(), "dex cpone"), (b.time.time(), "dex cptwo")]
+    got = await b.accept_dex_by_alias(dex_msg("one, o1"), "555")
+    check("2 lệnh dex cùng lúc, không reply -> không đoán bừa (không học bí danh)", (got, (await b.zoo_pets_missing_dex())["missing"]), (False, ["cpone", "cptwo"]))
+    b.recent_owo_commands.clear()
+
     # --- nhiều pet: giới hạn mỗi lượt ---
     await db[b.COL_PET_SPECIES].delete_many({})
     many = [(f"pet{i:02d}", 1) for i in range(27)]

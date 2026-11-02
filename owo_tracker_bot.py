@@ -2395,10 +2395,15 @@ async def start_automacro_api_server():
 async def save_pet_species(p, source_id=None):
     key = p["name"].lower()
     hp, att, pr, wp, mag, mr = p["stats"]
+    old = await mdb[COL_PET_SPECIES].find_one({"_id": key}) or {}
+    aliases = list(p.get("aliases") or [p["name"]])
+    for a in old.get("aliases") or []:      # giu bi danh da hoc truoc do (vd ten emoji trong zoo)
+        if str(a).lower() not in {x.lower() for x in aliases}:
+            aliases.append(a)
     await mdb[COL_PET_SPECIES].update_one(
         {"_id": key},
         {"$set": {
-            "display_name": p["name"], "aliases": p.get("aliases", [p["name"]]),
+            "display_name": p["name"], "aliases": aliases,
             "rank": p["rank"], "rank_vi": p.get("rank_vi"),
             "hp": hp, "att": att, "pr": pr, "wp": wp, "mag": mag, "mr": mr,
             "count_seen": p["count"], "flavor_text": p.get("flavor_text"),
@@ -2677,6 +2682,25 @@ async def get_owo_prefixes():
     return [p.strip().lower() for p in raw.split(",") if p.strip()]
 
 
+_TYPED_DEX_RE = re.compile(r"(?:^|\s)(?:dex|owodex|odex)\s+([A-Za-z0-9_]{1,32})\s*$")
+
+
+def typed_dex_name(message, tracked_id=None):
+    """Ten pet ma ban/app DA GO trong `owo dex <ten>` de ra embed nay: uu tien tin OwO reply toi
+    (message.reference.resolved.content); khong co thi lay lenh dex gan day trong kenh NEU chi co dung 1 lenh.
+    Ten nay co the la ten emoji trong zoo (khong nam trong dong Alias cua dex) nen can ghi nhan lam bi danh."""
+    ref = getattr(message, "reference", None)
+    resolved = getattr(ref, "resolved", None) if ref else None
+    content = (getattr(resolved, "content", None) or "").strip().lower()
+    m = _TYPED_DEX_RE.search(content) if content else None
+    if m:
+        return m.group(1)
+    now = time.time()
+    names = {mm.group(1) for ts, body in recent_owo_commands.get(message.channel.id, []) if now - ts < 120
+             for mm in [_TYPED_DEX_RE.search(body)] if mm}
+    return next(iter(names)) if len(names) == 1 else None
+
+
 async def dex_wanted_names() -> set:
     """Ten pet (thuong) ma Tom dang CAN dex: pet dang giu trong zoo, pet vua nho app tra, lenh dex dang cho."""
     wanted = set(_dex_requested)
@@ -2700,7 +2724,13 @@ async def accept_dex_by_alias(message, tracked_id) -> bool:
     if not pet:
         return False
     wanted = await dex_wanted_names()
-    if not wanted.intersection(str(a).lower() for a in (pet.get("aliases") or [pet["name"]])):
+    names = [str(a).lower() for a in (pet.get("aliases") or [pet["name"]])]
+    typed = typed_dex_name(message, tracked_id)
+    if typed and typed.lower() in wanted and typed.lower() not in names:
+        # Ten dang go (vd ten emoji zoo) khong co trong dong Alias -> hoc lam bi danh, de lan sau zoo khop duoc dex
+        pet = dict(pet, aliases=list(pet.get("aliases") or [pet["name"]]) + [typed.lower()])
+        names.append(typed.lower())
+    if not wanted.intersection(names):
         return False
     verdict, _who = owner_verdict(text, tracked_id, await tracked_name_set(tracked_id))
     if verdict == "other":
@@ -2709,6 +2739,7 @@ async def accept_dex_by_alias(message, tracked_id) -> bool:
     await record_raw("owodex", text, pet, message)
     for a in pet.get("aliases") or [pet["name"]]:
         _dex_requested.pop(str(a).lower(), None)
+    _dex_requested.pop(str(typed or "").lower(), None)
     print(f"[tracker] Đã nhận dex {pet['name']} theo alias (embed có thể đến trễ).")
     return True
 
