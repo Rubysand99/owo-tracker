@@ -162,6 +162,7 @@ COL_DAILY = "owot_daily_status"
 COL_COWONCY = "owot_cowoncy"
 COL_WEAPON_SHARDS = "owot_weapon_shards"  # v29: so weapon shards (owo ws)
 COL_EVENT = "owot_event_hunt"              # v29: tin san thuong su kien [x/10]
+COL_WEAPON_REVIEW = "owot_weapon_review"   # v30: quyet dinh Giu/Bo tung cay (Hub noi)
 COL_WEAPON_LIST = "owot_weapon_list"         # v29: kho vu khi tu danh sach `owo weapon` (nhieu trang)
 COL_WEAPON_ADVICE = "owot_weapon_advice"   # v29: loi khuyen `?tag <vu khi>` do app thu thap trong server OwO
 COL_EMOJI = "owot_emoji_registry"
@@ -1304,6 +1305,182 @@ async def queue_automacro_command(action: str, params: dict):
     return doc_id
 
 
+# ===================== Duyet vu khi: Giu / Bo bang 2 nut tren Hub noi =====================
+# Quy trinh: `,weaponreview` -> bot dang 1 tin EMBED danh sach (dang kiem tra / con lai / ID Giu / ID Bo) -> app go `owo w <ID>`
+# -> Ruby xem embed cua OwO roi bam Giu / Bo tren Hub -> bot ghi quyet dinh, XOA tin lenh + tin tra loi cua OwO cua cay do
+# (chi de lai embed danh sach) -> app go cay ke tiep. CHI GHI DANH SACH - khong tu dismantle / ban gi ca.
+# Cay co SAO hoac dang trang bi mac dinh la GIU (khong dua vao hang doi duyet).
+REVIEW_KEY = "weapon_review_session"
+REVIEW_FIELD_MAX = 1000
+
+
+async def review_decisions() -> dict:
+    rows = await mdb[COL_WEAPON_REVIEW].find({}).to_list(length=20000)
+    return {r["_id"]: r.get("decision") for r in rows}
+
+
+async def review_pending_ids(decided: dict = None) -> list:
+    """ID cac cay CAN duyet (khong sao, khong dang trang bi, chua quyet), thu tu on dinh: theo loai roi chat luong thap -> cao."""
+    decided = decided if decided is not None else await review_decisions()
+    rows = await mdb[COL_WEAPON_LIST].find({}).to_list(length=20000)
+    todo = [r for r in rows if not r.get("starred") and not r.get("equipped") and r["_id"] not in decided]
+    todo.sort(key=lambda r: (r.get("type") or "", r.get("quality") or 0, r["_id"]))
+    return [r["_id"] for r in todo]
+
+
+async def review_default_keep_ids() -> list:
+    rows = await mdb[COL_WEAPON_LIST].find({"$or": [{"starred": True}, {"equipped": True}]}).to_list(length=20000)
+    return sorted(r["_id"] for r in rows)
+
+
+def _review_ids_text(ids, empty="—"):
+    if not ids:
+        return empty
+    text = " ".join(f"`{i}`" for i in ids)
+    if len(text) <= REVIEW_FIELD_MAX:
+        return text
+    kept = []
+    size = 12
+    for i in reversed(ids):            # uu tien hien cac ID MOI quyet
+        size += len(i) + 3
+        if size > REVIEW_FIELD_MAX:
+            break
+        kept.append(i)
+    kept.reverse()
+    return f"… (+{len(ids) - len(kept)} cũ) " + " ".join(f"`{i}`" for i in kept)
+
+
+async def review_embed(sess: dict):
+    decided = await review_decisions()
+    keep = [i for i, d in decided.items() if d == "keep"]
+    drop = [i for i, d in decided.items() if d == "drop"]
+    pending = await review_pending_ids(decided)
+    default_keep = await review_default_keep_ids()
+    cur = sess.get("current")
+    em = discord.Embed(title="🗡️ Duyệt vũ khí", color=0xFFC24B if sess.get("active") else 0x8B94A7)
+    if sess.get("active"):
+        em.description = (f"Đang kiểm tra: `{cur}`\nBấm **Giữ** / **Bỏ** trên Hub nổi." if cur
+                          else "✅ Hết cây cần duyệt.")
+    else:
+        em.description = "Đã dừng duyệt."
+    em.add_field(name="Còn lại", value=str(len(pending)), inline=True)
+    em.add_field(name=f"⭐ Giữ mặc định ({len(default_keep)})", value="có sao / đang trang bị", inline=True)
+    em.add_field(name=f"✅ Giữ ({len(keep)})", value=_review_ids_text(keep), inline=False)
+    em.add_field(name=f"🗑️ Bỏ ({len(drop)})", value=_review_ids_text(drop), inline=False)
+    return em
+
+
+async def review_get() -> dict:
+    return await get_config(REVIEW_KEY, {}) or {}
+
+
+async def review_refresh_embed(sess: dict = None):
+    """Sua tin embed danh sach tai cho; mat tin (bi xoa) thi dang lai tin moi."""
+    sess = sess or await review_get()
+    cid = sess.get("channel_id")
+    if not cid:
+        return
+    try:
+        ch = bot.get_channel(int(cid)) or await bot.fetch_channel(int(cid))
+        em = await review_embed(sess)
+        mid = sess.get("msg_id")
+        if mid:
+            try:
+                await ch.get_partial_message(int(mid)).edit(embed=em)
+                return
+            except discord.NotFound:
+                pass
+        msg = await ch.send(embed=em)
+        await mdb[COL_CONFIG].update_one({"_id": REVIEW_KEY}, {"$set": {"value.msg_id": msg.id}}, upsert=True)
+    except Exception as e:
+        print(f"[tracker][review] Khong cap nhat duoc embed danh sach: {e!r}")
+
+
+async def review_note_message(message, wid: str):
+    """Nho ID tin nhan thuoc luot kiem tra cay `wid` (tin lenh `owo w <id>` cua Ruby + tin tra loi cua OwO) de xoa sau khi bam Giu/Bo."""
+    sess = await review_get()
+    if not sess.get("active") or not sess.get("current"):
+        return
+    if str(sess["current"]).lower() != str(wid).lower() or str(message.channel.id) != str(sess.get("channel_id")):
+        return
+    await mdb[COL_CONFIG].update_one({"_id": REVIEW_KEY}, {"$addToSet": {"value.check_msg_ids": message.id}})
+
+
+async def review_delete_checks(sess: dict):
+    """Xoa cac tin cua luot kiem tra (KHONG dong vao embed danh sach). Khong du quyen Manage Messages thi bao 1 lan."""
+    ids = [m for m in (sess.get("check_msg_ids") or []) if str(m) != str(sess.get("msg_id"))]
+    if not ids:
+        return
+    try:
+        ch = bot.get_channel(int(sess["channel_id"])) or await bot.fetch_channel(int(sess["channel_id"]))
+    except Exception as e:
+        print(f"[tracker][review] Khong mo duoc kenh de xoa tin: {e!r}")
+        return
+    denied = False
+    for mid in ids:
+        try:
+            await ch.get_partial_message(int(mid)).delete()
+        except discord.NotFound:
+            pass
+        except discord.Forbidden:
+            denied = True
+        except Exception as e:
+            print(f"[tracker][review] Xoa tin {mid} loi: {e!r}")
+    if denied and not sess.get("delete_warned"):
+        await mdb[COL_CONFIG].update_one({"_id": REVIEW_KEY}, {"$set": {"value.delete_warned": True}})
+        await notify_owner("⚠️ Bot không có quyền **Manage Messages** trong kênh duyệt vũ khí nên không xoá được tin kiểm tra. "
+                           "Cấp quyền đó cho bot (hoặc kệ, vẫn duyệt bình thường).", min_gap=600)
+
+
+async def review_decide(decision: str):
+    """Ghi quyet dinh cho cay dang kiem tra, xoa tin cua no, chon cay ke tiep. Tra ve (dict, loi)."""
+    if decision not in ("keep", "drop"):
+        return None, "decision phai la keep hoac drop"
+    sess = await review_get()
+    cur = sess.get("current")
+    if not sess.get("active") or not cur:
+        return None, "khong co cay nao dang duyet"
+    await mdb[COL_WEAPON_REVIEW].update_one(
+        {"_id": cur}, {"$set": {"decision": decision, "at": _utcnow().isoformat()}}, upsert=True)
+    await review_delete_checks(sess)
+    pending = await review_pending_ids()
+    nxt = pending[0] if pending else None
+    await mdb[COL_CONFIG].update_one(
+        {"_id": REVIEW_KEY},
+        {"$set": {"value.current": nxt, "value.check_msg_ids": []}, "$push": {"value.history": {"$each": [cur], "$slice": -50}}},
+        upsert=True)
+    sess = await review_get()
+    await review_refresh_embed(sess)
+    return {"ok": True, "decided": cur, "decision": decision, "next_id": nxt, "remaining": len(pending)}, None
+
+
+async def _hub_weapon_review():
+    sess = await review_get()
+    if not sess:
+        return None
+    decided = await review_decisions()
+    return {"active": bool(sess.get("active")), "current_id": sess.get("current"),
+            "remaining": len(await review_pending_ids(decided)),
+            "kept": sum(1 for d in decided.values() if d == "keep"),
+            "dropped": sum(1 for d in decided.values() if d == "drop")}
+
+
+async def handle_post_weapon_review(request: web.Request):
+    """Hub noi bam Giu/Bo. Body: {"decision": "keep"|"drop"} -> {ok, decided, next_id, remaining}"""
+    if not _check_api_token(request):
+        return web.json_response({"error": "unauthorized"}, status=401)
+    try:
+        body = await request.json()
+    except ValueError:
+        body = {}
+    if not isinstance(body, dict):
+        return web.json_response({"error": "body phai la object JSON"}, status=400)
+    res, err = await review_decide(str(body.get("decision") or ""))
+    if err:
+        return web.json_response({"error": err}, status=409 if "dang duyet" in err else 400)
+    return web.json_response(res)
+
+
 AUTH_FAIL_LIMIT = 10        # so lan sai token toi da trong cua so ben duoi
 AUTH_FAIL_WINDOW = 300      # giay: vuot qua thi khoa IP do trong chinh khoang nay
 _auth_failures = {}         # ip -> [thoi diem sai gan nhat]
@@ -2377,6 +2554,7 @@ async def build_hub(now=None):
         "zoo": await _hub_zoo(now),
         "inventory": await _hub_inventory(now),
         "weapons": await _hub_weapons(now),
+        "weapon_review": await _hub_weapon_review(),
         "pet_dex": await _hub_pet_dex(now),
         "battle": await _hub_battle(now),
         "new_pets": await _hub_new_pets(now),
@@ -2409,6 +2587,7 @@ async def start_automacro_api_server():
     app.router.add_get("/gemtier", handle_get_gemtier)
     app.router.add_post("/gemtier", handle_post_gemtier)
     app.router.add_post("/weapon-advice", handle_post_weapon_advice)
+    app.router.add_post("/weapon-review", handle_post_weapon_review)
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, AUTOMACRO_API_HOST, AUTOMACRO_API_PORT)
@@ -2853,6 +3032,9 @@ async def on_message(message: discord.Message):
             open_hb_window(mt.group(1))
         last_owo_command[message.channel.id] = content_lower
         record_recent_command(message.channel.id, content_lower, prefixes)
+        mw = re.match(r"^\S+\s+w\s+([a-z0-9]{4,8})$", content_lower.strip())
+        if mw:
+            await review_note_message(message, mw.group(1))
         author = message.author
         tracked_names[str(author.id)] = {
             n for n in (getattr(author, "display_name", None), getattr(author, "global_name", None),
@@ -3055,6 +3237,7 @@ async def handle_owo_response(message: discord.Message, source_id):
         names |= {a.strip() for a in aliases.split(",") if a.strip()}
         owner_ok = weapon_owner_matches(weapon.get("owner"), names)
         recognized = True
+        await review_note_message(message, weapon.get("id") or "")
         await record_raw("weapon", text, weapon, message,
                          extra={"saved": bool(owner_ok), "accepted_owner_names": sorted(names)})
         if owner_ok:
@@ -4027,6 +4210,69 @@ async def weaponlist_cmd(ctx):
                       ensure_ascii=False, indent=1).encode("utf-8")
     await send_file_to_owner(f"📦 Danh sách {len(items)} cây vũ khí đã quét.", "weapon_list.json", data)
     await ctx.send("Đã gửi file `weapon_list.json`.")
+
+
+@bot.command(name="weaponreview")
+@is_owner()
+async def weaponreview_cmd(ctx, action: str = "start"):
+    """Duyet vu khi bang nut Giu/Bo tren Hub noi. `,weaponreview` bat dau | `stop` | `undo` | `export` | `reset`.
+    Chay lenh nay Ở ĐÚNG KÊNH đang farm (bot xoa tin kiem tra trong kenh nay). CHI GHI DANH SACH, khong tu dismantle."""
+    action = (action or "start").lower()
+    sess = await review_get()
+    if action == "stop":
+        await mdb[COL_CONFIG].update_one({"_id": REVIEW_KEY}, {"$set": {"value.active": False}}, upsert=True)
+        await review_refresh_embed(await review_get())
+        await ctx.send("Đã dừng duyệt vũ khí (danh sách Giữ/Bỏ vẫn được lưu).")
+        return
+    if action == "undo":
+        hist = list(sess.get("history") or [])
+        if not hist:
+            await ctx.send("Chưa có quyết định nào để hoàn tác.")
+            return
+        last = hist.pop()
+        await mdb[COL_WEAPON_REVIEW].delete_one({"_id": last})
+        await mdb[COL_CONFIG].update_one({"_id": REVIEW_KEY}, {"$set": {"value.history": hist, "value.current": last,
+                                                                       "value.check_msg_ids": [], "value.active": True}}, upsert=True)
+        await review_refresh_embed(await review_get())
+        await ctx.send(f"Đã hoàn tác cây `{last}` — kiểm tra lại cây này.")
+        await queue_automacro_command("weapon_review", {"command_text": f"owo w {last}"})
+        return
+    if action == "export":
+        decided = await review_decisions()
+        data = json.dumps({"tao_luc": _utcnow().isoformat(),
+                           "giu": sorted(i for i, d in decided.items() if d == "keep"),
+                           "bo": sorted(i for i, d in decided.items() if d == "drop"),
+                           "giu_mac_dinh_co_sao_hoac_dang_dung": await review_default_keep_ids()},
+                          ensure_ascii=False, indent=1).encode("utf-8")
+        await send_file_to_owner("📦 Danh sách vũ khí Giữ / Bỏ.", "weapon_review.json", data)
+        await ctx.send("Đã gửi file `weapon_review.json`.")
+        return
+    if action == "reset":
+        await mdb[COL_WEAPON_REVIEW].delete_many({})
+        await mdb[COL_CONFIG].update_one({"_id": REVIEW_KEY}, {"$set": {"value.history": []}}, upsert=True)
+        await ctx.send("Đã xoá toàn bộ quyết định Giữ/Bỏ.")
+        return
+    if action != "start":
+        await ctx.send("Dùng: `,weaponreview` (bắt đầu) | `stop` | `undo` | `export` | `reset`")
+        return
+    pending = await review_pending_ids()
+    if await mdb[COL_WEAPON_LIST].count_documents({}) == 0:
+        await ctx.send("Chưa có danh sách vũ khí. Chạy `,weaponscan` trước.")
+        return
+    if not pending:
+        await ctx.send("Không còn cây nào cần duyệt (hoặc đều có sao / đang trang bị / đã quyết).")
+        return
+    cur = pending[0]
+    await mdb[COL_CONFIG].update_one(
+        {"_id": REVIEW_KEY},
+        {"$set": {"value": {"active": True, "channel_id": ctx.channel.id, "msg_id": None, "current": cur,
+                            "check_msg_ids": [], "history": sess.get("history") or [], "delete_warned": False,
+                            "started_at": _utcnow().isoformat()}}}, upsert=True)
+    msg = await ctx.send(embed=await review_embed({"active": True, "current": cur}))
+    await mdb[COL_CONFIG].update_one({"_id": REVIEW_KEY}, {"$set": {"value.msg_id": msg.id}})
+    qid = await queue_automacro_command("weapon_review", {"command_text": f"owo w {cur}"})
+    if qid is None:
+        await ctx.send("⚠️ App đang TẮT (`,off`) nên chưa giao việc — bật Hub nổi rồi gõ lại `,weaponreview`.")
 
 
 @bot.command(name="dismantleplan")
