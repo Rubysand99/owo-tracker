@@ -52,8 +52,11 @@ verify_tree() {
   done
   if [ "$RUN_TESTS" = 1 ] && [ -f "$APP_DIR/test_security.py" ]; then
     # test_security.py chỉ dùng module có sẵn trong venv (không cần mạng / MongoDB)
-    ( cd "$APP_DIR" && as_app env PYTHONDONTWRITEBYTECODE=1 "$py" test_security.py ) >/tmp/owo-update-test.log 2>&1 \
-      || { echo "test_security.py không đạt (xem /tmp/owo-update-test.log)"; return 1; }
+    # Log o file tam do mktemp tao (0600) - KHONG dung duong dan co dinh trong /tmp (script chay bang root, de bi tro symlink ghi de file)
+    local testlog; testlog="$(mktemp /var/log/owo-update-test.XXXXXX 2>/dev/null || mktemp)"
+    ( cd "$APP_DIR" && as_app env PYTHONDONTWRITEBYTECODE=1 "$py" test_security.py ) >"$testlog" 2>&1 \
+      || { echo "test_security.py không đạt (xem $testlog)"; return 1; }
+    rm -f "$testlog"
   fi
   return 0
 }

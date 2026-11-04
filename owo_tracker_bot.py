@@ -1314,8 +1314,9 @@ def _client_ip(request: web.Request) -> str:
     remote = getattr(request, "remote", None) or "?"
     if remote in ("127.0.0.1", "::1"):
         fwd = request.headers.get("X-Forwarded-For", "")
-        if fwd:
-            return fwd.split(",")[0].strip() or remote
+        for part in reversed([p.strip() for p in fwd.split(",")]):
+            if part and part not in ("127.0.0.1", "::1"):
+                return part   # proxy cua ta them IP that vao CUOI; muc dau co the do nguoi goi gia
     return remote
 
 
@@ -1378,11 +1379,14 @@ async def handle_ack_command(request: web.Request):
     status = body.get("status", "done") if isinstance(body, dict) else "done"  # "done" hoac "failed"
     if status not in ("done", "failed"):
         return web.json_response({"error": "status phai la done hoac failed"}, status=400)
-    cmd = await mdb[COL_AUTOMACRO_COMMANDS].find_one({"_id": cmd_id})
-    await mdb[COL_AUTOMACRO_COMMANDS].update_one(
-        {"_id": cmd_id},
+    # Nguyen tu: chi 1 lan ack duoc chuyen pending -> done/failed; ack lap lai (app thu lai khi mat mang)
+    # hoac 2 ack cung luc se KHONG chay lai tac dung phu (tru kho gem, quet vu khi...).
+    cmd = await mdb[COL_AUTOMACRO_COMMANDS].find_one_and_update(
+        {"_id": cmd_id, "status": "pending"},
         {"$set": {"status": status, "completed_at": _utcnow().isoformat()}},
     )
+    if cmd is None:
+        return web.json_response({"ok": True, "already": True})
     # Lenh thay gem da go xong -> tru 1 vien moi ma ra khoi kho (ban sao), de lan sau khong
     # chon lai dung ma cu khi chua kip go `owo inv`. `owo inv` that se ghi de lai cho dung.
     if cmd and cmd.get("action") == "swap_gem" and status == "done" and cmd.get("status") == "pending":
@@ -1739,6 +1743,9 @@ async def notify_owner(text: str, dm: bool = True, min_gap: int = 90, target: st
     if now - last < min_gap:
         return False
     _notify_recent[text] = now
+    if len(_notify_recent) > 200:   # khong de dict phinh mai (moi noi dung khac nhau la 1 khoa)
+        for k in [k for k, t in _notify_recent.items() if now - t > 3600]:
+            _notify_recent.pop(k, None)
     if target == "alt":
         alt_id = await get_config("alt_user_id", ALT_USER_ID_DEFAULT)
         if await dm_user(alt_id, text, images):
@@ -1754,14 +1761,17 @@ async def notify_owner(text: str, dm: bool = True, min_gap: int = 90, target: st
         try:
             ch = bot.get_channel(int(cid)) or await bot.fetch_channel(int(cid))
             mention = f"<@{tid}> " if tid else ""
-            await ch.send(f"{mention}{text}")
+            # Chi cho ping dung tai khoan duoc theo doi; chu tu app gui (co the chua @everyone / <@&role>) khong ping ai
+            allowed = discord.AllowedMentions(everyone=False, roles=False,
+                                              users=[discord.Object(id=int(tid))] if tid else False)
+            await ch.send(f"{mention}{text}", allowed_mentions=allowed)
             sent = True
         except Exception as e:
             print(f"[tracker][notify] Khong nhan duoc vao kenh: {e!r}")
     if dm and tid:
         try:
             user = bot.get_user(int(tid)) or await bot.fetch_user(int(tid))
-            await user.send(text)
+            await user.send(text, allowed_mentions=discord.AllowedMentions.none())
             sent = True
         except Exception as e:
             print(f"[tracker][notify] Khong DM duoc (bo qua): {e!r}")
@@ -1806,6 +1816,8 @@ async def handle_post_notify(request: web.Request):
         body = await request.json()
     except ValueError:   # body rong / khong phai JSON (JSONDecodeError la con cua ValueError)
         body = {}
+    if not isinstance(body, dict):
+        return web.json_response({"error": "body phai la object JSON"}, status=400)
     text = str(body.get("text") or "").strip()[:400]
     if not text:
         return web.json_response({"error": "empty"}, status=400)
@@ -2400,7 +2412,12 @@ async def start_automacro_api_server():
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, AUTOMACRO_API_HOST, AUTOMACRO_API_PORT)
-    await site.start()
+    try:
+        await site.start()
+    except OSError as e:   # cong dang bi chiem / khong co quyen: bao ro thay vi de task chet im lang
+        print(f"[tracker] ❌ Khong mo duoc API AutoMacro o {AUTOMACRO_API_HOST}:{AUTOMACRO_API_PORT}: {e!r}")
+        await runner.cleanup()
+        return
     print(f"[tracker] API cho AutoMacro dang chay o {AUTOMACRO_API_HOST}:{AUTOMACRO_API_PORT}")
 
 

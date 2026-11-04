@@ -56,6 +56,8 @@ check("sau Caddy (127.0.0.1) lấy IP thật từ X-Forwarded-For",
       b._client_ip(req("x", ip="127.0.0.1", fwd="5.6.7.8, 127.0.0.1")), "5.6.7.8")
 check("gọi trực tiếp thì bỏ qua X-Forwarded-For giả",
       b._client_ip(req("x", ip="8.8.8.8", fwd="5.6.7.8")), "8.8.8.8")
+check("client gia X-Forwarded-For ở đầu thì lấy mục proxy thêm ở cuối",
+      b._client_ip(req("x", ip="127.0.0.1", fwd="6.6.6.6, 5.6.7.8")), "5.6.7.8")
 b._auth_failures.clear()
 
 if fails:
