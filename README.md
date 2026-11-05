@@ -145,6 +145,11 @@ Xem lệnh đang chờ / đã xử lý ngay trong Discord: `,automacro` (owner).
 - `GET /gemtier` / `POST /gemtier` — tier gem được phép dùng cho từng loại (app Star Hub dùng để bật/tắt từng tier). POST body
   `{"allowed": {"1": ["Common","Rare"], "4": []}, "pref": {"1": "highest"}}` (cần ít nhất 1 trong 2 khóa; `pref` = `highest` | `lowest` | tên tier):
   chỉ đổi các loại có trong body, danh sách rỗng = tắt hết, tier/loại lạ -> 400 và không đổi gì.
+- `GET /settings` / `POST /settings` — công tắc của màn "Công cụ" trong app, cùng khóa với `,autocheck` `,hbauto` `,hbalert`. GET trả
+  `{auto_check, hb_auto, hb_alert, event_mode, app_on, captcha_active}`; POST body `{"key": "auto_check"|"hb_auto"|"hb_alert", "enabled": true|false}`
+  (khóa lạ / không phải true-false -> 400), trả lại toàn bộ cài đặt mới.
+- `GET /notes` / `POST /notes` — như `,note`: POST `{"action":"add","text":"..."}` (tối đa 500 ký tự) hoặc `{"action":"done","id":3}`; trả danh sách ghi chú.
+- `POST /captcha/clear` — như `,captcha clear` (app báo đã giải captcha xong).
 - `GET /hub` — trả về **toàn bộ dữ liệu mới nhất bot đã đọc được** để
   app AutoMacro hiện thành màn hình Hub: `daily` (giờ nhận kế tiếp, streak),
   `cowoncy`, `gems` (đang trang bị + gem dự

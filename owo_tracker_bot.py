@@ -2060,6 +2060,90 @@ async def handle_post_power(request: web.Request):
     return web.json_response({"on": body["on"], "off": not body["on"], "cancelled": cancelled})
 
 
+# ---- v30: cai dat / ghi chu / captcha cho man "Cong cu" cua app (cung hanh vi voi ,autocheck ,hbauto ,hbalert ,note ,captcha clear) ----
+APP_TOGGLES = {   # ten gui tu app -> (khoa trong config, mac dinh khi chua dat)
+    "auto_check": ("auto_check", "on"),
+    "hb_auto": ("hb_auto", "on"),
+    "hb_alert": ("hb_alert", "off"),
+}
+
+
+async def settings_snapshot():
+    out = {name: (await get_config(key, default)) == "on" for name, (key, default) in APP_TOGGLES.items()}
+    out["event_mode"] = await get_event_mode()
+    out["app_on"] = not await is_app_off()
+    out["captcha_active"] = bool((await get_captcha_state())["active"])
+    return out
+
+
+async def _read_json_body(request: web.Request):
+    try:
+        body = await request.json()
+    except ValueError:
+        return {}
+    return body if isinstance(body, dict) else {}
+
+
+async def handle_get_settings(request: web.Request):
+    if not _check_api_token(request):
+        return web.json_response({"error": "unauthorized"}, status=401)
+    return web.json_response(await settings_snapshot())
+
+
+async def handle_post_settings(request: web.Request):
+    """App bat/tat 1 cong tac. Body: {"key": "auto_check"|"hb_auto"|"hb_alert", "enabled": true|false}. Tra ve toan bo cai dat moi."""
+    if not _check_api_token(request):
+        return web.json_response({"error": "unauthorized"}, status=401)
+    body = await _read_json_body(request)
+    key, enabled = body.get("key"), body.get("enabled")
+    if key not in APP_TOGGLES or not isinstance(enabled, bool):
+        return web.json_response({"error": "key phai la " + "/".join(APP_TOGGLES) + ", enabled phai la true/false"}, status=400)
+    await set_config(APP_TOGGLES[key][0], "on" if enabled else "off")
+    return web.json_response(await settings_snapshot())
+
+
+async def notes_snapshot():
+    rows = await mdb[COL_NOTES].find().sort([("done", 1), ("_id", 1)]).to_list(length=100)
+    return {"notes": [{"id": r["_id"], "text": r.get("text", ""), "done": bool(r.get("done"))} for r in rows]}
+
+
+async def handle_get_notes(request: web.Request):
+    if not _check_api_token(request):
+        return web.json_response({"error": "unauthorized"}, status=401)
+    return web.json_response(await notes_snapshot())
+
+
+async def handle_post_notes(request: web.Request):
+    """Body: {"action": "add", "text": "..."} hoac {"action": "done", "id": 3}. Tra ve danh sach ghi chu moi."""
+    if not _check_api_token(request):
+        return web.json_response({"error": "unauthorized"}, status=401)
+    body = await _read_json_body(request)
+    action = body.get("action")
+    if action == "add":
+        text = str(body.get("text") or "").strip()[:500]
+        if not text:
+            return web.json_response({"error": "text khong duoc rong"}, status=400)
+        nid = await next_note_id()
+        await mdb[COL_NOTES].insert_one({"_id": nid, "text": text, "done": False, "created_at": _utcnow().isoformat()})
+    elif action == "done":
+        nid = body.get("id")
+        if not isinstance(nid, int) or isinstance(nid, bool):
+            return web.json_response({"error": "id phai la so"}, status=400)
+        await mdb[COL_NOTES].update_one({"_id": nid}, {"$set": {"done": True}})
+    else:
+        return web.json_response({"error": "action phai la add hoac done"}, status=400)
+    return web.json_response(await notes_snapshot())
+
+
+async def handle_post_captcha_clear(request: web.Request):
+    """App bao da giai captcha xong (giong `,captcha clear`)."""
+    if not _check_api_token(request):
+        return web.json_response({"error": "unauthorized"}, status=401)
+    await mdb[COL_ALERTS].update_one(
+        {"_id": "captcha"}, {"$set": {"active": False, "cleared_at": _utcnow().isoformat()}}, upsert=True)
+    return web.json_response({"captcha_active": False})
+
+
 async def gemtier_snapshot():
     """Cài đặt tier gem cho app: mỗi loại có các tier được phép (✅), ưu tiên và gem còn trong kho."""
     slots = []
@@ -2588,6 +2672,11 @@ async def start_automacro_api_server():
     app.router.add_post("/gemtier", handle_post_gemtier)
     app.router.add_post("/weapon-advice", handle_post_weapon_advice)
     app.router.add_post("/weapon-review", handle_post_weapon_review)
+    app.router.add_get("/settings", handle_get_settings)
+    app.router.add_post("/settings", handle_post_settings)
+    app.router.add_get("/notes", handle_get_notes)
+    app.router.add_post("/notes", handle_post_notes)
+    app.router.add_post("/captcha/clear", handle_post_captcha_clear)
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, AUTOMACRO_API_HOST, AUTOMACRO_API_PORT)
