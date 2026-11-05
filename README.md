@@ -174,6 +174,8 @@ vũ khí chỉ có những cây bạn từng xem bằng `owo weapon <ID>`.
 ,quests                  → trạng thái quest hôm nay
 ,team                    → đội hình gần nhất ghi nhận được
 ,myweapons scythe        → vũ khí BẠN đang sở hữu, tìm theo tên
+,weaponreview            → duyệt từng cây vũ khí bằng 2 nút Giữ/Bỏ trên Hub nổi (chỉ ghi danh sách, không tự xóa/bán; chỉ owner)
+,weaponreview export     → gửi file danh sách Giữ/Bỏ; còn `stop` | `undo` | `reset` (chỉ owner)
 ,ping                     → kiểm tra bot còn sống, độ trễ bao nhiêu ms
 ,zoo bee                  → xem zoo đã ghi nhận, lọc theo tên
 ,inv gem                  → xem inventory đã ghi nhận, lọc theo tên

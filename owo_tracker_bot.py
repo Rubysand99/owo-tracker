@@ -4802,6 +4802,7 @@ HELP_GROUPS = [
         ("weaponscan", "`,weaponscan` (owner): quét lại kho vũ khí, nhớ dừng farm"),
         ("weaponprobe", "`,weaponprobe` (owner): xếp lệnh `owo w <ID>` cho app từ danh sách đã quét"),
         ("weaponlist", "`,weaponlist` (owner): gửi file danh sách vũ khí đã quét"),
+        ("weaponreview", "`,weaponreview [stop|undo|export|reset]` (owner): duyệt từng cây vũ khí bằng 2 nút Giữ/Bỏ trên Hub nổi, chỉ ghi danh sách, KHÔNG tự xóa hay bán; `stop` dừng · `undo` hoàn tác cây vừa chọn · `export` gửi file Giữ/Bỏ · `reset` xóa hết quyết định"),
         ("dismantleplan", "`,dismantleplan` (owner): lập kế hoạch dọn vũ khí (giữ/rác/xám), CHƯA xóa gì"),
         ("weaponknowledge", "`,weaponknowledge` (owner): gửi lại file kiến thức vũ khí"),
         ("weaponadvice", "`,weaponadvice` (owner): gửi lại file lời khuyên vũ khí"),
