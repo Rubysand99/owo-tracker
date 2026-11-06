@@ -183,6 +183,7 @@ vũ khí chỉ có những cây bạn từng xem bằng `owo weapon <ID>`.
 ,weaponreview            → QUÉT LẠI kho (app gõ `owo w` rồi lật trang ~3–4 phút, nhớ DỪNG farm; chỉ nhận trang có tiêu đề `<@bạn>'s Weapons`)
                           rồi duyệt từng cây bằng 2 nút Giữ/Bỏ trên Hub nổi. Quyết định cũ được giữ, ID không còn trong kho bị gỡ;
                           `owo w <ID>` báo không tìm thấy thì tự bỏ qua và liệt kê cuối embed (chỉ ghi danh sách, không tự xóa/bán; chỉ owner)
+,weaponreview auto [N] → TỰ DUYỆT: cây không rác theo luật = Giữ ngay; cây rác: app gõ `owo w <ID>` + bấm **Details** của NeonUtil (id `851436490415931422`, đọc công khai trong kênh farm), Tom đọc bậc từng chỉ số **vũ khí** — có Mythic/Legendary/Fabled hoặc Knowledge > 14% → Giữ, còn lại → Bỏ; thiếu/lạ dữ liệu → Giữ; 3 cây liền không đọc được → tự dừng. `N` = chỉ thử N cây. CHƯA dismantle (làm sau khi thử nghiệm)
 ,weaponreview export     → gửi file danh sách Giữ/Bỏ; còn `stop` | `undo` | `reset` (chỉ owner)
 ,ping                     → kiểm tra bot còn sống, độ trễ bao nhiêu ms
 ,zoo bee                  → xem zoo đã ghi nhận, lọc theo tên

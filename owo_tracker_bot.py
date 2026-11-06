@@ -121,6 +121,8 @@ def _utcnow() -> datetime:
 # CẤU HÌNH
 # ----------------------------------------------------------------------
 OWO_BOT_ID = 408785106942164992  # kiểm tra lại ID thật trong server bạn
+import weapon_auto
+NEON_BOT_ID = weapon_auto.NEON_BOT_ID  # bot NeonUtil (chỉ số/bậc vũ khí), chỉ đọc trong kênh farm
 DISCORD_TOKEN = os.environ.get("DISCORD_TOKEN")
 OWNER_ID = os.environ.get("OWNER_ID")
 MONGODB_URI = os.environ.get("MONGODB_URI")
@@ -1361,6 +1363,9 @@ async def review_embed(sess: dict):
     if sess.get("active") and sess.get("phase") == "scanning":
         em.description = ("⏳ Đang quét lại toàn bộ kho (app gõ `owo w` rồi lật trang). **Dừng farm** và chưa bấm gì — "
                           "quét xong Tom sẽ tự chọn cây đầu tiên.")
+    elif sess.get("active") and sess.get("auto"):
+        em.description = (f"🤖 Tự duyệt (NeonUtil) — đang kiểm tra `{cur}`. **Dừng farm**, không cần bấm gì." if cur
+                          else "🤖 Tự duyệt: đang chuẩn bị…")
     elif sess.get("active"):
         em.description = (f"Đang kiểm tra: `{cur}`\nBấm **Giữ** / **Bỏ** trên Hub nổi." if cur
                           else "✅ Hết cây cần duyệt.")
@@ -1505,6 +1510,10 @@ async def _after_review_scan():
     stale = [i for i in decided if i not in have]
     if stale:
         await mdb[COL_WEAPON_REVIEW].delete_many({"_id": {"$in": stale}})
+    if sess.get("auto"):
+        await _auto_set({"scanned": n, "pruned": len(stale)})
+        await _auto_begin(int(sess.get("auto_limit") or 0))
+        return
     pending = await review_pending_ids()
     nxt = pending[0] if pending else None
     await mdb[COL_CONFIG].update_one(
@@ -1540,6 +1549,185 @@ async def review_decide(decision: str):
     sess = await review_get()
     await review_refresh_embed(sess)
     return {"ok": True, "decided": cur, "decision": decision, "next_id": nxt, "remaining": len(pending)}, None
+
+
+# ===================== Tu duyet vu khi (doc bot NeonUtil) =====================
+# `,weaponreview auto [N]`: quet kho -> cay khong thuoc dien RAC theo luat cu = GIU luon; cay RAC: app go `owo w <ID>` + bam
+# nut "Details" cua NeonUtil, Tom doc Breakdown (cong khai trong kenh) de biet BAC tung chi so VU KHI. Co chi so Mythic+ hoac
+# Knowledge > 14% -> GIU, con lai -> BO. Thieu / la du lieu -> GIU. CHUA dismantle gi (buoc do lam sau khi thu nghiem).
+AUTO_MAX_FAILS = 3
+AUTO_SETTLE_SECONDS = 20
+_auto_lock = asyncio.Lock()
+
+
+async def _auto_set(fields: dict):
+    await mdb[COL_CONFIG].update_one({"_id": REVIEW_KEY}, {"$set": {f"value.{k}": v for k, v in fields.items()}}, upsert=True)
+
+
+async def _auto_write_decision(wid: str, decision: str, reason: str):
+    await mdb[COL_WEAPON_REVIEW].update_one(
+        {"_id": wid}, {"$set": {"decision": decision, "reason": reason, "auto": True, "at": _utcnow().isoformat()}}, upsert=True)
+
+
+async def _auto_begin(limit: int = 0):
+    """Sau khi quet kho: GIU ngay cay khong can Neon, xep hang doi cac cay RAC can kiem tra."""
+    rules = load_weapon_rules(force=True)
+    pending = await review_pending_ids()
+    rows = {r["_id"]: r for r in await mdb[COL_WEAPON_LIST].find({}).to_list(length=20000)}
+    queue = []
+    kept_now = 0
+    for wid in pending:
+        w = {**rows[wid], "id": wid}
+        if weapon_auto.needs_neon_check(w, None, rules):
+            queue.append(wid)
+        else:
+            kept_now += 1
+            await _auto_write_decision(wid, "keep", weapon_auto.auto_decide(w, None, None, None, rules)[1])
+    if limit and limit > 0:
+        queue = queue[:limit]
+    await _auto_set({"phase": "checking", "auto_queue": queue, "auto_skipped": [], "auto_fails": 0, "auto_cur": {},
+                     "current": None, "check_msg_ids": []})
+    await review_refresh_embed(await review_get())
+    await notify_owner(f"🤖 Tự duyệt: {kept_now} cây giữ ngay theo luật; {len(queue)} cây cần kiểm tra chỉ số bằng NeonUtil. "
+                       "**Dừng farm** trong lúc này.", min_gap=60)
+    await _auto_advance()
+
+
+async def _auto_queue_current(wid: str):
+    await _auto_set({"current": wid, "check_msg_ids": [], "auto_cur": {"started": time.time()}})
+    qid = await queue_automacro_command("weapon_detail_check", {
+        "command_text": f"owo w {wid}", "click_label": "details", "click_times": "1",
+        "click_wait_ms": "8000", "click_min_ms": "1800", "click_max_ms": "2800"})
+    if qid is None:
+        await _auto_set({"active": False})
+        await review_refresh_embed(await review_get())
+        await notify_owner("⚠️ App đang TẮT (`,off`) nên Tom chưa giao việc — bật lại rồi gõ `,weaponreview auto`.", min_gap=60)
+
+
+async def _auto_advance(skip_id: str = None):
+    """Don tin cua cay vua xong, chon cay ke tiep trong hang doi (khong con -> ket thuc)."""
+    sess = await review_get()
+    await review_delete_checks(sess)
+    skipped = list(sess.get("auto_skipped") or [])
+    if skip_id:
+        skipped.append(skip_id)
+    decided = await review_decisions()
+    todo = [i for i in (sess.get("auto_queue") or []) if i not in decided and i not in skipped]
+    nxt = todo[0] if todo else None
+    await _auto_set({"auto_skipped": skipped, "current": nxt, "check_msg_ids": [], "auto_cur": {}})
+    if nxt is None:
+        await _auto_set({"active": False, "phase": "done"})
+        await review_refresh_embed(await review_get())
+        keep = sum(1 for d in decided.values() if d == "keep")
+        drop = sum(1 for d in decided.values() if d == "drop")
+        await notify_owner(f"✅ Tự duyệt xong: Giữ {keep} · Bỏ {drop}" +
+                           (f" · bỏ qua {len(skipped)} cây không đọc được (`{' '.join(skipped[:10])}`)" if skipped else "") +
+                           ". CHƯA dismantle gì cả — gõ `,weaponreview export` để xem danh sách.", min_gap=60)
+        return
+    await review_refresh_embed(await review_get())
+    await _auto_queue_current(nxt)
+
+
+async def _auto_session(message):
+    sess = await review_get()
+    if not (sess.get("active") and sess.get("auto") and sess.get("phase") == "checking" and sess.get("current")):
+        return None
+    if str(message.channel.id) != str(sess.get("channel_id")):
+        return None
+    return sess
+
+
+async def _auto_merge(sess: dict, message, fields: dict):
+    upd = {f"value.auto_cur.{k}": v for k, v in fields.items()}
+    await mdb[COL_CONFIG].update_one({"_id": REVIEW_KEY}, {"$set": upd, "$addToSet": {"value.check_msg_ids": message.id}})
+
+
+async def auto_feed_detail(message, weapon: dict):
+    """Tin chi tiet cua OwO cho cay dang kiem tra: lay passive that (Knowledge)."""
+    sess = await _auto_session(message)
+    if not sess or str(weapon.get("id") or "").upper() != str(sess["current"]).upper():
+        return
+    await _auto_merge(sess, message, {"has_detail": True, "passive": weapon.get("passive")})
+    await auto_try_finish()
+
+
+async def auto_feed_neon(message):
+    """Tin cua NeonUtil: tin gon (so chi so vu khi) hoac embed Breakdown (bac tung chi so)."""
+    sess = await _auto_session(message)
+    if not sess:
+        return
+    started = (sess.get("auto_cur") or {}).get("started") or 0
+    if message.created_at.timestamp() < started - 2:
+        return
+    text = flatten_message(message)
+    bd = weapon_auto.parse_neon_breakdown(text)
+    if bd:
+        if bd.get("id") and bd["id"] != str(sess["current"]).upper():
+            return
+        await record_raw("neon_breakdown", text, bd, message)
+        await _auto_merge(sess, message, {"breakdown": bd})
+    else:
+        cp = weapon_auto.parse_neon_compact(text)
+        if not cp:
+            return
+        await record_raw("neon_compact", text, cp, message)
+        await _auto_merge(sess, message, {"n_weapon": cp["n_weapon"]})
+    await auto_try_finish()
+
+
+async def auto_try_finish(force: bool = False):
+    async with _auto_lock:
+        sess = await review_get()
+        if not (sess.get("active") and sess.get("auto") and sess.get("phase") == "checking" and sess.get("current")):
+            return
+        ac = sess.get("auto_cur") or {}
+        complete = bool(ac.get("breakdown") and ac.get("n_weapon") and ac.get("has_detail"))
+        if not complete and not force:
+            return
+        cur = sess["current"]
+        row = await mdb[COL_WEAPON_LIST].find_one({"_id": cur})
+        rules = load_weapon_rules()
+        if row is None:
+            decision, reason = "keep", "khong_con_trong_kho"
+        elif not ac.get("has_detail"):
+            decision, reason = "keep", "thieu_chi_tiet_owo"      # khong biet Knowledge -> khong dam bo
+        else:
+            decision, reason = weapon_auto.auto_decide({**row, "id": cur}, {"passive": ac.get("passive")},
+                                                       ac.get("breakdown"), ac.get("n_weapon"), rules)
+        await _auto_write_decision(cur, decision, reason)
+        fails = 0 if complete else int(sess.get("auto_fails") or 0) + 1
+        await _auto_set({"auto_fails": fails})
+        print(f"[tracker][auto-review] {cur}: {decision} ({reason})")
+        if fails >= AUTO_MAX_FAILS:
+            await _auto_set({"active": False})
+            await review_refresh_embed(await review_get())
+            await notify_owner(f"⚠️ Tự duyệt dừng: {fails} cây liên tiếp không đọc đủ dữ liệu NeonUtil (kiểm tra Neon có trả lời "
+                               "trong kênh farm và nút Details có bấm được không), rồi gõ lại `,weaponreview auto`.", min_gap=60)
+            return
+        await _auto_advance()
+
+
+async def _auto_watchdog(wid: str):
+    await asyncio.sleep(AUTO_SETTLE_SECONDS)
+    sess = await review_get()
+    if sess.get("active") and sess.get("auto") and sess.get("phase") == "checking" and sess.get("current") == wid:
+        await auto_try_finish(force=True)
+
+
+async def _auto_on_failed(wid: str):
+    async with _auto_lock:
+        sess = await review_get()
+        if not (sess.get("active") and sess.get("auto") and sess.get("current") == wid):
+            return
+        fails = int(sess.get("auto_fails") or 0) + 1
+        await _auto_set({"auto_fails": fails})
+        if fails >= AUTO_MAX_FAILS:
+            await _auto_set({"active": False})
+            await review_refresh_embed(await review_get())
+            await notify_owner("⚠️ Tự duyệt dừng: app báo lỗi nhiều lần liên tiếp (nhớ **dừng farm**, bật Hub nổi), "
+                               "rồi gõ lại `,weaponreview auto`.", min_gap=60)
+            return
+        await _auto_advance(skip_id=wid)
 
 
 async def _hub_weapon_review():
@@ -1666,6 +1854,13 @@ async def handle_ack_command(request: web.Request):
             await notify_owner("⚠️ App không quét được danh sách vũ khí (hãy DỪNG farm rồi thử lại bằng `,weaponscan`).", min_gap=60)
     elif action == "weapon_probe":
         asyncio.create_task(_after_weapon_probe())
+    elif action == "weapon_detail_check":
+        mw = re.search(r"\bw\s+([A-Za-z0-9]{4,8})$", str((cmd.get("params") or {}).get("command_text") or ""))
+        if mw:
+            if status == "done":
+                asyncio.create_task(_auto_watchdog(mw.group(1).upper()))
+            else:
+                asyncio.create_task(_auto_on_failed(mw.group(1).upper()))
     elif action == "weapon_review_scan":
         if status == "done":
             asyncio.create_task(_after_review_scan())
@@ -3178,7 +3373,7 @@ async def on_raw_message_edit(payload):
             return
         data = payload.data or {}
         author_id = (data.get("author") or {}).get("id")
-        if str(author_id) != str(OWO_BOT_ID):
+        if str(author_id) not in (str(OWO_BOT_ID), str(NEON_BOT_ID)):
             return
         scope_guild, scope_channel = await tracking_scope()
         if not scope_allows(scope_guild, scope_channel, getattr(payload, "guild_id", None), payload.channel_id,
@@ -3186,6 +3381,9 @@ async def on_raw_message_edit(payload):
             return
         channel = bot.get_channel(payload.channel_id) or await bot.fetch_channel(payload.channel_id)
         message = await channel.fetch_message(payload.message_id)
+        if str(author_id) == str(NEON_BOT_ID):
+            await auto_feed_neon(message)
+            return
         if await accept_dex_by_alias(message, await get_config("tracked_user_id")):
             return
         text = flatten_message(message)
@@ -3257,6 +3455,13 @@ async def on_message(message: discord.Message):
                         getattr(author, "nick", None), getattr(author, "name", None)) if n
         }
         await bot.process_commands(message)
+        return
+
+    if message.author.id == NEON_BOT_ID:
+        try:
+            await auto_feed_neon(message)
+        except Exception as e:
+            print(f"[tracker][auto-review] Loi doc tin NeonUtil: {e!r}")
         return
 
     if message.author.id == OWO_BOT_ID:
@@ -3458,6 +3663,7 @@ async def handle_owo_response(message: discord.Message, source_id):
         owner_ok = weapon_owner_matches(weapon.get("owner"), names)
         recognized = True
         await review_note_message(message, weapon.get("id") or "")
+        await auto_feed_detail(message, weapon)
         await record_raw("weapon", text, weapon, message,
                          extra={"saved": bool(owner_ok), "accepted_owner_names": sorted(names)})
         if owner_ok:
@@ -4434,7 +4640,7 @@ async def weaponlist_cmd(ctx):
 
 @bot.command(name="weaponreview")
 @is_owner()
-async def weaponreview_cmd(ctx, action: str = "start"):
+async def weaponreview_cmd(ctx, action: str = "start", limit: int = 0):
     """Duyet vu khi bang nut Giu/Bo tren Hub noi. `,weaponreview` bat dau | `stop` | `undo` | `export` | `reset`.
     Chay lenh nay Ở ĐÚNG KÊNH đang farm (bot xoa tin kiem tra trong kenh nay). CHI GHI DANH SACH, khong tu dismantle."""
     action = (action or "start").lower()
@@ -4473,8 +4679,8 @@ async def weaponreview_cmd(ctx, action: str = "start"):
         await mdb[COL_CONFIG].update_one({"_id": REVIEW_KEY}, {"$set": {"value.history": []}}, upsert=True)
         await ctx.send("Đã xoá toàn bộ quyết định Giữ/Bỏ.")
         return
-    if action != "start":
-        await ctx.send("Dùng: `,weaponreview` (bắt đầu) | `stop` | `undo` | `export` | `reset`")
+    if action not in ("start", "auto"):
+        await ctx.send("Dùng: `,weaponreview` (duyệt tay) | `auto [N]` (tự duyệt, N = thử N cây) | `stop` | `undo` | `export` | `reset`")
         return
     tid = await get_config("tracked_user_id")
     if not tid:
@@ -4487,7 +4693,8 @@ async def weaponreview_cmd(ctx, action: str = "start"):
         {"_id": REVIEW_KEY},
         {"$set": {"value": {"active": True, "phase": "scanning", "channel_id": ctx.channel.id, "msg_id": None,
                             "current": None, "check_msg_ids": [], "history": sess.get("history") or [],
-                            "delete_warned": False, "missing": [], "started_at": _utcnow().isoformat()}}}, upsert=True)
+                            "delete_warned": False, "missing": [], "started_at": _utcnow().isoformat(),
+                            "auto": action == "auto", "auto_limit": max(0, int(limit or 0))}}}, upsert=True)
     msg = await ctx.send(embed=await review_embed(await review_get()))
     await mdb[COL_CONFIG].update_one({"_id": REVIEW_KEY}, {"$set": {"value.msg_id": msg.id}})
     qid = await queue_automacro_command("weapon_review_scan", {"command_text": "owo w", "click_label": "forward",
