@@ -1358,7 +1358,10 @@ async def review_embed(sess: dict):
     default_keep = await review_default_keep_ids()
     cur = sess.get("current")
     em = discord.Embed(title="🗡️ Duyệt vũ khí", color=0xFFC24B if sess.get("active") else 0x8B94A7)
-    if sess.get("active"):
+    if sess.get("active") and sess.get("phase") == "scanning":
+        em.description = ("⏳ Đang quét lại toàn bộ kho (app gõ `owo w` rồi lật trang). **Dừng farm** và chưa bấm gì — "
+                          "quét xong Tom sẽ tự chọn cây đầu tiên.")
+    elif sess.get("active"):
         em.description = (f"Đang kiểm tra: `{cur}`\nBấm **Giữ** / **Bỏ** trên Hub nổi." if cur
                           else "✅ Hết cây cần duyệt.")
     else:
@@ -1367,6 +1370,11 @@ async def review_embed(sess: dict):
     em.add_field(name=f"⭐ Giữ mặc định ({len(default_keep)})", value="có sao / đang trang bị", inline=True)
     em.add_field(name=f"✅ Giữ ({len(keep)})", value=_review_ids_text(keep), inline=False)
     em.add_field(name=f"🗑️ Bỏ ({len(drop)})", value=_review_ids_text(drop), inline=False)
+    missing = list(sess.get("missing") or [])
+    if missing:
+        em.add_field(name=f"❓ ID không còn trong kho ({len(missing)})", value=_review_ids_text(missing), inline=False)
+    if sess.get("scanned"):
+        em.set_footer(text=f"Quét kho: {sess['scanned']} cây" + (f" · gỡ {sess['pruned']} ID đã quyết nhưng không còn" if sess.get("pruned") else ""))
     return em
 
 
@@ -1430,6 +1438,86 @@ async def review_delete_checks(sess: dict):
         await mdb[COL_CONFIG].update_one({"_id": REVIEW_KEY}, {"$set": {"value.delete_warned": True}})
         await notify_owner("⚠️ Bot không có quyền **Manage Messages** trong kênh duyệt vũ khí nên không xoá được tin kiểm tra. "
                            "Cấp quyền đó cho bot (hoặc kệ, vẫn duyệt bình thường).", min_gap=600)
+
+
+async def weapon_list_accepted(text: str, tracked_id) -> bool:
+    """Trang danh sach kho vu khi nay co nhan vao khong? Binh thuong: lenient nhu cu (khong mention thi van nhan).
+    Dang QUET CHO DUYET VU KHI (phase scanning): CHI nhan trang co tieu de `<@ID cua ban>'s Weapons` - trang nguoi khac /
+    khong co mention deu bo, de khong lan cay cua nguoi khac trong server nhieu nguoi choi."""
+    mention = re.search(r"<@!?(\d+)>'s Weapons", text or "")
+    sess = await review_get()
+    if sess.get("active") and sess.get("phase") == "scanning":
+        return bool(tracked_id) and bool(mention) and mention.group(1) == str(tracked_id)
+    return not tracked_id or not mention or mention.group(1) == str(tracked_id)
+
+
+async def _review_next_after_removal(removed_id: str):
+    """Bo `removed_id` khoi danh sach kho (khong con that), chon cay ke tiep. Tra ve (next_id, remaining)."""
+    await mdb[COL_WEAPON_LIST].delete_one({"_id": removed_id})
+    pending = await review_pending_ids()
+    return (pending[0] if pending else None), len(pending)
+
+
+_WEAPON_NOT_FOUND_RE = re.compile(r"could not find a weapon with that unique weapon id", re.I)
+
+
+async def review_skip_missing(message):
+    """OwO bao `owo w <ID>` khong tim thay cay do (da ban / ra): bo ID khoi danh sach, ghi nho de bao, go cay ke tiep.
+    Chi xu ly khi lenh gan nhat Ruby go trong kenh dung la `owo w <cay dang duyet>` (khong nham voi tin khac)."""
+    sess = await review_get()
+    cur = sess.get("current")
+    if not sess.get("active") or sess.get("phase") == "scanning" or not cur:
+        return False
+    if str(message.channel.id) != str(sess.get("channel_id")):
+        return False
+    last = (last_owo_command.get(message.channel.id) or "").strip()
+    if not re.match(r"^\S+\s+w\s+" + re.escape(str(cur).lower()) + r"$", last):
+        return False
+    await mdb[COL_CONFIG].update_one({"_id": REVIEW_KEY}, {"$addToSet": {"value.check_msg_ids": message.id}})
+    sess = await review_get()
+    await review_delete_checks(sess)
+    nxt, remaining = await _review_next_after_removal(cur)
+    await mdb[COL_CONFIG].update_one(
+        {"_id": REVIEW_KEY}, {"$set": {"value.current": nxt, "value.check_msg_ids": []}, "$push": {"value.missing": cur}}, upsert=True)
+    print(f"[tracker][review] ID {cur} khong con trong kho -> bo qua; cay ke tiep: {nxt}")
+    await review_refresh_embed(await review_get())
+    if nxt:
+        await queue_automacro_command("weapon_review", {"command_text": f"owo w {nxt}"})
+    return True
+
+
+async def _after_review_scan():
+    """App quet xong kho: loc quyet dinh cu khong con trong kho, chon cay dau tien, nho app go `owo w <ID>` de duyet."""
+    await asyncio.sleep(6)   # cho tin sua cua trang cuoi kip toi
+    sess = await review_get()
+    if not sess.get("active") or sess.get("phase") != "scanning":
+        return
+    rows = await mdb[COL_WEAPON_LIST].find({}).to_list(length=20000)
+    n = len(rows)
+    if n == 0:
+        await mdb[COL_CONFIG].update_one({"_id": REVIEW_KEY}, {"$set": {"value.active": False}}, upsert=True)
+        await review_refresh_embed(await review_get())
+        await notify_owner("⚠️ Quét kho xong nhưng Tom không đọc được cây nào có tiêu đề `<@bạn>'s Weapons` — "
+                           "kiểm tra `,track` đã đặt đúng tài khoản chưa, rồi gõ lại `,weaponreview`.", min_gap=60)
+        return
+    have = {r["_id"] for r in rows}
+    decided = await review_decisions()
+    stale = [i for i in decided if i not in have]
+    if stale:
+        await mdb[COL_WEAPON_REVIEW].delete_many({"_id": {"$in": stale}})
+    pending = await review_pending_ids()
+    nxt = pending[0] if pending else None
+    await mdb[COL_CONFIG].update_one(
+        {"_id": REVIEW_KEY},
+        {"$set": {"value.phase": "review", "value.current": nxt, "value.check_msg_ids": [],
+                  "value.scanned": n, "value.pruned": len(stale)}}, upsert=True)
+    await review_refresh_embed(await review_get())
+    warn = (f"\n⚠️ Quét được {n} cây — gần mức tối đa app lật được (~1500). Nếu kho còn nhiều hơn thì cây ở trang cuối chưa được duyệt."
+            if n >= 1450 else "")
+    await notify_owner(f"🗡️ Đã quét kho: {n} cây. Còn {len(pending)} cây cần duyệt" +
+                       (f", gỡ {len(stale)} ID đã quyết nhưng không còn trong kho." if stale else ".") + warn, min_gap=60)
+    if nxt:
+        await queue_automacro_command("weapon_review", {"command_text": f"owo w {nxt}"})
 
 
 async def review_decide(decision: str):
@@ -1578,6 +1666,13 @@ async def handle_ack_command(request: web.Request):
             await notify_owner("⚠️ App không quét được danh sách vũ khí (hãy DỪNG farm rồi thử lại bằng `,weaponscan`).", min_gap=60)
     elif action == "weapon_probe":
         asyncio.create_task(_after_weapon_probe())
+    elif action == "weapon_review_scan":
+        if status == "done":
+            asyncio.create_task(_after_review_scan())
+        else:
+            await mdb[COL_CONFIG].update_one({"_id": REVIEW_KEY}, {"$set": {"value.active": False}}, upsert=True)
+            await review_refresh_embed(await review_get())
+            await notify_owner("⚠️ App không quét được kho vũ khí (hãy DỪNG farm rồi gõ lại `,weaponreview`).", min_gap=60)
     return web.json_response({"ok": True})
 
 
@@ -3097,8 +3192,7 @@ async def on_raw_message_edit(payload):
         wlist = parse_weapon_list(text)
         if wlist:
             tid = await get_config("tracked_user_id")
-            mention = re.search(r"<@!?(\d+)>'s Weapons", text)
-            if not tid or not mention or mention.group(1) == str(tid):
+            if await weapon_list_accepted(text, tid):
                 await save_weapon_list(wlist, tid)
             return
         checklist = parse_checklist(text)
@@ -3343,12 +3437,16 @@ async def handle_owo_response(message: discord.Message, source_id):
 
     wlist = parse_weapon_list(text)
     if wlist:
-        # chi nhan danh sach CUA MINH: tieu de "<@id>'s Weapons"
-        mention = re.search(r"<@!?(\d+)>'s Weapons", text)
-        if not source_id or not mention or mention.group(1) == str(source_id):
+        # chi nhan danh sach CUA MINH: tieu de "<@id>'s Weapons" (khi quet cho duyet vu khi thi BAT BUOC co mention dung)
+        if await weapon_list_accepted(text, source_id):
             await save_weapon_list(wlist, source_id)
             await record_raw("weapon_list", text, {"so_cay_trang_nay": len(wlist)}, message)
             recognized = True
+
+    if _WEAPON_NOT_FOUND_RE.search(text):
+        recognized = True
+        await record_raw("weapon_not_found", text, {"not_found": True}, message)
+        await review_skip_missing(message)
 
     weapon = parse_weapon_detail(text)
     if weapon:
@@ -4354,7 +4452,8 @@ async def weaponreview_cmd(ctx, action: str = "start"):
         last = hist.pop()
         await mdb[COL_WEAPON_REVIEW].delete_one({"_id": last})
         await mdb[COL_CONFIG].update_one({"_id": REVIEW_KEY}, {"$set": {"value.history": hist, "value.current": last,
-                                                                       "value.check_msg_ids": [], "value.active": True}}, upsert=True)
+                                                                       "value.check_msg_ids": [], "value.active": True,
+                                                                       "value.phase": "review"}}, upsert=True)
         await review_refresh_embed(await review_get())
         await ctx.send(f"Đã hoàn tác cây `{last}` — kiểm tra lại cây này.")
         await queue_automacro_command("weapon_review", {"command_text": f"owo w {last}"})
@@ -4377,24 +4476,28 @@ async def weaponreview_cmd(ctx, action: str = "start"):
     if action != "start":
         await ctx.send("Dùng: `,weaponreview` (bắt đầu) | `stop` | `undo` | `export` | `reset`")
         return
-    pending = await review_pending_ids()
-    if await mdb[COL_WEAPON_LIST].count_documents({}) == 0:
-        await ctx.send("Chưa có danh sách vũ khí. Chạy `,weaponscan` trước.")
+    tid = await get_config("tracked_user_id")
+    if not tid:
+        await ctx.send("Chưa biết tài khoản OwO cần theo dõi — dùng `,track @user` trước.")
         return
-    if not pending:
-        await ctx.send("Không còn cây nào cần duyệt (hoặc đều có sao / đang trang bị / đã quyết).")
-        return
-    cur = pending[0]
+    # Bắt đầu = QUÉT LẠI toàn bộ kho (app gõ `owo w` rồi lật trang), chỉ nhận trang có tiêu đề <@bạn>'s Weapons.
+    # Quyết định Giữ/Bỏ cũ được giữ, riêng ID không còn trong kho sẽ bị gỡ sau khi quét (xem _after_review_scan).
+    await mdb[COL_WEAPON_LIST].delete_many({})
     await mdb[COL_CONFIG].update_one(
         {"_id": REVIEW_KEY},
-        {"$set": {"value": {"active": True, "channel_id": ctx.channel.id, "msg_id": None, "current": cur,
-                            "check_msg_ids": [], "history": sess.get("history") or [], "delete_warned": False,
-                            "started_at": _utcnow().isoformat()}}}, upsert=True)
-    msg = await ctx.send(embed=await review_embed({"active": True, "current": cur}))
+        {"$set": {"value": {"active": True, "phase": "scanning", "channel_id": ctx.channel.id, "msg_id": None,
+                            "current": None, "check_msg_ids": [], "history": sess.get("history") or [],
+                            "delete_warned": False, "missing": [], "started_at": _utcnow().isoformat()}}}, upsert=True)
+    msg = await ctx.send(embed=await review_embed(await review_get()))
     await mdb[COL_CONFIG].update_one({"_id": REVIEW_KEY}, {"$set": {"value.msg_id": msg.id}})
-    qid = await queue_automacro_command("weapon_review", {"command_text": f"owo w {cur}"})
+    qid = await queue_automacro_command("weapon_review_scan", {"command_text": "owo w", "click_label": "forward",
+                                                               "click_times": "100", "click_min_ms": "1800", "click_max_ms": "2800"})
     if qid is None:
-        await ctx.send("⚠️ App đang TẮT (`,off`) nên chưa giao việc — bật Hub nổi rồi gõ lại `,weaponreview`.")
+        await mdb[COL_CONFIG].update_one({"_id": REVIEW_KEY}, {"$set": {"value.active": False}})
+        await review_refresh_embed(await review_get())
+        await ctx.send("⚠️ App đang TẮT (`,off`) nên chưa giao việc — bật Hub nổi, **dừng farm**, rồi gõ lại `,weaponreview`.")
+    else:
+        await ctx.send("📦 Đã nhờ app quét lại kho (gõ `owo w` rồi lật trang, ~3–4 phút). Nhớ **dừng farm** trong lúc này.")
 
 
 @bot.command(name="dismantleplan")
@@ -4924,7 +5027,7 @@ HELP_GROUPS = [
         ("weaponscan", "`,weaponscan` (owner): quét lại kho vũ khí, nhớ dừng farm"),
         ("weaponprobe", "`,weaponprobe` (owner): xếp lệnh `owo w <ID>` cho app từ danh sách đã quét"),
         ("weaponlist", "`,weaponlist` (owner): gửi file danh sách vũ khí đã quét"),
-        ("weaponreview", "`,weaponreview [stop|undo|export|reset]` (owner): duyệt từng cây vũ khí bằng 2 nút Giữ/Bỏ trên Hub nổi, chỉ ghi danh sách, KHÔNG tự xóa hay bán; `stop` dừng · `undo` hoàn tác cây vừa chọn · `export` gửi file Giữ/Bỏ · `reset` xóa hết quyết định"),
+        ("weaponreview", "`,weaponreview [stop|undo|export|reset]` (owner): bắt đầu bằng QUÉT LẠI kho (app gõ `owo w` + lật trang, dừng farm trước; chỉ nhận trang `<@bạn>'s Weapons`) rồi duyệt từng cây bằng 2 nút Giữ/Bỏ trên Hub nổi, chỉ ghi danh sách, KHÔNG tự xóa hay bán; `stop` dừng · `undo` hoàn tác cây vừa chọn · `export` gửi file Giữ/Bỏ · `reset` xóa hết quyết định"),
         ("dismantleplan", "`,dismantleplan` (owner): lập kế hoạch dọn vũ khí (giữ/rác/xám), CHƯA xóa gì"),
         ("weaponknowledge", "`,weaponknowledge` (owner): gửi lại file kiến thức vũ khí"),
         ("weaponadvice", "`,weaponadvice` (owner): gửi lại file lời khuyên vũ khí"),

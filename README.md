@@ -180,7 +180,9 @@ vũ khí chỉ có những cây bạn từng xem bằng `owo weapon <ID>`.
 ,quests                  → trạng thái quest hôm nay
 ,team                    → đội hình gần nhất ghi nhận được
 ,myweapons scythe        → vũ khí BẠN đang sở hữu, tìm theo tên
-,weaponreview            → duyệt từng cây vũ khí bằng 2 nút Giữ/Bỏ trên Hub nổi (chỉ ghi danh sách, không tự xóa/bán; chỉ owner)
+,weaponreview            → QUÉT LẠI kho (app gõ `owo w` rồi lật trang ~3–4 phút, nhớ DỪNG farm; chỉ nhận trang có tiêu đề `<@bạn>'s Weapons`)
+                          rồi duyệt từng cây bằng 2 nút Giữ/Bỏ trên Hub nổi. Quyết định cũ được giữ, ID không còn trong kho bị gỡ;
+                          `owo w <ID>` báo không tìm thấy thì tự bỏ qua và liệt kê cuối embed (chỉ ghi danh sách, không tự xóa/bán; chỉ owner)
 ,weaponreview export     → gửi file danh sách Giữ/Bỏ; còn `stop` | `undo` | `reset` (chỉ owner)
 ,ping                     → kiểm tra bot còn sống, độ trễ bao nhiêu ms
 ,zoo bee                  → xem zoo đã ghi nhận, lọc theo tên
