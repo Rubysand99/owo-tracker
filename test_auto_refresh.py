@@ -55,6 +55,17 @@ check("chọn: vừa xin cash 5 phút trước mà chưa thấy mới -> chưa x
 check("chọn: xin cash >15 phút trước -> xin lại",
       ar.pick_check(E, hb_ok, {**fresh, "cowoncy": None}, 0, {"cowoncy": E - 1000}), ("cowoncy", "owo cash"))
 
+# ---------- lệnh đã TẮT trong app (skip) ----------
+check("skip: cash bị tắt -> không xin owo cash",
+      ar.pick_check(E, hb_ok, {**fresh, "cowoncy": None}, 0, {}, skip={"cowoncy"}), None)
+check("skip: cash tắt nhưng kho đồ cũ -> vẫn xin owo inv",
+      ar.pick_check(E, hb_ok, {**fresh, "cowoncy": None, "inventory": 7200}, 0, {}, skip={"cowoncy"}), ("inventory", "owo inv"))
+check("skip: huntbot tắt -> không xin owo hb dù đến hạn",
+      ar.pick_check(E + 100, {"hunting": True, "ready_epoch": E, "observed_epoch": E - 500}, fresh, 0, {}, skip={"huntbot"}), None)
+check("skip: rỗng -> y như cũ", ar.pick_check(E, hb_ok, {**fresh, "zoo": None}, 0, {}, skip=()), ("zoo", "owo zoo"))
+check("skip: bảng id app đủ 6 lệnh check và khóa đều có thật",
+      sorted(ar.APP_CMD_TO_CHECK_KEY.values()), sorted(["huntbot"] + [k for k, _, _ in ar.CHECK_PLAN]))
+
 # ---------- vòng nền với DB giả ----------
 async def pending(db):
     return [d async for d in db[b.COL_AUTOMACRO_COMMANDS].find({"status": "pending"})]

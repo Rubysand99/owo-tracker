@@ -76,6 +76,20 @@ async def scenarios():
         check("captcha clear: sai token -> 401", r.status, 401)
         r = await b.handle_post_captcha_clear(req({}))
         check("captcha clear: -> 200 và hết cảnh báo", (r.status, (await b.get_captcha_state())["active"]), (200, False))
+        # ----- /app-config -----
+        r = await b.handle_get_app_config(req({}, token="sai"))
+        check("app-config: sai token -> 401", r.status, 401)
+        check("app-config: mặc định không tắt lệnh nào", json.loads((await b.handle_get_app_config(req({}))).text), {"disabled": []})
+        r = await b.handle_post_app_config(req({"disabled": ["zoo", "inv", "zoo", "linh_tinh", " cash "]}))
+        check("app-config: lưu, bỏ trùng + id lạ, sắp xếp",
+              (r.status, json.loads(r.text)), (200, {"disabled": ["cash", "inv", "zoo"]}))
+        check("app-config: bot đọc lại đúng + đổi ra khóa mục check",
+              (await b.app_disabled_cmds(), await b.app_skipped_check_keys()), (["cash", "inv", "zoo"], {"cowoncy", "inventory", "zoo"}))
+        r = await b.handle_post_app_config(req({"disabled": []}))
+        check("app-config: bật lại hết", (json.loads(r.text), await b.app_skipped_check_keys()), ({"disabled": []}, set()))
+        for bad in ({"disabled": "zoo"}, {"disabled": [1, 2]}, {}, None):
+            r = await b.handle_post_app_config(req(bad))
+            check(f"app-config: body sai {bad!r} -> 400", r.status, 400)
     finally:
         b.AUTOMACRO_API_TOKEN = old
 

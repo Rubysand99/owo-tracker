@@ -149,6 +149,7 @@ Xem lệnh đang chờ / đã xử lý ngay trong Discord: `,automacro` (owner).
   `{auto_check, hb_auto, hb_alert, event_mode, app_on, captcha_active}`; POST body `{"key": "auto_check"|"hb_auto"|"hb_alert", "enabled": true|false}`
   (khóa lạ / không phải true-false -> 400), trả lại toàn bộ cài đặt mới.
 - `GET /notes` / `POST /notes` — như `,note`: POST `{"action":"add","text":"..."}` (tối đa 500 ký tự) hoặc `{"action":"done","id":3}`; trả danh sách ghi chú.
+- `GET /app-config` / `POST /app-config` — app báo các lệnh farm đang **tắt** (`{"disabled":["zoo","inv",...]}`; id bot biết: hb, cash, inv, quest, ws, zoo, id lạ bị bỏ). Bot không xin app gõ xen (auto_check) những lệnh đó.
 - `POST /captcha/clear` — như `,captcha clear` (app báo đã giải captcha xong).
 - `GET /hub` — trả về **toàn bộ dữ liệu mới nhất bot đã đọc được** để
   app AutoMacro hiện thành màn hình Hub: `daily` (giờ nhận kế tiếp, streak),

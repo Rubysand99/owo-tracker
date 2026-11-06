@@ -30,6 +30,17 @@ HB_RETURN_GRACE = 60         # huntbot đã tới hạn bấy nhiêu giây mà c
 AUTO_MIN_GAP = 180           # giữa 2 lệnh check tự động liên tiếp (giây)
 RETRY_GAP = 15 * 60          # vừa xin 1 loại mà chưa thấy dữ liệu mới thì chờ bấy nhiêu mới xin lại
 
+# Công tắc "Lệnh trong farm" của app (id lệnh) -> khóa mục check tương ứng. App báo danh sách lệnh đang TẮT lên bot
+# (POST /app-config) để bot khỏi xin những lệnh đó.
+APP_CMD_TO_CHECK_KEY = {
+    "hb": "huntbot",
+    "cash": "cowoncy",
+    "inv": "inventory",
+    "quest": "quest",
+    "ws": "weapon_shards",
+    "zoo": "zoo",
+}
+
 # (khóa mục trên Hub, lệnh OwO, tuổi dữ liệu tối đa tính bằng giây) — theo thứ tự ưu tiên
 CHECK_PLAN = (
     ("cowoncy", "owo cash", 25 * 60),
@@ -50,11 +61,12 @@ def huntbot_check_due(now_epoch, hunting, ready_epoch, observed_epoch, max_age=H
 
 
 def pick_check(now_epoch, hb, ages, last_auto_epoch, last_requested, plan=CHECK_PLAN,
-               min_gap=AUTO_MIN_GAP, retry_gap=RETRY_GAP):
+               min_gap=AUTO_MIN_GAP, retry_gap=RETRY_GAP, skip=()):
     """Chọn TỐI ĐA 1 lệnh để chen vào. Trả (khóa, lệnh) hoặc None.
 
     hb: {"hunting", "ready_epoch", "observed_epoch"}; ages: {khóa: tuổi dữ liệu (giây) hoặc None = chưa có};
-    last_auto_epoch: lần gần nhất đã xin 1 lệnh check; last_requested: {khóa: lần gần nhất xin riêng khóa đó}.
+    last_auto_epoch: lần gần nhất đã xin 1 lệnh check; last_requested: {khóa: lần gần nhất xin riêng khóa đó};
+    skip: các khóa KHÔNG được xin (Ruby đã tắt lệnh đó trong app — xem APP_CMD_TO_CHECK_KEY).
     """
     if last_auto_epoch and now_epoch - last_auto_epoch < min_gap:
         return None
@@ -63,11 +75,11 @@ def pick_check(now_epoch, hb, ages, last_auto_epoch, last_requested, plan=CHECK_
         t = last_requested.get(key)
         return t is None or now_epoch - t >= retry_gap
 
-    if can_retry("huntbot") and huntbot_check_due(
+    if "huntbot" not in skip and can_retry("huntbot") and huntbot_check_due(
             now_epoch, hb.get("hunting"), hb.get("ready_epoch"), hb.get("observed_epoch")):
         return ("huntbot", "owo hb")
     for key, command, max_age in plan:
         age = ages.get(key)
-        if (age is None or age > max_age) and can_retry(key):
+        if key not in skip and (age is None or age > max_age) and can_retry(key):
             return (key, command)
     return None

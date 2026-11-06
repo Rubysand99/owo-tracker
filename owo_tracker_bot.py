@@ -2301,6 +2301,36 @@ async def _section_ages(now):
     return ages
 
 
+async def app_disabled_cmds():
+    """Id các lệnh Ruby đang TẮT trong app (tab Setting -> Lệnh trong farm), đã lọc chỉ giữ id bot biết."""
+    raw = await get_config("app_disabled_cmds", "")
+    return sorted({x for x in str(raw or "").split(",") if x in auto_refresh.APP_CMD_TO_CHECK_KEY})
+
+
+async def app_skipped_check_keys():
+    return {auto_refresh.APP_CMD_TO_CHECK_KEY[x] for x in await app_disabled_cmds()}
+
+
+async def handle_get_app_config(request: web.Request):
+    if not _check_api_token(request):
+        return web.json_response({"error": "unauthorized"}, status=401)
+    return web.json_response({"disabled": await app_disabled_cmds()})
+
+
+async def handle_post_app_config(request: web.Request):
+    """App báo các lệnh farm đang TẮT. Body: {"disabled": ["zoo","inv",...]}. Id lạ bị bỏ qua; không phải danh sách chuỗi -> 400.
+    Bot dùng để không xin app gõ xen những lệnh check đó (auto_check)."""
+    if not _check_api_token(request):
+        return web.json_response({"error": "unauthorized"}, status=401)
+    body = await _read_json_body(request)
+    lst = body.get("disabled")
+    if not isinstance(lst, list) or not all(isinstance(x, str) for x in lst):
+        return web.json_response({"error": "disabled phai la danh sach chuoi"}, status=400)
+    keep = sorted({x.strip() for x in lst if x.strip() in auto_refresh.APP_CMD_TO_CHECK_KEY})
+    await set_config("app_disabled_cmds", ",".join(keep))
+    return web.json_response({"disabled": keep})
+
+
 async def auto_check_tick(now_ts, now):
     """App DANG FARM -> du lieu nao cu thi xep 1 lenh check (app go xen vao giua luc farm, nhu lenh doi gem).
     App dang tat / khong farm -> KHONG tu go gi: Hub chi cap nhat theo nhung lenh Ruby tu go (bot doc moi tin OwO)."""
@@ -2323,7 +2353,8 @@ async def auto_check_tick(now_ts, now):
     t = await _huntbot_timing(now)
     pick = auto_refresh.pick_check(
         now_ts, {"hunting": t["hunting"], "ready_epoch": t["ready_epoch"], "observed_epoch": t["observed_epoch"]},
-        await _section_ages(now), _auto_check_state["last_auto"], _auto_check_state["requested"])
+        await _section_ages(now), _auto_check_state["last_auto"], _auto_check_state["requested"],
+        skip=await app_skipped_check_keys())
     if not pick:
         return None
     key, command = pick
@@ -2677,6 +2708,8 @@ async def start_automacro_api_server():
     app.router.add_get("/notes", handle_get_notes)
     app.router.add_post("/notes", handle_post_notes)
     app.router.add_post("/captcha/clear", handle_post_captcha_clear)
+    app.router.add_get("/app-config", handle_get_app_config)
+    app.router.add_post("/app-config", handle_post_app_config)
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, AUTOMACRO_API_HOST, AUTOMACRO_API_PORT)
