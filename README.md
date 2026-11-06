@@ -185,6 +185,7 @@ vũ khí chỉ có những cây bạn từng xem bằng `owo weapon <ID>`.
                           `owo w <ID>` báo không tìm thấy thì tự bỏ qua và liệt kê cuối embed (chỉ ghi danh sách, không tự xóa/bán; chỉ owner)
 ,weaponreview auto [N] → TỰ DUYỆT: cây không rác theo luật = Giữ ngay; cây rác: app gõ `owo w <ID>` + bấm **Details** của NeonUtil (id `851436490415931422`, đọc công khai trong kênh farm), Tom đọc bậc từng chỉ số **vũ khí** — có Mythic/Legendary/Fabled hoặc Knowledge > 14% → Giữ, còn lại → Bỏ; thiếu/lạ dữ liệu → Giữ; 3 cây liền không đọc được → tự dừng. `N` = chỉ thử N cây. CHƯA dismantle (làm sau khi thử nghiệm)
 ,weaponreview export     → gửi file danh sách Giữ/Bỏ; còn `stop` | `undo` | `reset` (chỉ owner)
+,neon                    → xem tin NeonUtil bot đã lưu (bot tự lưu mọi tin Neon trong kênh farm, nguyên văn + phân loại sơ bộ + các dòng `Nhãn: giá trị`; bỏ qua tin trả lời người khác); `show <loại>` xem mẫu · `export [loại]` tải `neon_feed.json` · `on`/`off` · `clear` (chỉ owner). Giữ 1000 tin mới nhất
 ,ping                     → kiểm tra bot còn sống, độ trễ bao nhiêu ms
 ,zoo bee                  → xem zoo đã ghi nhận, lọc theo tên
 ,inv gem                  → xem inventory đã ghi nhận, lọc theo tên

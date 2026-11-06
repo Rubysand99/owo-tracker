@@ -122,6 +122,7 @@ def _utcnow() -> datetime:
 # ----------------------------------------------------------------------
 OWO_BOT_ID = 408785106942164992  # kiểm tra lại ID thật trong server bạn
 import weapon_auto
+import neon_feed
 NEON_BOT_ID = weapon_auto.NEON_BOT_ID  # bot NeonUtil (chỉ số/bậc vũ khí), chỉ đọc trong kênh farm
 DISCORD_TOKEN = os.environ.get("DISCORD_TOKEN")
 OWNER_ID = os.environ.get("OWNER_ID")
@@ -169,6 +170,8 @@ COL_WEAPON_LIST = "owot_weapon_list"         # v29: kho vu khi tu danh sach `owo
 COL_WEAPON_ADVICE = "owot_weapon_advice"   # v29: loi khuyen `?tag <vu khi>` do app thu thap trong server OwO
 COL_EMOJI = "owot_emoji_registry"
 COL_RAW = "owot_raw_samples"
+COL_NEON_FEED = "owot_neon_feed"        # v33: moi tin NeonUtil trong kenh theo doi (nguyen van + phan loai so bo)
+NEON_FEED_KEEP = 1000
 COL_BATTLE = "owot_battle_status"      # v17: chuoi battle moi nhat
 COL_NEW_PETS = "owot_new_pets"          # v17: pet vua bat duoc ma chua co trong zoo
 COL_ALERTS = "owot_alerts"              # v18: canh bao captcha cua OwO
@@ -1649,6 +1652,33 @@ async def auto_feed_detail(message, weapon: dict):
         return
     await _auto_merge(sess, message, {"has_detail": True, "passive": weapon.get("passive")})
     await auto_try_finish()
+
+
+async def neon_capture(message, edited: bool = False):
+    """Luu tin NeonUtil (bat mac dinh, `,neon off` de tat). Tin tra loi/lenh cua NGUOI KHAC thi bo qua."""
+    if await get_config("neon_capture", True) is False:
+        return
+    if neon_feed.belongs_to_other(message, await get_config("tracked_user_id")):
+        return
+    text = flatten_message(message)
+    if not text.strip():
+        return
+    known = ""
+    if weapon_auto.parse_neon_breakdown(text):
+        known = "weapon_breakdown"
+    elif weapon_auto.parse_neon_compact(text):
+        known = "weapon_compact"
+    doc = neon_feed.build_doc(text, kind=neon_feed.classify(text, known), message_id=message.id,
+                              channel_id=message.channel.id, command=last_owo_command.get(message.channel.id, ""),
+                              at_iso=_utcnow().isoformat() + "Z", edited=edited)
+    doc = _json_safe(doc)
+    await mdb[COL_NEON_FEED].update_one({"_id": str(message.id)}, {"$set": doc}, upsert=True)
+    # Giu NEON_FEED_KEEP tin moi nhat (don moi khi vuot 10%)
+    if await mdb[COL_NEON_FEED].estimated_document_count() > NEON_FEED_KEEP * 1.1:
+        old = mdb[COL_NEON_FEED].find({}, {"_id": 1}).sort("at", -1).skip(NEON_FEED_KEEP)
+        ids = [d["_id"] async for d in old]
+        if ids:
+            await mdb[COL_NEON_FEED].delete_many({"_id": {"$in": ids}})
 
 
 async def auto_feed_neon(message):
@@ -3382,6 +3412,10 @@ async def on_raw_message_edit(payload):
         channel = bot.get_channel(payload.channel_id) or await bot.fetch_channel(payload.channel_id)
         message = await channel.fetch_message(payload.message_id)
         if str(author_id) == str(NEON_BOT_ID):
+            try:
+                await neon_capture(message, edited=True)
+            except Exception as e:
+                print(f"[tracker][neon] Loi luu tin Neon: {e!r}")
             await auto_feed_neon(message)
             return
         if await accept_dex_by_alias(message, await get_config("tracked_user_id")):
@@ -3458,6 +3492,10 @@ async def on_message(message: discord.Message):
         return
 
     if message.author.id == NEON_BOT_ID:
+        try:
+            await neon_capture(message)
+        except Exception as e:
+            print(f"[tracker][neon] Loi luu tin Neon: {e!r}")
         try:
             await auto_feed_neon(message)
         except Exception as e:
@@ -4638,6 +4676,49 @@ async def weaponlist_cmd(ctx):
     await ctx.send("Đã gửi file `weapon_list.json`.")
 
 
+@bot.command(name="neon")
+@is_owner()
+async def neon_cmd(ctx, action: str = "", arg: str = ""):
+    """Tin NeonUtil bot da luu: `,neon` tong hop | `show <loai>` xem mau | `export [loai]` tai file | `on`/`off` | `clear`."""
+    a = (action or "").lower()
+    col = mdb[COL_NEON_FEED]
+    if a in ("on", "off"):
+        await set_config("neon_capture", a == "on")
+        await ctx.send("Đã BẬT lưu tin NeonUtil." if a == "on" else "Đã TẮT lưu tin NeonUtil (dữ liệu cũ vẫn giữ).")
+        return
+    if a == "clear":
+        r = await col.delete_many({})
+        await ctx.send(f"Đã xoá {r.deleted_count} tin NeonUtil đã lưu.")
+        return
+    if a == "show":
+        kind = arg.strip()
+        if not kind:
+            await ctx.send("Dùng: `,neon show <loại>` (xem loại bằng `,neon`).")
+            return
+        d = await col.find_one({"kind": kind}, sort=[("at", -1)])
+        if not d:
+            await ctx.send(f"Chưa có tin loại `{kind}`.")
+            return
+        body = (d.get("raw") or "")[:1700].replace("```", "ʼʼʼ")
+        await ctx.send(f"`{kind}` · {str(d.get('at'))[:19]} UTC · lệnh: `{d.get('command') or '?'}`\n```\n{body}\n```")
+        return
+    if a == "export":
+        q = {"kind": arg.strip()} if arg.strip() else {}
+        docs = [dict(d, _id=str(d["_id"])) async for d in col.find(q).sort("at", -1).limit(300)]
+        data = json.dumps({"tao_luc": _utcnow().isoformat(), "so_tin": len(docs), "tin": docs},
+                          ensure_ascii=False, indent=1, default=str).encode("utf-8")
+        await send_file_to_owner(f"📦 {len(docs)} tin NeonUtil đã lưu.", "neon_feed.json", data)
+        await ctx.send("Đã gửi file `neon_feed.json`.")
+        return
+    if a:
+        await ctx.send("Dùng: `,neon` | `show <loại>` | `export [loại]` | `on` | `off` | `clear`")
+        return
+    rows = [r async for r in col.aggregate([
+        {"$group": {"_id": "$kind", "n": {"$sum": 1}, "last": {"$max": "$at"}}}, {"$sort": {"n": -1}}])]
+    on = await get_config("neon_capture", True) is not False
+    await ctx.send(neon_feed.summary_text(rows, sum(r["n"] for r in rows)) + f"\nĐang lưu: {'BẬT' if on else 'TẮT'}")
+
+
 @bot.command(name="weaponreview")
 @is_owner()
 async def weaponreview_cmd(ctx, action: str = "start", limit: int = 0):
@@ -5234,6 +5315,7 @@ HELP_GROUPS = [
         ("weaponscan", "`,weaponscan` (owner): quét lại kho vũ khí, nhớ dừng farm"),
         ("weaponprobe", "`,weaponprobe` (owner): xếp lệnh `owo w <ID>` cho app từ danh sách đã quét"),
         ("weaponlist", "`,weaponlist` (owner): gửi file danh sách vũ khí đã quét"),
+        ("neon", "`,neon` (owner): xem tin NeonUtil bot đã lưu (bot chỉ ĐỌC tin Neon công khai trong kênh farm, bỏ qua tin của người khác); `show <loại>` xem mẫu · `export [loại]` tải file JSON · `on`/`off` bật tắt lưu · `clear` xóa hết"),
         ("weaponreview", "`,weaponreview [stop|undo|export|reset]` (owner): bắt đầu bằng QUÉT LẠI kho (app gõ `owo w` + lật trang, dừng farm trước; chỉ nhận trang `<@bạn>'s Weapons`) rồi duyệt từng cây bằng 2 nút Giữ/Bỏ trên Hub nổi, chỉ ghi danh sách, KHÔNG tự xóa hay bán; `stop` dừng · `undo` hoàn tác cây vừa chọn · `export` gửi file Giữ/Bỏ · `reset` xóa hết quyết định"),
         ("dismantleplan", "`,dismantleplan` (owner): lập kế hoạch dọn vũ khí (giữ/rác/xám), CHƯA xóa gì"),
         ("weaponknowledge", "`,weaponknowledge` (owner): gửi lại file kiến thức vũ khí"),
