@@ -4628,6 +4628,24 @@ async def weaponimport_cmd(ctx):
     await ctx.send(weapon_import.summary_text(plan) + "\nBước rã thật chưa làm — cần lệnh xác nhận riêng.")
 
 
+@bot.command(name="dismantlelist")
+@is_owner()
+async def dismantlelist_cmd(ctx, per_cmd: int = 1, page: int = 1):
+    """Tao san cac dong `owo dismantle <ID>` cho cay trong danh sach BO (tu `,weaponimport`) de Ruby TU DAN tay tung dong
+    roi tu bam nut Dismantle cua OwO. Bot KHONG tu go lenh, KHONG tu bam. per_cmd = so ID moi lenh (mac dinh 1, toi da 10)."""
+    rows = await mdb[COL_WEAPON_REVIEW].find({"source": "neon_export", "decision": "drop"}, {"_id": 1}).to_list(length=100000)
+    if not rows:
+        await ctx.send("Chưa có danh sách Bỏ. Gõ `,weaponimport` kèm file `weapons.json` trước.")
+        return
+    lines, total, pages = weapon_import.dismantle_commands([r["_id"] for r in rows], per_cmd, page)
+    shown = max(1, min(int(page or 1), pages))
+    body = "\n".join(lines)
+    await ctx.send(f"**{len(rows)} cây Bỏ** → {total} lệnh, trang {shown}/{pages} (`,dismantlelist {max(1, min(int(per_cmd or 1), 10))} <số trang>`)\n"
+                   f"```\n{body}\n```"
+                   "Dán **từng dòng** vào kênh, đọc kỹ tin xác nhận của OwO (số cây, ID) rồi **tự bấm Dismantle**. "
+                   "Xong cả danh sách thì xuất lại `nw inv export` và `,weaponimport` để cập nhật.")
+
+
 @bot.command(name="weaponscan")
 @is_owner()
 async def weaponscan_cmd(ctx):
@@ -5268,6 +5286,7 @@ HELP_GROUPS = [
         ("weaponscan", "`,weaponscan` (owner): quét lại kho vũ khí, nhớ dừng farm"),
         ("weaponprobe", "`,weaponprobe` (owner): xếp lệnh `owo w <ID>` cho app từ danh sách đã quét"),
         ("weaponlist", "`,weaponlist` (owner): gửi file danh sách vũ khí đã quét"),
+        ("dismantlelist", "`,dismantlelist [số ID mỗi lệnh] [trang]` (owner): tạo sẵn các dòng `owo dismantle <ID>` cho cây trong danh sách Bỏ (từ `,weaponimport`) để BẠN TỰ DÁN từng dòng và tự bấm Dismantle của OwO; bot không tự gõ, không tự bấm"),
         ("weaponimport", "`,weaponimport` (owner): nhập file `weapons.json` từ lệnh `,w inv export` của NeonUtil (bạn tự gõ lệnh đó, rồi ĐÍNH KÈM file vào tin `,weaponimport`) → bot lập danh sách Giữ/Bỏ theo luật (khóa / chỉ số chính ≥ 80% / passive hạng ≥ 5 / không có bp thì q ≥ 75 → Giữ), ghi cùng chỗ với `,weaponreview`, gửi file `weapon_import_plan.json`, KHÔNG xóa hay bán gì"),
         ("weaponreview", "`,weaponreview [stop|undo|export|reset]` (owner): bắt đầu bằng QUÉT LẠI kho (app gõ `owo w` + lật trang, dừng farm trước; chỉ nhận trang `<@bạn>'s Weapons`) rồi duyệt từng cây bằng 2 nút Giữ/Bỏ trên Hub nổi, chỉ ghi danh sách, KHÔNG tự xóa hay bán; `stop` dừng · `undo` hoàn tác cây vừa chọn · `export` gửi file Giữ/Bỏ · `reset` xóa hết quyết định"),
         ("dismantleplan", "`,dismantleplan` (owner): lập kế hoạch dọn vũ khí (giữ/rác/xám), CHƯA xóa gì"),
