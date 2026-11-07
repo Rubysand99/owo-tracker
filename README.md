@@ -184,6 +184,7 @@ vũ khí chỉ có những cây bạn từng xem bằng `owo weapon <ID>`.
                           rồi duyệt từng cây bằng 2 nút Giữ/Bỏ trên Hub nổi. Quyết định cũ được giữ, ID không còn trong kho bị gỡ;
                           `owo w <ID>` báo không tìm thấy thì tự bỏ qua và liệt kê cuối embed (chỉ ghi danh sách, không tự xóa/bán; chỉ owner)
 ,weaponreview auto     → ĐÃ TẮT (chủ NeonUtil không cho tự động hóa bot của họ). Sẽ thay bằng nhập file `weapons.json` từ `,w inv export`
+,weaponimport           → nhập file `weapons.json` từ `,w inv export` của NeonUtil (bạn tự gõ lệnh đó, đính kèm file vào tin `,weaponimport`): bot lập danh sách Giữ/Bỏ (khóa / chỉ số chính ≥ 80% / passive hạng ≥ 5 / cây không có bp thì q ≥ 75 → Giữ), gửi `weapon_import_plan.json`, KHÔNG xóa gì (chỉ owner)
 ,weaponreview export     → gửi file danh sách Giữ/Bỏ; còn `stop` | `undo` | `reset` (chỉ owner)
 ,ping                     → kiểm tra bot còn sống, độ trễ bao nhiêu ms
 ,zoo bee                  → xem zoo đã ghi nhận, lọc theo tên

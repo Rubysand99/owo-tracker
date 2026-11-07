@@ -122,6 +122,7 @@ def _utcnow() -> datetime:
 # ----------------------------------------------------------------------
 OWO_BOT_ID = 408785106942164992  # kiểm tra lại ID thật trong server bạn
 import weapon_auto
+import weapon_import
 NEON_BOT_ID = weapon_auto.NEON_BOT_ID  # bot NeonUtil (chỉ số/bậc vũ khí), chỉ đọc trong kênh farm
 DISCORD_TOKEN = os.environ.get("DISCORD_TOKEN")
 OWNER_ID = os.environ.get("OWNER_ID")
@@ -4591,6 +4592,42 @@ async def hbstart_cmd(ctx, amount: str = ""):
     await ctx.send(f"✅ Đã nhờ app gõ `owo hb {amount}`. OwO sẽ đưa mật khẩu — mình chuyển ảnh sang acc phụ, bạn đọc rồi nhắn lại đúng mã.")
 
 
+@bot.command(name="weaponimport")
+@is_owner()
+async def weaponimport_cmd(ctx):
+    """Nhap file `weapons.json` tu `,w inv export` cua NeonUtil (Ruby tu go lenh do 1 lan, roi DINH KEM file vao tin nay)
+    -> lap danh sach Giu/Bo theo luat o weapon_import.py va ghi vao cung noi voi `,weaponreview`. KHONG xoa/ban gi."""
+    atts = [a for a in (ctx.message.attachments or []) if (a.filename or "").lower().endswith(".json")]
+    if not atts:
+        await ctx.send("Đính kèm file `weapons.json` (từ lệnh `,w inv export` của NeonUtil) vào cùng tin nhắn `,weaponimport`.")
+        return
+    att = atts[0]
+    if att.size and att.size > 20 * 1024 * 1024:
+        await ctx.send("File quá lớn (> 20 MB).")
+        return
+    try:
+        weapons = weapon_import.parse_export(await att.read())
+    except ValueError as e:
+        await ctx.send(f"Không đọc được file: {e}")
+        return
+    plan = weapon_import.build_plan(weapons)
+    now = _utcnow().isoformat()
+    seen = set(plan["keep"]) | set(plan["drop"])
+    # Quyet dinh cu tu lan nhap truoc ma cay nay khong con trong file (da dismantle/ban) thi xoa
+    old = await mdb[COL_WEAPON_REVIEW].find({"source": "neon_export"}, {"_id": 1}).to_list(length=100000)
+    stale = [r["_id"] for r in old if r["_id"] not in seen]
+    if stale:
+        await mdb[COL_WEAPON_REVIEW].delete_many({"_id": {"$in": stale}})
+    for decision, bucket in (("keep", plan["keep"]), ("drop", plan["drop"])):
+        for wid, why in bucket.items():
+            await mdb[COL_WEAPON_REVIEW].update_one(
+                {"_id": wid}, {"$set": {"decision": decision, "reason": why, "source": "neon_export", "at": now}}, upsert=True)
+    data = json.dumps({"tao_luc": now, "tong": plan["total"], "ly_do": plan["reasons"],
+                       "giu": plan["keep"], "bo": plan["drop"]}, ensure_ascii=False, indent=1).encode("utf-8")
+    await send_file_to_owner("📦 Kế hoạch Giữ / Bỏ từ file export (chưa xóa gì).", "weapon_import_plan.json", data)
+    await ctx.send(weapon_import.summary_text(plan) + "\nBước rã thật chưa làm — cần lệnh xác nhận riêng.")
+
+
 @bot.command(name="weaponscan")
 @is_owner()
 async def weaponscan_cmd(ctx):
@@ -5231,6 +5268,7 @@ HELP_GROUPS = [
         ("weaponscan", "`,weaponscan` (owner): quét lại kho vũ khí, nhớ dừng farm"),
         ("weaponprobe", "`,weaponprobe` (owner): xếp lệnh `owo w <ID>` cho app từ danh sách đã quét"),
         ("weaponlist", "`,weaponlist` (owner): gửi file danh sách vũ khí đã quét"),
+        ("weaponimport", "`,weaponimport` (owner): nhập file `weapons.json` từ lệnh `,w inv export` của NeonUtil (bạn tự gõ lệnh đó, rồi ĐÍNH KÈM file vào tin `,weaponimport`) → bot lập danh sách Giữ/Bỏ theo luật (khóa / chỉ số chính ≥ 80% / passive hạng ≥ 5 / không có bp thì q ≥ 75 → Giữ), ghi cùng chỗ với `,weaponreview`, gửi file `weapon_import_plan.json`, KHÔNG xóa hay bán gì"),
         ("weaponreview", "`,weaponreview [stop|undo|export|reset]` (owner): bắt đầu bằng QUÉT LẠI kho (app gõ `owo w` + lật trang, dừng farm trước; chỉ nhận trang `<@bạn>'s Weapons`) rồi duyệt từng cây bằng 2 nút Giữ/Bỏ trên Hub nổi, chỉ ghi danh sách, KHÔNG tự xóa hay bán; `stop` dừng · `undo` hoàn tác cây vừa chọn · `export` gửi file Giữ/Bỏ · `reset` xóa hết quyết định"),
         ("dismantleplan", "`,dismantleplan` (owner): lập kế hoạch dọn vũ khí (giữ/rác/xám), CHƯA xóa gì"),
         ("weaponknowledge", "`,weaponknowledge` (owner): gửi lại file kiến thức vũ khí"),
