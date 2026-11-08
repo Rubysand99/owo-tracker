@@ -24,17 +24,27 @@ def check(label, got, want):
 
 OWNER = "111111111111111111"
 
-def neon_msg(orig, filename="weapons.json", with_ref=True, size=100):
+from datetime import datetime, timedelta, timezone
+NOW = datetime(2026, 11, 9, 5, 50, tzinfo=timezone.utc)
+
+def neon_msg(orig, filename="weapons.json", with_ref=True, size=100, history=None, history_error=False):
+    """history = tin trong kênh TRƯỚC file Neon, mới nhất trước (dùng khi Neon không reply)."""
     async def fetch_message(_id):
         if orig is None:
             raise RuntimeError("Forbidden")
         return orig
+    async def hist(limit=100, before=None):
+        if history_error:
+            raise RuntimeError("Forbidden")
+        for m in (history or []):
+            yield m
     att = NS(filename=filename, size=size, read=None)
     ref = NS(message_id=555, resolved=None) if with_ref else None
-    return NS(attachments=[att] if filename else [], reference=ref, channel=NS(fetch_message=fetch_message))
+    return NS(attachments=[att] if filename else [], reference=ref, created_at=NOW,
+              channel=NS(fetch_message=fetch_message, history=hist))
 
-def cmd(author_id=OWNER, content="nw inv export"):
-    return NS(author=NS(id=author_id), content=content)
+def cmd(author_id=OWNER, content="nw inv export", ago=20):
+    return NS(author=NS(id=author_id), content=content, created_at=NOW - timedelta(seconds=ago))
 
 async def scenarios():
     b.mdb = AsyncMongoMockClient()["neon_test"]
@@ -71,8 +81,21 @@ async def scenarios():
         n, i = await run(neon_msg(cmd()))
         check("đã tắt `,neonauto`: báo cách bật lại", (i, len(n), ",neonauto on" in n[0]), ([], 1, True))
         await b.set_config("neon_autoimport", "on")
-        n, i = await run(neon_msg(cmd(), with_ref=False))
-        check("Neon không reply: báo rõ", (i, len(n), "reply" in n[0]), ([], 1, True))
+        # --- Neon gửi file KHÔNG kèm reply: tìm lệnh export gần nhất của OWNER trong kênh ---
+        n, i = await run(neon_msg(None, with_ref=False, history=[cmd(ago=30)]))
+        check("không reply + lệnh của OWNER 30 giây trước: vẫn nhận", (i, len(n), "Tom đã tự nhận file" in n[0]), ([True], 1, True))
+        n, i = await run(neon_msg(None, with_ref=False, history=[cmd(author_id="999", content="chat"), cmd(content="owo hunt", ago=5), cmd(ago=60)]))
+        check("không reply: bỏ qua tin chat/lệnh khác, lấy lệnh export của OWNER", (i, len(n)), ([True], 1))
+        n, i = await run(neon_msg(None, with_ref=False, history=[cmd(ago=180)]))
+        check("không reply + đúng 3 phút: vẫn nhận (biên)", (i, len(n)), ([True], 1))
+        n, i = await run(neon_msg(None, with_ref=False, history=[cmd(ago=181)]))
+        check("không reply + lệnh cũ hơn 3 phút: KHÔNG gán nhầm, báo rõ", (i, len(n), "3 phút" in n[0]), ([], 1, True))
+        n, i = await run(neon_msg(None, with_ref=False, history=[]))
+        check("không reply + không có lệnh nào: báo rõ", (i, len(n), "Neon không reply" in n[0]), ([], 1, True))
+        n, i = await run(neon_msg(None, with_ref=False, history=[cmd(author_id="999", ago=10)]))
+        check("không reply + lệnh export của NGƯỜI KHÁC: không nhận", (i, len(n)), ([], 1))
+        n, i = await run(neon_msg(None, with_ref=False, history_error=True))
+        check("không reply + không đọc được lịch sử kênh: báo rõ, không văng lỗi", (i, len(n), "3 phút" in n[0]), ([], 1, True))
         n, i = await run(neon_msg(None))
         check("không đọc được tin gốc: nhắc quyền Read Message History", (i, len(n), "Read Message History" in n[0]), ([], 1, True))
         n, i = await run(neon_msg(cmd(author_id="999")))

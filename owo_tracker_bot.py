@@ -4780,9 +4780,28 @@ async def after_clean_ack(status: str, cmd: dict):
     await clean_queue_batch()
 
 
+NEON_EXPORT_LOOKBACK_SECONDS = 180   # file Neon khong reply: chi tinh lenh export cua OWNER trong 3 phut truoc do
+
+
+async def find_recent_export_command(message):
+    """Tin `nw inv export` MOI NHAT cua OWNER trong cung kenh, truoc `message` (file cua Neon) toi da 3 phut; khong co -> None.
+    Duyet toi da 25 tin truoc file, bo qua tin cua nguoi khac / tin khong phai lenh export; lay lenh export CUA OWNER gan nhat
+    (qua 3 phut thi coi nhu khong co, de khong gan nham file cu)."""
+    try:
+        async for m in message.channel.history(limit=25, before=message):
+            if str(m.author.id) != str(OWNER_ID) or not _NEON_EXPORT_RE.match((m.content or "").strip()):
+                continue
+            age = (message.created_at - m.created_at).total_seconds()
+            return m if 0 <= age <= NEON_EXPORT_LOOKBACK_SECONDS else None
+    except Exception as e:
+        print(f"[tracker][neon] Khong doc duoc lich su kenh de tim lenh export: {e!r}")
+    return None
+
+
 async def handle_neon_export_reply(message: discord.Message):
-    """Neon tra loi lenh `nw inv export` CUA CHINH RUBY (tin goc cua Ruby, tra loi truc tiep) kem weapons.json -> tu nhap.
-    Chi nhan khi tin goc la cua OWNER va dung lenh export; tin Neon khac bi bo qua."""
+    """Neon gui weapons.json sau lenh `nw inv export` CUA CHINH RUBY -> tu nhap. Tin goc xac dinh theo reply cua Neon; neu Neon
+    khong reply thi lay lenh export moi nhat cua OWNER trong kenh (toi da 3 phut truoc). Chi nhan khi tin goc la cua OWNER
+    va dung lenh export; tin Neon khac bi bo qua."""
     atts = [a for a in (message.attachments or []) if (a.filename or "").lower().endswith(".json")]
     if not atts:
         return   # tin Neon thuong (khong co file .json): bo qua im lang
@@ -4797,14 +4816,18 @@ async def handle_neon_export_reply(message: discord.Message):
     if str(await get_config("neon_autoimport", "on")) == "off":
         return await skip("đang TẮT tự nhận file — gõ `,neonauto on` để bật.")
     ref = message.reference
-    if ref is None or not ref.message_id:
-        return await skip("Neon không trả lời trực tiếp (reply) vào tin lệnh nào.")
-    orig = ref.resolved if isinstance(getattr(ref, "resolved", None), discord.Message) else None
-    if orig is None:
-        try:
-            orig = await message.channel.fetch_message(ref.message_id)
-        except Exception as e:
-            return await skip(f"không đọc được tin lệnh gốc ({type(e).__name__}) — bot có quyền Read Message History trong kênh không?")
+    if ref is not None and ref.message_id:
+        orig = ref.resolved if isinstance(getattr(ref, "resolved", None), discord.Message) else None
+        if orig is None:
+            try:
+                orig = await message.channel.fetch_message(ref.message_id)
+            except Exception as e:
+                return await skip(f"không đọc được tin lệnh gốc ({type(e).__name__}) — bot có quyền Read Message History trong kênh không?")
+    else:
+        # Neon gui file KHONG kem reply (thuc te hay gap): tim tin `nw inv export` moi nhat cua OWNER ngay truoc do trong kenh
+        orig = await find_recent_export_command(message)
+        if orig is None:
+            return await skip(f"Neon không reply, và Tom không thấy tin `nw inv export` của bạn trong {NEON_EXPORT_LOOKBACK_SECONDS // 60} phút trước đó ở kênh này.")
     if str(orig.author.id) != str(OWNER_ID):
         return await skip(f"tin lệnh gốc do tài khoản {orig.author.id} gõ, khác OWNER_ID ({OWNER_ID}).")
     cmd_text = (orig.content or "").strip()
