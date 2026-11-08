@@ -4627,10 +4627,12 @@ async def import_weapon_export(raw: bytes, auto_session: bool = False) -> str:
     if auto_session:
         docs = await mdb[COL_WEAPON_REVIEW].find({"source": "neon_export"}).to_list(length=100000)
         st = weapon_import.cleanup_stages(docs)
-        steps = weapon_import.cleanup_steps(st)
+        prev = await clean_session()
+        rounds = int(prev.get("rounds") or 0) + 1 if prev.get("awaiting_export") else 0
+        steps = weapon_import.cleanup_steps(st, with_export=rounds < CLEAN_MAX_ROUNDS)   # toi da vai vong, khong lap vo han
         if steps:
             await mdb[COL_CONFIG].update_one({"_id": CLEAN_KEY}, {"$set": {"value": {
-                "active": True, "steps": steps, "cursor": 0, "total": len(steps), "at": now}}}, upsert=True)
+                "active": True, "steps": steps, "cursor": 0, "total": len(steps), "at": now, "rounds": rounds}}}, upsert=True)
             text += (f"\n🧹 Có {len(steps)} bước dọn kho. Bật **Dọn kho tự động** trong menu Hub (tab Misc) thì app tự làm; "
                      "chỉ bấm Dismantle khi số cây khớp, lệch là Cancel và dừng. Không bật thì không có gì xảy ra.")
         else:
@@ -4644,6 +4646,7 @@ async def import_weapon_export(raw: bytes, auto_session: bool = False) -> str:
 # ===================== Don kho tu dong (app lam, Ruby bat cong tac o Hub) =====================
 CLEAN_KEY = "clean_session"
 CLEAN_BATCH = 8
+CLEAN_MAX_ROUNDS = 2
 _NEON_EXPORT_RE = re.compile(r"^nw\s+inv\w*\s+export\b", re.I)
 
 
@@ -4666,6 +4669,8 @@ async def clean_queue_batch():
     steps = (s.get("steps") or [])[cur:cur + CLEAN_BATCH]
     if not steps:
         await mdb[COL_CONFIG].update_one({"_id": CLEAN_KEY}, {"$set": {"value.active": False}})
+        if s.get("awaiting_export"):
+            return   # buoc cuoi la `nw inv export`: file moi ve se mo phien moi (neu con cay can don)
         await notify_owner(f"✅ App đã dọn xong {s.get('total', 0)} bước. Gõ `nw inv export` lần nữa để kiểm tra kho còn lại.", min_gap=30)
         return
     for st in steps:
@@ -4685,6 +4690,9 @@ async def after_clean_ack(status: str, cmd: dict):
         await notify_owner(f"⛔ Dọn kho DỪNG ở bước `{step}` ({s.get('cursor', 0)}/{s.get('total', 0)} xong): số cây/ID trên màn hình "
                            "không khớp hoặc không bấm được. App đã bấm Cancel, chưa rã gì thêm. Xuất lại `nw inv export` để lập lại kế hoạch.", min_gap=10)
         return
+    if (cmd.get("action") or "") == "clean_export":
+        await mdb[COL_CONFIG].update_one({"_id": CLEAN_KEY}, {"$set": {"value.awaiting_export": True}})
+        s["awaiting_export"] = True
     await mdb[COL_CONFIG].update_one({"_id": CLEAN_KEY}, {"$inc": {"value.cursor": 1}})
     await clean_queue_batch()
 

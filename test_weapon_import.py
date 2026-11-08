@@ -107,6 +107,9 @@ def test_cleanup_steps_order_and_gates():
     assert steps[2]["params"]["expect_max"] == "3" and steps[2]["params"]["command_text"] == "owo dismantle common"
     assert steps[4]["params"]["expect"] == "2" and steps[4]["params"]["command_text"] == "owo dismantle rare"
     assert steps[5]["params"]["expect_id"] == "X9"
+    ex = wi.cleanup_steps(st, with_export=True)
+    assert ex[-1]["action"] == "clean_export" and ex[-1]["params"]["command_text"] == "nw inv export" and len(ex) == len(steps) + 1
+    assert wi.cleanup_steps(dict(st, star_ids=[], low_drop=[], rare_drop=[], id_drop=[]), with_export=True) == []
     assert wi.cleanup_steps(dict(st, unsure=["Z"])) == []
     assert wi.cleanup_steps(dict(st, missing_q=1)) == []
 test_cleanup_steps_order_and_gates()

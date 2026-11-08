@@ -213,7 +213,7 @@ def cleanup_text(st: dict) -> str:
     return "\n".join(lines)
 
 
-def cleanup_steps(st: dict) -> list:
+def cleanup_steps(st: dict, with_export: bool = False) -> list:
     """Cac buoc DON KHO cho app tu lam (thu tu: sao -> ra theo bac -> ra theo ID). Moi buoc = {action, params} gui qua
     queue_automacro_command. App chi bam Dismantle khi so cay / ID tren man hinh khop `expect` (xem CleanupRunner).
     Rong neu thieu q hoac con cay o vung chua ro bac (khong du chac de tu dong)."""
@@ -233,4 +233,6 @@ def cleanup_steps(st: dict) -> list:
     for wid in st["id_drop"]:
         steps.append({"action": "clean_id", "params": {
             "command_text": f"owo dismantle {wid}", "clean_mode": "id", "expect_id": str(wid), "optional": "1"}})
+    if steps and with_export:   # cuoi phien: app go `nw inv export` de Tom nhan file moi, kiem tra con gi can don
+        steps.append({"action": "clean_export", "params": {"command_text": "nw inv export", "clean_mode": "export"}})
     return steps
