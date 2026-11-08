@@ -4702,22 +4702,35 @@ async def after_clean_ack(status: str, cmd: dict):
 async def handle_neon_export_reply(message: discord.Message):
     """Neon tra loi lenh `nw inv export` CUA CHINH RUBY (tin goc cua Ruby, tra loi truc tiep) kem weapons.json -> tu nhap.
     Chi nhan khi tin goc la cua OWNER va dung lenh export; tin Neon khac bi bo qua."""
-    if not OWNER_ID or str(await get_config("neon_autoimport", "on")) == "off":
-        return
     atts = [a for a in (message.attachments or []) if (a.filename or "").lower().endswith(".json")]
+    if not atts:
+        return   # tin Neon thuong (khong co file .json): bo qua im lang
+
+    async def skip(why: str):
+        # Neon da gui file .json ma Tom khong nhan: noi ro ly do (log + bao Ruby), dung im lang
+        print(f"[tracker][neon] Bo qua file Neon: {why}")
+        await notify_owner(f"⚠️ Neon vừa gửi file .json nhưng Tom không nhận: {why}", min_gap=60)
+
+    if not OWNER_ID:
+        return await skip("bot chưa có biến môi trường OWNER_ID.")
+    if str(await get_config("neon_autoimport", "on")) == "off":
+        return await skip("đang TẮT tự nhận file — gõ `,neonauto on` để bật.")
     ref = message.reference
-    if not atts or ref is None or not ref.message_id:
-        return
+    if ref is None or not ref.message_id:
+        return await skip("Neon không trả lời trực tiếp (reply) vào tin lệnh nào.")
     orig = ref.resolved if isinstance(getattr(ref, "resolved", None), discord.Message) else None
     if orig is None:
         try:
             orig = await message.channel.fetch_message(ref.message_id)
-        except Exception:
-            return
-    if str(orig.author.id) != str(OWNER_ID) or not _NEON_EXPORT_RE.match((orig.content or "").strip()):
-        return
+        except Exception as e:
+            return await skip(f"không đọc được tin lệnh gốc ({type(e).__name__}) — bot có quyền Read Message History trong kênh không?")
+    if str(orig.author.id) != str(OWNER_ID):
+        return await skip(f"tin lệnh gốc do tài khoản {orig.author.id} gõ, khác OWNER_ID ({OWNER_ID}).")
+    cmd_text = (orig.content or "").strip()
+    if not _NEON_EXPORT_RE.match(cmd_text):
+        return await skip(f"tin lệnh gốc là `{cmd_text[:40]}`, không phải `nw inv export`.")
     if atts[0].size and atts[0].size > 20 * 1024 * 1024:
-        return
+        return await skip("file quá lớn (trên 20 MB).")
     try:
         text = await import_weapon_export(await atts[0].read(), auto_session=True)
     except ValueError as e:
