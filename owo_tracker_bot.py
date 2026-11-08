@@ -1812,6 +1812,10 @@ async def handle_get_pending_commands(request: web.Request):
         {"status": "pending", "created_at": {"$lt": stale_cut}},
         {"$set": {"status": "expired", "completed_at": _utcnow().isoformat()}},
     )
+    try:
+        await clean_queue_batch()   # phien don kho dang chay ma lenh cu het han -> xep lai tu buoc chua xong
+    except Exception as e:
+        print(f"[tracker][clean] Loi xep buoc don kho: {e!r}")
     cursor = mdb[COL_AUTOMACRO_COMMANDS].find({"status": "pending"}).sort("_id", 1)
     docs = await cursor.to_list(length=20)
     for d in docs:
@@ -1848,7 +1852,9 @@ async def handle_ack_command(request: web.Request):
         for code in [c.strip() for c in str(codes).split(",") if c.strip()]:
             await mdb[COL_INVENTORY].update_one({"_id": code, "count": {"$gt": 0}}, {"$inc": {"count": -1}})
     action = (cmd or {}).get("action")
-    if action == "weapon_scan":
+    if str(action or "").startswith("clean_"):
+        asyncio.create_task(after_clean_ack(status, cmd))
+    elif action == "weapon_scan":
         if status == "done":
             asyncio.create_task(_after_weapon_scan())
         else:
@@ -3456,7 +3462,12 @@ async def on_message(message: discord.Message):
         return
 
     if message.author.id == NEON_BOT_ID:
-        return   # chu NeonUtil: khong doc/tu dong hoa bot cua ho; dung file export cua ho (,w inv export) thay the
+        # Chi nhan DUNG file `nw inv export` Neon tra loi lenh cua chinh Ruby (tat bang `,neonauto off`); tin khac cua Neon bo qua
+        try:
+            await handle_neon_export_reply(message)
+        except Exception as e:
+            print(f"[tracker][neon] Loi nhan file export: {e!r}")
+        return
 
     if message.author.id == OWO_BOT_ID:
         try:
@@ -4592,6 +4603,119 @@ async def hbstart_cmd(ctx, amount: str = ""):
     await ctx.send(f"✅ Đã nhờ app gõ `owo hb {amount}`. OwO sẽ đưa mật khẩu — mình chuyển ảnh sang acc phụ, bạn đọc rồi nhắn lại đúng mã.")
 
 
+async def import_weapon_export(raw: bytes, auto_session: bool = False) -> str:
+    """Doc file weapons.json (NeonUtil), ghi Giu/Bo vao COL_WEAPON_REVIEW, gui file ke hoach cho Ruby. Tra ve doan tom tat.
+    auto_session=True (file den tu `nw inv export` cua chinh Ruby): lap luon phien don kho cho app (app chi chay khi Ruby BAT cong tac)."""
+    weapons = weapon_import.parse_export(raw)
+    plan = weapon_import.build_plan(weapons)
+    now = _utcnow().isoformat()
+    seen = set(plan["keep"]) | set(plan["drop"])
+    old = await mdb[COL_WEAPON_REVIEW].find({"source": "neon_export"}, {"_id": 1}).to_list(length=100000)
+    stale = [r["_id"] for r in old if r["_id"] not in seen]
+    if stale:
+        await mdb[COL_WEAPON_REVIEW].delete_many({"_id": {"$in": stale}})
+    by_id = {str(w["id"]): w for w in weapons}
+    for decision, bucket in (("keep", plan["keep"]), ("drop", plan["drop"])):
+        for wid, why in bucket.items():
+            await mdb[COL_WEAPON_REVIEW].update_one(
+                {"_id": wid}, {"$set": {"decision": decision, "reason": why, "source": "neon_export", "at": now,
+                                        "q": by_id[wid]["q"], "t": by_id[wid]["t"]}}, upsert=True)
+    data = json.dumps({"tao_luc": now, "tong": plan["total"], "ly_do": plan["reasons"],
+                       "giu": plan["keep"], "bo": plan["drop"]}, ensure_ascii=False, indent=1).encode("utf-8")
+    await send_file_to_owner("📦 Kế hoạch Giữ / Bỏ từ file export (chưa xóa gì).", "weapon_import_plan.json", data)
+    text = weapon_import.summary_text(plan)
+    if auto_session:
+        docs = await mdb[COL_WEAPON_REVIEW].find({"source": "neon_export"}).to_list(length=100000)
+        st = weapon_import.cleanup_stages(docs)
+        steps = weapon_import.cleanup_steps(st)
+        if steps:
+            await mdb[COL_CONFIG].update_one({"_id": CLEAN_KEY}, {"$set": {"value": {
+                "active": True, "steps": steps, "cursor": 0, "total": len(steps), "at": now}}}, upsert=True)
+            text += (f"\n🧹 Có {len(steps)} bước dọn kho. Bật **Dọn kho tự động** trong menu Hub (tab Misc) thì app tự làm; "
+                     "chỉ bấm Dismantle khi số cây khớp, lệch là Cancel và dừng. Không bật thì không có gì xảy ra.")
+        else:
+            await mdb[COL_CONFIG].update_one({"_id": CLEAN_KEY}, {"$set": {"value.active": False}}, upsert=True)
+            text += "\nKhông có bước dọn tự động (thiếu chất lượng hoặc có cây ở vùng chưa rõ bậc) — xem `,cleanplan`."
+    else:
+        text += "\nGõ `,cleanplan` để xem các bước dọn kho."
+    return text
+
+
+# ===================== Don kho tu dong (app lam, Ruby bat cong tac o Hub) =====================
+CLEAN_KEY = "clean_session"
+CLEAN_BATCH = 8
+_NEON_EXPORT_RE = re.compile(r"^nw\s+inv\w*\s+export\b", re.I)
+
+
+async def clean_session() -> dict:
+    doc = await mdb[COL_CONFIG].find_one({"_id": CLEAN_KEY})
+    return (doc or {}).get("value") or {}
+
+
+async def clean_pending_count() -> int:
+    return await mdb[COL_AUTOMACRO_COMMANDS].count_documents(
+        {"status": "pending", "action": {"$regex": "^clean_"}})
+
+
+async def clean_queue_batch():
+    """Xep toi da CLEAN_BATCH buoc ke tiep neu khong con buoc don kho nao dang cho. Het buoc -> ket thuc phien."""
+    s = await clean_session()
+    if not s.get("active") or await clean_pending_count():
+        return
+    cur = int(s.get("cursor") or 0)
+    steps = (s.get("steps") or [])[cur:cur + CLEAN_BATCH]
+    if not steps:
+        await mdb[COL_CONFIG].update_one({"_id": CLEAN_KEY}, {"$set": {"value.active": False}})
+        await notify_owner(f"✅ App đã dọn xong {s.get('total', 0)} bước. Gõ `nw inv export` lần nữa để kiểm tra kho còn lại.", min_gap=30)
+        return
+    for st in steps:
+        await queue_automacro_command(st["action"], st["params"])
+
+
+async def after_clean_ack(status: str, cmd: dict):
+    s = await clean_session()
+    if not s.get("active"):
+        return
+    if status != "done":
+        await mdb[COL_CONFIG].update_one({"_id": CLEAN_KEY}, {"$set": {"value.active": False}})
+        await mdb[COL_AUTOMACRO_COMMANDS].update_many(
+            {"status": "pending", "action": {"$regex": "^clean_"}},
+            {"$set": {"status": "cancelled", "completed_at": _utcnow().isoformat()}})
+        step = (cmd.get("params") or {}).get("command_text", "?")
+        await notify_owner(f"⛔ Dọn kho DỪNG ở bước `{step}` ({s.get('cursor', 0)}/{s.get('total', 0)} xong): số cây/ID trên màn hình "
+                           "không khớp hoặc không bấm được. App đã bấm Cancel, chưa rã gì thêm. Xuất lại `nw inv export` để lập lại kế hoạch.", min_gap=10)
+        return
+    await mdb[COL_CONFIG].update_one({"_id": CLEAN_KEY}, {"$inc": {"value.cursor": 1}})
+    await clean_queue_batch()
+
+
+async def handle_neon_export_reply(message: discord.Message):
+    """Neon tra loi lenh `nw inv export` CUA CHINH RUBY (tin goc cua Ruby, tra loi truc tiep) kem weapons.json -> tu nhap.
+    Chi nhan khi tin goc la cua OWNER va dung lenh export; tin Neon khac bi bo qua."""
+    if not OWNER_ID or str(await get_config("neon_autoimport", "on")) == "off":
+        return
+    atts = [a for a in (message.attachments or []) if (a.filename or "").lower().endswith(".json")]
+    ref = message.reference
+    if not atts or ref is None or not ref.message_id:
+        return
+    orig = ref.resolved if isinstance(getattr(ref, "resolved", None), discord.Message) else None
+    if orig is None:
+        try:
+            orig = await message.channel.fetch_message(ref.message_id)
+        except Exception:
+            return
+    if str(orig.author.id) != str(OWNER_ID) or not _NEON_EXPORT_RE.match((orig.content or "").strip()):
+        return
+    if atts[0].size and atts[0].size > 20 * 1024 * 1024:
+        return
+    try:
+        text = await import_weapon_export(await atts[0].read(), auto_session=True)
+    except ValueError as e:
+        await notify_owner(f"Không đọc được file export của Neon: {e}", min_gap=30)
+        return
+    await notify_owner("📥 Tom đã tự nhận file `nw inv export` của bạn.\n" + text, min_gap=5)
+
+
 @bot.command(name="weaponimport")
 @is_owner()
 async def weaponimport_cmd(ctx):
@@ -4606,28 +4730,35 @@ async def weaponimport_cmd(ctx):
         await ctx.send("File quá lớn (> 20 MB).")
         return
     try:
-        weapons = weapon_import.parse_export(await att.read())
+        text = await import_weapon_export(await att.read())
     except ValueError as e:
         await ctx.send(f"Không đọc được file: {e}")
         return
-    plan = weapon_import.build_plan(weapons)
-    now = _utcnow().isoformat()
-    seen = set(plan["keep"]) | set(plan["drop"])
-    # Quyet dinh cu tu lan nhap truoc ma cay nay khong con trong file (da dismantle/ban) thi xoa
-    old = await mdb[COL_WEAPON_REVIEW].find({"source": "neon_export"}, {"_id": 1}).to_list(length=100000)
-    stale = [r["_id"] for r in old if r["_id"] not in seen]
-    if stale:
-        await mdb[COL_WEAPON_REVIEW].delete_many({"_id": {"$in": stale}})
-    by_id = {str(w["id"]): w for w in weapons}
-    for decision, bucket in (("keep", plan["keep"]), ("drop", plan["drop"])):
-        for wid, why in bucket.items():
-            await mdb[COL_WEAPON_REVIEW].update_one(
-                {"_id": wid}, {"$set": {"decision": decision, "reason": why, "source": "neon_export", "at": now,
-                                        "q": by_id[wid]["q"], "t": by_id[wid]["t"]}}, upsert=True)
-    data = json.dumps({"tao_luc": now, "tong": plan["total"], "ly_do": plan["reasons"],
-                       "giu": plan["keep"], "bo": plan["drop"]}, ensure_ascii=False, indent=1).encode("utf-8")
-    await send_file_to_owner("📦 Kế hoạch Giữ / Bỏ từ file export (chưa xóa gì).", "weapon_import_plan.json", data)
-    await ctx.send(weapon_import.summary_text(plan) + "\nGõ `,cleanplan` để xem các bước dọn kho (bạn tự làm, bot không tự gõ/bấm).")
+    await ctx.send(text)
+
+
+@bot.command(name="neonauto")
+@is_owner()
+async def neonauto_cmd(ctx, mode: str = ""):
+    """`,neonauto on|off`: bat/tat viec Tom tu nhan file khi Neon tra loi lenh `nw inv export` cua chinh ban."""
+    m = (mode or "").lower()
+    if m not in ("on", "off"):
+        cur = str(await get_config("neon_autoimport", "on"))
+        await ctx.send(f"Tự nhận file `nw inv export`: **{cur}**. Dùng `,neonauto on` hoặc `,neonauto off`.")
+        return
+    await set_config("neon_autoimport", m)
+    await ctx.send(f"Đã {'BẬT' if m == 'on' else 'TẮT'} tự nhận file `nw inv export`.")
+
+
+@bot.command(name="cleanstop")
+@is_owner()
+async def cleanstop_cmd(ctx):
+    """Dung phien don kho tu dong va huy cac buoc dang cho."""
+    await mdb[COL_CONFIG].update_one({"_id": CLEAN_KEY}, {"$set": {"value.active": False}}, upsert=True)
+    res = await mdb[COL_AUTOMACRO_COMMANDS].update_many(
+        {"status": "pending", "action": {"$regex": "^clean_"}},
+        {"$set": {"status": "cancelled", "completed_at": _utcnow().isoformat()}})
+    await ctx.send(f"Đã dừng dọn kho, hủy {getattr(res, 'modified_count', 0)} bước đang chờ.")
 
 
 @bot.command(name="cleanplan")
@@ -5329,6 +5460,8 @@ HELP_GROUPS = [
         ("weaponadvice", "`,weaponadvice` (owner): gửi lại file lời khuyên vũ khí"),
         ("weaponowner", "`,weaponowner [Tên1, Tên2|xoa]` (owner): chỉ ghi vũ khí có tên chủ khớp tên Discord; thêm tên khác hoặc xóa tên đã thêm")]),
     ("Dọn kho vũ khí (từ file NeonUtil, bạn tự làm — bot không tự gõ/bấm)", [
+        ("neonauto", "`,neonauto on|off` (owner): Tom tự nhận file khi NeonUtil trả lời đúng lệnh `nw inv export` của chính bạn (mặc định BẬT), rồi lập kế hoạch + phiên dọn kho cho app"),
+        ("cleanstop", "`,cleanstop` (owner): dừng dọn kho tự động và hủy các bước đang chờ (app chỉ làm khi bạn bật công tắc trong Hub)"),
         ("weaponimport", "`,weaponimport` (owner): BƯỚC 1 — tự gõ `nw inv export` (lệnh NeonUtil cho phép) rồi ĐÍNH KÈM file `weapons.json` vào tin này; bot lập danh sách Giữ/Bỏ (khóa · có kill · chỉ số chính ≥ 80% · passive hạng ≥ 5 · không có bp thì chất lượng ≥ 75 → Giữ), gửi `weapon_import_plan.json`, KHÔNG xóa hay bán gì"),
         ("cleanplan", "`,cleanplan` (owner): BƯỚC 2 — xem kế hoạch dọn kho (cách lai) kèm số cây để đối chiếu: sao cây Giữ ở chất lượng thấp → rã theo bậc → rã theo ID phần còn lại"),
         ("starlist", "`,starlist [trang] [lệnh trước ID]` (owner): liệt kê cây GIỮ cần đánh sao trước khi rã theo bậc (OwO bỏ qua cây đã sao); mỗi cây gõ `owo w <ID>` rồi chạm nút ⭐; ví dụ `,starlist 1 owo w` tạo sẵn từng dòng lệnh"),

@@ -211,3 +211,26 @@ def cleanup_text(st: dict) -> str:
         lines.append(f"⚠️ {len(st['unsure'])} cây có chất lượng ở vùng chưa rõ bậc ({RARE_MAX_KNOWN_Q:g}–{EPIC_MIN_KNOWN_Q:g}): "
                      + " ".join(f"`{i}`" for i in st["unsure"][:10]) + " — bạn kiểm tra tay trước khi rã.")
     return "\n".join(lines)
+
+
+def cleanup_steps(st: dict) -> list:
+    """Cac buoc DON KHO cho app tu lam (thu tu: sao -> ra theo bac -> ra theo ID). Moi buoc = {action, params} gui qua
+    queue_automacro_command. App chi bam Dismantle khi so cay / ID tren man hinh khop `expect` (xem CleanupRunner).
+    Rong neu thieu q hoac con cay o vung chua ro bac (khong du chac de tu dong)."""
+    if st.get("missing_q") or st.get("unsure"):
+        return []
+    steps = []
+    for wid in st["star_ids"]:
+        steps.append({"action": "clean_star", "params": {"command_text": f"owo w {wid}", "clean_mode": "star"}})
+    n_low, n_rare = len(st["low_drop"]), len(st["rare_drop"])
+    if n_low:   # common + uncommon cong lai dung n_low; moi lenh <= n_low, khong co cay nao thi bo qua (optional)
+        for tier in ("common", "uncommon"):
+            steps.append({"action": "clean_tier", "params": {
+                "command_text": f"owo dismantle {tier}", "clean_mode": "tier", "expect_max": str(n_low), "optional": "1"}})
+    if n_rare:
+        steps.append({"action": "clean_tier", "params": {
+            "command_text": "owo dismantle rare", "clean_mode": "tier", "expect": str(n_rare)}})
+    for wid in st["id_drop"]:
+        steps.append({"action": "clean_id", "params": {
+            "command_text": f"owo dismantle {wid}", "clean_mode": "id", "expect_id": str(wid), "optional": "1"}})
+    return steps

@@ -97,5 +97,20 @@ for label, bad in (("JSON hong", "{"), ("rong", "[]"), ("khong dung dinh dang", 
         check(f"parse loi: {label}", "ValueError", "ValueError")
 check("parse bo cay thieu truong", len(wi.parse_export(json.dumps([W(), {"id": "Z"}, W(id="B")]))), 2)
 
+def test_cleanup_steps_order_and_gates():
+    import weapon_import as wi
+    st = {"star_ids": ["A1", "B2"], "low_drop": ["L1", "L2", "L3"], "rare_drop": ["R1", "R2"], "id_drop": ["X9"],
+          "unsure": [], "missing_q": 0}
+    steps = wi.cleanup_steps(st)
+    assert [s["action"] for s in steps] == ["clean_star", "clean_star", "clean_tier", "clean_tier", "clean_tier", "clean_id"]
+    assert steps[0]["params"]["command_text"] == "owo w A1"
+    assert steps[2]["params"]["expect_max"] == "3" and steps[2]["params"]["command_text"] == "owo dismantle common"
+    assert steps[4]["params"]["expect"] == "2" and steps[4]["params"]["command_text"] == "owo dismantle rare"
+    assert steps[5]["params"]["expect_id"] == "X9"
+    assert wi.cleanup_steps(dict(st, unsure=["Z"])) == []
+    assert wi.cleanup_steps(dict(st, missing_q=1)) == []
+test_cleanup_steps_order_and_gates()
+print("✅ cleanup_steps")
+
 print("\nTAT CA DAT" if not fails else f"\nLOI: {len(fails)}")
 sys.exit(1 if fails else 0)

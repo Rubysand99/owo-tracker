@@ -184,6 +184,8 @@ vũ khí chỉ có những cây bạn từng xem bằng `owo weapon <ID>`.
                           rồi duyệt từng cây bằng 2 nút Giữ/Bỏ trên Hub nổi. Quyết định cũ được giữ, ID không còn trong kho bị gỡ;
                           `owo w <ID>` báo không tìm thấy thì tự bỏ qua và liệt kê cuối embed (chỉ ghi danh sách, không tự xóa/bán; chỉ owner)
 ,weaponreview auto     → ĐÃ TẮT (chủ NeonUtil không cho tự động hóa bot của họ). Sẽ thay bằng nhập file `weapons.json` từ `,w inv export`
+,neonauto on|off      → Tom tự nhận file khi NeonUtil trả lời ĐÚNG lệnh `nw inv export` của chính bạn (tin gốc của owner, Neon reply trực tiếp); mặc định BẬT. Nhận xong lập danh sách + phiên dọn kho cho app
+,cleanstop              → dừng dọn kho tự động, hủy các bước đang chờ. App chỉ làm khi bạn BẬT "Dọn kho tự động" ở menu Hub (tab Misc); chỉ bấm Dismantle khi số cây / ID trên màn hình khớp, lệch thì Cancel và dừng cả phiên
 ,weaponimport           → nhập file `weapons.json` từ `,w inv export` của NeonUtil (bạn tự gõ lệnh đó, đính kèm file vào tin `,weaponimport`): bot lập danh sách Giữ/Bỏ (khóa / chỉ số chính ≥ 80% / passive hạng ≥ 5 / cây không có bp thì q ≥ 75 → Giữ), gửi `weapon_import_plan.json`, KHÔNG xóa gì (chỉ owner)
 ,cleanplan              → các bước dọn kho sau `,weaponimport` (cách lai): 1) `,starlist` cây GIỮ ở chất lượng thấp rồi tự đánh sao, 2) `owo dismantle common/uncommon/rare` với số cây để đối chiếu, 3) `,dismantlelist` rã theo ID phần còn lại (bạn tự làm, bot không tự gõ/bấm; chỉ owner)
 ,starlist [trang] [lệnh]  → liệt kê cây GIỮ chưa sao (từ `,weaponimport`) để bạn tự đánh sao trước khi rã theo bậc (OwO bỏ qua cây đã sao); `,starlist 2 owo star` = trang 2, thêm tiền tố lệnh trước mỗi ID (chỉ owner)
