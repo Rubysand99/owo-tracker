@@ -4627,12 +4627,14 @@ async def import_weapon_export(raw: bytes, auto_session: bool = False) -> str:
     if auto_session:
         docs = await mdb[COL_WEAPON_REVIEW].find({"source": "neon_export"}).to_list(length=100000)
         st = weapon_import.cleanup_stages(docs)
-        prev = await clean_session()
-        rounds = int(prev.get("rounds") or 0) + 1 if prev.get("awaiting_export") else 0
-        steps = weapon_import.cleanup_steps(st, with_export=rounds < CLEAN_MAX_ROUNDS)   # toi da vai vong, khong lap vo han
+        steps = weapon_import.cleanup_steps(st)
+        # Phien moi thay phien cu: buoc cu con dang cho (tu export truoc) phai huy, khong de app lam theo ke hoach cu
+        await mdb[COL_AUTOMACRO_COMMANDS].update_many(
+            {"status": "pending", "action": {"$regex": "^clean_"}},
+            {"$set": {"status": "cancelled", "completed_at": now}})
         if steps:
             await mdb[COL_CONFIG].update_one({"_id": CLEAN_KEY}, {"$set": {"value": {
-                "active": True, "steps": steps, "cursor": 0, "total": len(steps), "at": now, "rounds": rounds}}}, upsert=True)
+                "active": True, "steps": steps, "cursor": 0, "total": len(steps), "at": now}}}, upsert=True)
             text += (f"\n🧹 Có {len(steps)} bước dọn kho. Bật **Dọn kho tự động** trong menu Hub (tab Misc) thì app tự làm; "
                      "chỉ bấm Dismantle khi số cây khớp, lệch là Cancel và dừng. Không bật thì không có gì xảy ra.")
         else:
