@@ -53,6 +53,13 @@ check("per_cmd bi chan o 10", wi.dismantle_commands(ids, per_cmd=99)[0][0].count
 check("trang ngoai pham vi -> ve trang cuoi", wi.dismantle_commands(ids, page=99)[0][-1], "owo dismantle ID037")
 check("khong lap / sap xep co dinh", wi.dismantle_commands(["B", "A"])[0], ["owo dismantle A", "owo dismantle B"])
 
+# --- danh sach cay can danh sao
+sl, st, sp = wi.star_lines(["B", "A", "C"])
+check("starlist chi liet ke ID, sap xep", (sl, st, sp), (["A", "B", "C"], 3, 1))
+check("starlist them tien to lenh", wi.star_lines(["A"], "  owo star ")[0], ["owo star A"])
+big = [f"I{n:03d}" for n in range(45)]
+check("starlist chia trang 20", (len(wi.star_lines(big, page=3)[0]), wi.star_lines(big)[2]), (5, 3))
+
 # --- ke hoach + tom tat
 plan = wi.build_plan([W(id="A", l=True), W(id="B", q=80.0), W(id="C", q=10.0), W(id="D", bp="dagger 1,1,1 att 1")])
 check("ke hoach dem dung", (sorted(plan["keep"]), sorted(plan["drop"]), plan["total"]), (["A", "B"], ["C", "D"], 4))

@@ -145,3 +145,14 @@ def dismantle_commands(drop_ids, per_cmd: int = 1, page: int = 1, page_size: int
     pages = max(1, -(-len(cmds) // page_size))
     page = max(1, min(int(page or 1), pages))
     return cmds[(page - 1) * page_size: page * page_size], len(cmds), pages
+
+
+def star_lines(keep_ids, template: str = "", page: int = 1, page_size: int = 20):
+    """Danh sach cay GIU chua khoa/chua sao -> cac dong de Ruby TU DANH SAO tay.
+    template = phan lenh dat truoc ID (vd 'owo star'); rong thi chi liet ke ID. -> (dong cua trang, tong, so trang)."""
+    ids = sorted(str(i) for i in keep_ids)
+    tpl = (template or "").strip()
+    lines = [f"{tpl} {i}" if tpl else i for i in ids]
+    pages = max(1, -(-len(lines) // page_size))
+    page = max(1, min(int(page or 1), pages))
+    return lines[(page - 1) * page_size: page * page_size], len(lines), pages
