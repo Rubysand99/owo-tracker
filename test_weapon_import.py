@@ -60,6 +60,27 @@ check("starlist them tien to lenh", wi.star_lines(["A"], "  owo star ")[0], ["ow
 big = [f"I{n:03d}" for n in range(45)]
 check("starlist chia trang 20", (len(wi.star_lines(big, page=3)[0]), wi.star_lines(big)[2]), (5, 3))
 
+# --- don kho cach lai
+def D(i, dec, q, why="x"): return {"_id": i, "decision": dec, "reason": why, "q": q}
+st = wi.cleanup_stages([
+    D("K_khoa", "keep", 30, "khoa"),          # da khoa -> khong can sao
+    D("K_thap", "keep", 50),                  # giu, q thap -> phai sao
+    D("K_cao", "keep", 85),                   # giu, q cao -> khong sao
+    D("B_low", "drop", 20), D("B_rare", "drop", 40.0), D("B_rare2", "drop", 60.6),
+    D("B_epic", "drop", 61.2), D("B_cao", "drop", 75),
+    D("U", "drop", 60.9),                     # vung chua ro bac
+])
+check("sao: chi cay GIU chua khoa q thap", st["star_ids"], ["K_thap"])
+check("bo common+uncommon (q < 40)", st["low_drop"], ["B_low"])
+check("bo Rare (40 <= q < 61)", st["rare_drop"], ["B_rare", "B_rare2", "U"])
+check("bo ra theo ID (q >= 61)", st["id_drop"], ["B_cao", "B_epic"])
+check("canh bao vung chua ro bac", st["unsure"], ["U"])
+check("thieu q -> yeu cau nhap lai", wi.cleanup_stages([{"_id": "A", "decision": "drop"}])["missing_q"], 1)
+txt = wi.cleanup_text(st)
+check("ke hoach co so cay de doi chieu", ("Đánh sao 1 cây" in txt and "đúng **1** cây" in txt and "đúng **3** cây" in txt and "Rã theo ID 2 cây" in txt), True)
+check("ke hoach canh bao vung chua ro", "`U`" in txt, True)
+check("thieu q -> chi thong bao nhap lai", "weaponimport" in wi.cleanup_text(wi.cleanup_stages([{"_id": "A", "decision": "drop"}])), True)
+
 # --- ke hoach + tom tat
 plan = wi.build_plan([W(id="A", l=True), W(id="B", q=80.0), W(id="C", q=10.0), W(id="D", bp="dagger 1,1,1 att 1")])
 check("ke hoach dem dung", (sorted(plan["keep"]), sorted(plan["drop"]), plan["total"]), (["A", "B"], ["C", "D"], 4))

@@ -156,3 +156,58 @@ def star_lines(keep_ids, template: str = "", page: int = 1, page_size: int = 20)
     pages = max(1, -(-len(lines) // page_size))
     page = max(1, min(int(page or 1), pages))
     return lines[(page - 1) * page_size: page * page_size], len(lines), pages
+
+
+# ---------------- Don kho theo "cach lai" ----------------
+# OwO bo qua cay DA SAO khi ra theo bac -> sao cay GIU o cac bac thap, ra theo bac cho phan do; dai cao ra theo ID.
+RARE_MIN_Q = 40.0           # Rare tu ~40% (doi chieu: tin OwO "71 Rare" = 73 cay q 40..60.6 tru 2 cay da khoa)
+RARE_MAX_KNOWN_Q = 60.6     # cay Rare cao nhat da thay (anh OwO)
+EPIC_MIN_KNOWN_Q = 61.2     # cay bac tren thap nhat trong kho luc doi chieu
+SPLIT_Q = 61.0              # < SPLIT: nhom "ra theo bac" (common/uncommon/rare); >= SPLIT: ra theo ID
+
+
+def cleanup_stages(docs) -> dict:
+    """docs = [{'_id','decision','reason','q'}] (cac cay ,weaponimport da ghi). Cay da khoa / khong co q bi bo qua.
+    -> star_ids (GIU, chua khoa, q < SPLIT: phai SAO truoc khi ra theo bac), low_drop (BO, q < RARE_MIN: common+uncommon),
+       rare_drop (BO, RARE_MIN <= q < SPLIT), id_drop (BO, q >= SPLIT: ra theo ID), unsure (q nam giua cay Rare cao nhat va
+       cay bac tren thap nhat da biet -> chua chac thuoc bac nao), missing_q (so cay thieu q: can nhap lai file)."""
+    out = {"star_ids": [], "low_drop": [], "rare_drop": [], "id_drop": [], "unsure": [], "missing_q": 0}
+    for d in docs:
+        q = d.get("q")
+        if q is None:
+            out["missing_q"] += 1
+            continue
+        wid = str(d["_id"])
+        if RARE_MAX_KNOWN_Q < q < EPIC_MIN_KNOWN_Q:
+            out["unsure"].append(wid)
+        if d.get("decision") == "keep":
+            if d.get("reason") != "khoa" and q < SPLIT_Q:
+                out["star_ids"].append(wid)
+        elif d.get("decision") == "drop":
+            if q < RARE_MIN_Q:
+                out["low_drop"].append(wid)
+            elif q < SPLIT_Q:
+                out["rare_drop"].append(wid)
+            else:
+                out["id_drop"].append(wid)
+    for k in ("star_ids", "low_drop", "rare_drop", "id_drop", "unsure"):
+        out[k].sort()
+    return out
+
+
+def cleanup_text(st: dict) -> str:
+    if st["missing_q"]:
+        return (f"⚠️ {st['missing_q']} cây trong danh sách chưa có chất lượng (nhập từ bản cũ). "
+                "Gõ lại `,weaponimport` kèm file `weapons.json` mới rồi chạy `,cleanplan` lại.")
+    n_low, n_rare, n_id = len(st["low_drop"]), len(st["rare_drop"]), len(st["id_drop"])
+    lines = ["**Kế hoạch dọn kho (cách lai) — bạn tự làm từng bước, bot không tự gõ/bấm**",
+             f"**Bước 1 — Đánh sao {len(st['star_ids'])} cây GIỮ** ở chất lượng < {SPLIT_Q:g} (OwO bỏ qua cây đã sao khi rã theo bậc). "
+             "Danh sách: `,starlist` (mỗi cây: `owo w <ID>` rồi chạm nút sao).",
+             f"**Bước 2 — Rã theo bậc**: `owo dismantle common`, `owo dismantle uncommon` rồi `owo dismantle rare`. "
+             f"Common + Uncommon cộng lại phải đúng **{n_low}** cây, Rare phải đúng **{n_rare}** cây. Lệch số là bấm **Cancel** và báo lại.",
+             f"**Bước 3 — Rã theo ID {n_id} cây** (chất lượng ≥ {SPLIT_Q:g}): `,dismantlelist`, dán từng dòng rồi tự bấm Dismantle.",
+             "**Bước 4**: gõ `nw inv export`, rồi `,weaponimport` để cập nhật và kiểm tra lại."]
+    if st["unsure"]:
+        lines.append(f"⚠️ {len(st['unsure'])} cây có chất lượng ở vùng chưa rõ bậc ({RARE_MAX_KNOWN_Q:g}–{EPIC_MIN_KNOWN_Q:g}): "
+                     + " ".join(f"`{i}`" for i in st["unsure"][:10]) + " — bạn kiểm tra tay trước khi rã.")
+    return "\n".join(lines)

@@ -4618,30 +4618,46 @@ async def weaponimport_cmd(ctx):
     stale = [r["_id"] for r in old if r["_id"] not in seen]
     if stale:
         await mdb[COL_WEAPON_REVIEW].delete_many({"_id": {"$in": stale}})
+    by_id = {str(w["id"]): w for w in weapons}
     for decision, bucket in (("keep", plan["keep"]), ("drop", plan["drop"])):
         for wid, why in bucket.items():
             await mdb[COL_WEAPON_REVIEW].update_one(
-                {"_id": wid}, {"$set": {"decision": decision, "reason": why, "source": "neon_export", "at": now}}, upsert=True)
+                {"_id": wid}, {"$set": {"decision": decision, "reason": why, "source": "neon_export", "at": now,
+                                        "q": by_id[wid]["q"], "t": by_id[wid]["t"]}}, upsert=True)
     data = json.dumps({"tao_luc": now, "tong": plan["total"], "ly_do": plan["reasons"],
                        "giu": plan["keep"], "bo": plan["drop"]}, ensure_ascii=False, indent=1).encode("utf-8")
     await send_file_to_owner("📦 Kế hoạch Giữ / Bỏ từ file export (chưa xóa gì).", "weapon_import_plan.json", data)
-    await ctx.send(weapon_import.summary_text(plan) + "\nBước rã thật chưa làm — cần lệnh xác nhận riêng.")
+    await ctx.send(weapon_import.summary_text(plan) + "\nGõ `,cleanplan` để xem các bước dọn kho (bạn tự làm, bot không tự gõ/bấm).")
+
+
+@bot.command(name="cleanplan")
+@is_owner()
+async def cleanplan_cmd(ctx):
+    """Cac buoc don kho (cach lai) tu danh sach `,weaponimport`: sao cay GIU o bac thap -> ra theo bac -> ra theo ID."""
+    docs = await mdb[COL_WEAPON_REVIEW].find({"source": "neon_export"}).to_list(length=100000)
+    if not docs:
+        await ctx.send("Chưa có danh sách. Gõ `,weaponimport` kèm file `weapons.json` trước.")
+        return
+    await ctx.send(weapon_import.cleanup_text(weapon_import.cleanup_stages(docs)))
 
 
 @bot.command(name="starlist")
 @is_owner()
 async def starlist_cmd(ctx, page: int = 1, *, template: str = ""):
-    """Liet ke cay GIU CHUA khoa/chua sao (tu `,weaponimport`) de Ruby TU DANH SAO tay truoc khi ra theo bac (OwO bo qua cay da sao).
-    `,starlist 1 owo star` = them tien to lenh truoc moi ID (ghi dung lenh danh sao cua OwO). Bot KHONG tu go/bam."""
-    rows = await mdb[COL_WEAPON_REVIEW].find(
-        {"source": "neon_export", "decision": "keep", "reason": {"$ne": "khoa"}}, {"_id": 1}).to_list(length=100000)
-    if not rows:
-        await ctx.send("Không có cây Giữ nào cần đánh sao (hoặc chưa `,weaponimport`).")
+    """Cay GIU chua khoa o chat luong thap (Buoc 1 cua `,cleanplan`) de Ruby TU DANH SAO tay: `owo w <ID>` roi cham nut sao.
+    `,starlist 1 owo w` = them tien to lenh truoc moi ID. Bot KHONG tu go/bam."""
+    docs = await mdb[COL_WEAPON_REVIEW].find({"source": "neon_export"}).to_list(length=100000)
+    st = weapon_import.cleanup_stages(docs)
+    if st["missing_q"]:
+        await ctx.send(weapon_import.cleanup_text(st))
         return
-    lines, total, pages = weapon_import.star_lines([r["_id"] for r in rows], template, page)
+    if not st["star_ids"]:
+        await ctx.send("Không có cây Giữ nào cần đánh sao ở bước này (hoặc chưa `,weaponimport`).")
+        return
+    lines, total, pages = weapon_import.star_lines(st["star_ids"], template, page)
     shown = max(1, min(int(page or 1), pages))
-    await ctx.send(f"**{total} cây GIỮ chưa sao** — trang {shown}/{pages} (`,starlist <trang> [lệnh trước ID]`)\n```\n" + "\n".join(lines) + "\n```"
-                   "Tự đánh sao từng cây. Xong thì `nw inv export` + `,weaponimport`: số cây **Giữ vì đã khóa** phải bằng tổng Giữ.")
+    await ctx.send(f"**{total} cây GIỮ cần đánh sao** — trang {shown}/{pages} (`,starlist <trang> [lệnh trước ID]`)\n```\n" + "\n".join(lines) + "\n```"
+                   "Gõ từng dòng rồi chạm nút ⭐ trên tin của OwO. Đánh sao xong hết mới sang Bước 2 trong `,cleanplan`.")
 
 
 @bot.command(name="dismantlelist")
@@ -4649,14 +4665,19 @@ async def starlist_cmd(ctx, page: int = 1, *, template: str = ""):
 async def dismantlelist_cmd(ctx, per_cmd: int = 1, page: int = 1):
     """Tao san cac dong `owo dismantle <ID>` cho cay trong danh sach BO (tu `,weaponimport`) de Ruby TU DAN tay tung dong
     roi tu bam nut Dismantle cua OwO. Bot KHONG tu go lenh, KHONG tu bam. per_cmd = so ID moi lenh (mac dinh 1, toi da 10)."""
-    rows = await mdb[COL_WEAPON_REVIEW].find({"source": "neon_export", "decision": "drop"}, {"_id": 1}).to_list(length=100000)
+    docs = await mdb[COL_WEAPON_REVIEW].find({"source": "neon_export"}).to_list(length=100000)
+    st = weapon_import.cleanup_stages(docs)
+    if st["missing_q"]:
+        await ctx.send(weapon_import.cleanup_text(st))
+        return
+    rows = [{"_id": i} for i in st["id_drop"]]
     if not rows:
-        await ctx.send("Chưa có danh sách Bỏ. Gõ `,weaponimport` kèm file `weapons.json` trước.")
+        await ctx.send("Không có cây nào cần rã theo ID (hoặc chưa `,weaponimport`). Xem `,cleanplan`.")
         return
     lines, total, pages = weapon_import.dismantle_commands([r["_id"] for r in rows], per_cmd, page)
     shown = max(1, min(int(page or 1), pages))
     body = "\n".join(lines)
-    await ctx.send(f"**{len(rows)} cây Bỏ** → {total} lệnh, trang {shown}/{pages} (`,dismantlelist {max(1, min(int(per_cmd or 1), 10))} <số trang>`)\n"
+    await ctx.send(f"**{len(rows)} cây Bỏ ở chất lượng ≥ {weapon_import.SPLIT_Q:g}** (Bước 3 của `,cleanplan`) → {total} lệnh, trang {shown}/{pages} (`,dismantlelist {max(1, min(int(per_cmd or 1), 10))} <số trang>`)\n"
                    f"```\n{body}\n```"
                    "Dán **từng dòng** vào kênh, đọc kỹ tin xác nhận của OwO (số cây, ID) rồi **tự bấm Dismantle**. "
                    "Xong cả danh sách thì xuất lại `nw inv export` và `,weaponimport` để cập nhật.")
@@ -5302,6 +5323,7 @@ HELP_GROUPS = [
         ("weaponscan", "`,weaponscan` (owner): quét lại kho vũ khí, nhớ dừng farm"),
         ("weaponprobe", "`,weaponprobe` (owner): xếp lệnh `owo w <ID>` cho app từ danh sách đã quét"),
         ("weaponlist", "`,weaponlist` (owner): gửi file danh sách vũ khí đã quét"),
+        ("cleanplan", "`,cleanplan` (owner): các bước dọn kho sau `,weaponimport` (cách lai): 1) tự đánh sao cây GIỮ ở chất lượng thấp, 2) `owo dismantle common/uncommon/rare` (có số cây để đối chiếu), 3) rã theo ID phần còn lại; bot không tự gõ/bấm"),
         ("starlist", "`,starlist [trang] [lệnh trước ID]` (owner): liệt kê cây GIỮ chưa sao (từ `,weaponimport`) để BẠN TỰ ĐÁNH SAO (OwO bỏ qua cây đã sao khi rã theo bậc); ví dụ `,starlist 1 owo star` thêm tiền tố lệnh trước mỗi ID; bot không tự gõ"),
         ("dismantlelist", "`,dismantlelist [số ID mỗi lệnh] [trang]` (owner): tạo sẵn các dòng `owo dismantle <ID>` cho cây trong danh sách Bỏ (từ `,weaponimport`) để BẠN TỰ DÁN từng dòng và tự bấm Dismantle của OwO; bot không tự gõ, không tự bấm"),
         ("weaponimport", "`,weaponimport` (owner): nhập file `weapons.json` từ lệnh `,w inv export` của NeonUtil (bạn tự gõ lệnh đó, rồi ĐÍNH KÈM file vào tin `,weaponimport`) → bot lập danh sách Giữ/Bỏ theo luật (khóa / chỉ số chính ≥ 80% / passive hạng ≥ 5 / không có bp thì q ≥ 75 → Giữ), ghi cùng chỗ với `,weaponreview`, gửi file `weapon_import_plan.json`, KHÔNG xóa hay bán gì"),
