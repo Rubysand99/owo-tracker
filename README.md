@@ -55,6 +55,7 @@ báo rỗng dù bạn chơi bình thường. Kiểm tra và sửa:
 - `owo_tracker_bot.py` — bot Discord, lệnh, lưu MongoDB, API cho AutoMacro.
 - `owo_parsers.py` — các hàm **thuần** đọc/phân tích tin nhắn OwO (`parse_*`, regex, hằng số đi kèm). Không đụng DB hay Discord nên test được trực tiếp. `owo_tracker_bot.py` import lại các tên này nên `b.parse_xxx` trong test vẫn chạy.
 - `auto_refresh.py` — quyết định thuần cho 2 việc: nhắc huntbot còn 10 phút, và chọn lệnh check để chen vào khi app đang farm.
+- `tools_api.py` — hàm thuần cho các đường API của màn "Công cụ" trong app (kiểm tra ID acc phụ / tham số `kind`, gom pet đã mở khóa theo tier, bỏ ký hiệu Discord khỏi chữ). Test: `test_tools_api.py` (không cần thư viện ngoài) và `test_tools_handlers.py` (cần `mongomock-motor`).
 - `weapon_cleanup.py`, `weapon_rules.json` — luật dọn vũ khí.
 - `test_*.py` — test (dữ liệu mẫu thật nằm trong `fixtures_*.json`).
 
@@ -151,6 +152,13 @@ Xem lệnh đang chờ / đã xử lý ngay trong Discord: `,automacro` (owner).
 - `GET /notes` / `POST /notes` — như `,note`: POST `{"action":"add","text":"..."}` (tối đa 500 ký tự) hoặc `{"action":"done","id":3}`; trả danh sách ghi chú.
 - `GET /app-config` / `POST /app-config` — app báo các lệnh farm đang **tắt** (`{"disabled":["zoo","inv",...]}`; id bot biết: hb, cash, inv, quest, ws, zoo, id lạ bị bỏ). Bot không xin app gõ xen (auto_check) những lệnh đó.
 - `POST /captcha/clear` — như `,captcha clear` (app báo đã giải captcha xong).
+- `GET /teamcheck` — như `,teamcheck`: trả `{"text": "...", "members": n}` (chữ đã bỏ ký hiệu Discord; chưa có đội hình thì `members` = 0 kèm hướng dẫn).
+- `GET /zoodiff[?kind=d|all|now|current]` — như `,zoodiff`: so 2 lần ghi zoo gần nhất. Trả `{"ok": bool, "kind": "current"|"all"|null, "text": "..."}`
+  (`ok` false = chưa đủ 2 lần ghi, `text` nói rõ phải làm gì); `kind` sai -> 400. Bỏ trống `kind` = loại được ghi gần nhất.
+- `GET /unlocked[?tier=rare]` — như `,unlocked`: `{"total": n, "tiers": [{"tier", "count", "pets": [tên]}]}`, xếp theo bậc hiếm; tier lạ -> 400 kèm danh sách tier có.
+- `GET /alt` / `POST /alt` — acc phụ nhận DM nhắc huntbot (như `,setalt`). GET trả `{"alt_user_id": "..."}` (rỗng = đã tắt, tin nhắc gửi acc chính).
+  POST body `{"user_id": "<dãy 15-25 chữ số>"}`, hoặc `{"user_id": ""}` để tắt; sai định dạng -> 400, không đổi gì.
+- `POST /alt/test` — như `,testalt`: thử DM 1 tin vào acc phụ. Luôn 200: `{"ok": bool, "alt_user_id": "...", "reason": ""|"no_alt"|"dm_failed"}`.
 - `GET /hub` — trả về **toàn bộ dữ liệu mới nhất bot đã đọc được** để
   app AutoMacro hiện thành màn hình Hub: `daily` (giờ nhận kế tiếp, streak),
   `cowoncy`, `gems` (đang trang bị + gem dự

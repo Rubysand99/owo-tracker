@@ -37,6 +37,7 @@ from discord.ext import commands
 from motor.motor_asyncio import AsyncIOMotorClient
 from aiohttp import web
 import auto_refresh   # quyết định thuần: nhắc huntbot + chen lệnh check khi đang farm
+import tools_api      # hàm thuần cho các đường API của màn "Công cụ": teamcheck / zoodiff / unlocked / acc phụ
 # Các hàm đọc tin OwO nằm ở owo_parsers.py; import lại đây để code cũ và test (b.parse_xxx) chạy như trước.
 from owo_parsers import (
     _GEM_TIER_RANK,
@@ -2441,6 +2442,80 @@ async def handle_post_captcha_clear(request: web.Request):
     return web.json_response({"captcha_active": False})
 
 
+# --- Màn "Công cụ" của app: các lệnh chỉ-đọc ,teamcheck ,zoodiff ,unlocked và acc phụ ,setalt ,testalt ---
+# Chữ trả về đã bỏ ký hiệu Discord (**đậm**, `mã`, <:emoji:id>) để app hiện thẳng. Logic thuần ở tools_api.py.
+
+async def handle_get_teamcheck(request: web.Request):
+    """Như `,teamcheck`. Trả {"text": ..., "members": số thành viên đã chấm} (chưa có đội hình -> members 0 + text hướng dẫn)."""
+    if not _check_api_token(request):
+        return web.json_response({"error": "unauthorized"}, status=401)
+    try:
+        text, results = await build_team_check()
+    except Exception as e:  # thiếu file luật vũ khí... — không để app nhận trang lỗi khó hiểu
+        print(f"[tracker] Loi khi cham doi hinh cho app: {e!r}")
+        return web.json_response({"error": "teamcheck_failed"}, status=500)
+    return web.json_response({"text": tools_api.plain_text(text), "members": len(results)})
+
+
+async def handle_get_zoodiff(request: web.Request):
+    """Như `,zoodiff [d|now]`: ?kind=d|all|now|current (bỏ trống = loại ghi gần nhất).
+    Trả {"ok": đã có kết quả so, "kind": "current"|"all"|null, "text": ...}; kind sai -> 400."""
+    if not _check_api_token(request):
+        return web.json_response({"error": "unauthorized"}, status=401)
+    state, text, kind = await zoodiff_report(request.query.get("kind", ""))
+    if state == "bad_kind":
+        return web.json_response({"error": "kind phai la d, all, now hoac current"}, status=400)
+    return web.json_response({"ok": state == "ok", "kind": kind, "text": tools_api.plain_text(text)})
+
+
+async def handle_get_unlocked(request: web.Request):
+    """Như `,unlocked [tier]`: pet đã mở khóa theo tier (không kèm số lượng).
+    Trả {"total": n, "tiers": [{"tier", "count", "pets": [tên]}]}; ?tier= sai -> 400 kèm danh sách tier có."""
+    if not _check_api_token(request):
+        return web.json_response({"error": "unauthorized"}, status=401)
+    rows = await _zoo_unlocked_rows()
+    grouped = tools_api.group_unlocked(rows, request.query.get("tier", ""))
+    if grouped is None:
+        known = list(dict.fromkeys(str(r.get("tier")) for r in rows if r.get("name")))
+        return web.json_response({"error": "khong co tier do", "tiers": known}, status=400)
+    return web.json_response(grouped)
+
+
+async def alt_snapshot():
+    return {"alt_user_id": str(await get_config("alt_user_id", ALT_USER_ID_DEFAULT) or "")}
+
+
+async def handle_get_alt(request: web.Request):
+    """Acc phụ đang nhận DM nhắc huntbot (như `,setalt` không tham số). alt_user_id rỗng = đã tắt (tin nhắc gửi acc chính)."""
+    if not _check_api_token(request):
+        return web.json_response({"error": "unauthorized"}, status=401)
+    return web.json_response(await alt_snapshot())
+
+
+async def handle_post_alt(request: web.Request):
+    """Như `,setalt <id>` / `,setalt xoa`. Body: {"user_id": "<dãy 15-25 chữ số>"} hoặc {"user_id": ""} để tắt. Sai -> 400."""
+    if not _check_api_token(request):
+        return web.json_response({"error": "unauthorized"}, status=401)
+    body = await _read_json_body(request)
+    ok, uid = tools_api.parse_alt_id(body.get("user_id"))
+    if not ok:
+        return web.json_response({"error": "user_id phai la day so 15-25 chu so (hoac rong de tat)"}, status=400)
+    await set_config("alt_user_id", uid)
+    return web.json_response(await alt_snapshot())
+
+
+async def handle_post_alt_test(request: web.Request):
+    """Như `,testalt`: thử DM 1 tin vào acc phụ. Luôn 200, trả {"ok", "alt_user_id", "reason"}:
+    reason = "" (ổn) | "no_alt" (chưa đặt acc phụ) | "dm_failed" (không DM được: khác server / tắt nhận tin riêng)."""
+    if not _check_api_token(request):
+        return web.json_response({"error": "unauthorized"}, status=401)
+    alt_id = (await alt_snapshot())["alt_user_id"]
+    if not alt_id:
+        return web.json_response({"ok": False, "alt_user_id": "", "reason": "no_alt"})
+    sent = await dm_user(alt_id, "🧪 Tin thử từ owo-tracker (bấm từ app Star Hub): acc phụ nhận được DM là ổn rồi.")
+    return web.json_response({"ok": bool(sent), "alt_user_id": alt_id, "reason": "" if sent else "dm_failed"})
+
+
 async def gemtier_snapshot():
     """Cài đặt tier gem cho app: mỗi loại có các tier được phép (✅), ưu tiên và gem còn trong kho."""
     slots = []
@@ -3007,6 +3082,12 @@ async def start_automacro_api_server():
     app.router.add_post("/captcha/clear", handle_post_captcha_clear)
     app.router.add_get("/app-config", handle_get_app_config)
     app.router.add_post("/app-config", handle_post_app_config)
+    app.router.add_get("/teamcheck", handle_get_teamcheck)
+    app.router.add_get("/zoodiff", handle_get_zoodiff)
+    app.router.add_get("/unlocked", handle_get_unlocked)
+    app.router.add_get("/alt", handle_get_alt)
+    app.router.add_post("/alt", handle_post_alt)
+    app.router.add_post("/alt/test", handle_post_alt_test)
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, AUTOMACRO_API_HOST, AUTOMACRO_API_PORT)
@@ -5009,26 +5090,31 @@ async def unlocked_cmd(ctx, tier: str = ""):
         await ctx.send(chunk)
 
 
+async def zoodiff_report(kind_arg=""):
+    """So 2 lần ghi zoo gần nhất cùng loại. Dùng chung cho lệnh `,zoodiff` và GET /zoodiff.
+    Trả (trạng thái, chữ, loại): "bad_kind" = tham số sai · "no_data" = chưa đủ 2 lần ghi · "ok" = có kết quả so.
+    `loại` là "current" / "all" (None nếu tham số sai hoặc chưa có lịch sử nào)."""
+    ok, k = tools_api.parse_zoodiff_kind(kind_arg)
+    if not ok:
+        return "bad_kind", "Dùng `,zoodiff`, `,zoodiff d` (số đã bắt) hoặc `,zoodiff now` (đang giữ).", None
+    if not k:
+        newest = await mdb[COL_ZOO_HISTORY].find({}).sort("at", -1).to_list(length=1)
+        if not newest:
+            return "no_data", "Chưa có lịch sử zoo. Gõ `owo zoo` hoặc `owo zoo d` trong kênh farm.", None
+        k = newest[0]["kind"]
+    rows = await mdb[COL_ZOO_HISTORY].find({"kind": k}).sort("at", -1).to_list(length=2)
+    if len(rows) < 2:
+        return "no_data", (f"Mới có {len(rows)} lần ghi {ZOO_KIND_LABEL[k]}, chưa có gì để so. "
+                           "Gõ lại lệnh zoo trong kênh farm khi zoo đã thay đổi."), k
+    return "ok", _zoo_diff_text(rows[1], rows[0], k), k
+
+
 @bot.command(name="zoodiff")
 @is_owner()
 async def zoodiff_cmd(ctx, kind: str = ""):
     """So 2 lan ghi zoo gan nhat cung loai: `,zoodiff d` (so da bat) hoac `,zoodiff now` (dang giu)."""
-    k = {"d": "all", "all": "all", "now": "current", "current": "current"}.get(kind.lower()) if kind else None
-    if kind and not k:
-        await ctx.send("Dùng `,zoodiff`, `,zoodiff d` (số đã bắt) hoặc `,zoodiff now` (đang giữ).")
-        return
-    if not k:
-        newest = await mdb[COL_ZOO_HISTORY].find({}).sort("at", -1).to_list(length=1)
-        if not newest:
-            await ctx.send("Chưa có lịch sử zoo. Gõ `owo zoo` hoặc `owo zoo d` trong kênh farm.")
-            return
-        k = newest[0]["kind"]
-    rows = await mdb[COL_ZOO_HISTORY].find({"kind": k}).sort("at", -1).to_list(length=2)
-    if len(rows) < 2:
-        await ctx.send(f"Mới có {len(rows)} lần ghi {ZOO_KIND_LABEL[k]}, chưa có gì để so. "
-                       "Gõ lại lệnh zoo trong kênh farm khi zoo đã thay đổi.")
-        return
-    for chunk in _zoo_chunks(_zoo_diff_text(rows[1], rows[0], k)):
+    _state, text, _kind = await zoodiff_report(kind)
+    for chunk in _zoo_chunks(text):
         await ctx.send(chunk)
 
 
