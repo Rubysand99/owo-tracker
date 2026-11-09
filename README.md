@@ -159,6 +159,7 @@ Xem lệnh đang chờ / đã xử lý ngay trong Discord: `,automacro` (owner).
 - `GET /alt` / `POST /alt` — acc phụ nhận DM nhắc huntbot (như `,setalt`). GET trả `{"alt_user_id": "..."}` (rỗng = đã tắt, tin nhắc gửi acc chính).
   POST body `{"user_id": "<dãy 15-25 chữ số>"}`, hoặc `{"user_id": ""}` để tắt; sai định dạng -> 400, không đổi gì.
 - `POST /alt/test` — như `,testalt`: thử DM 1 tin vào acc phụ. Luôn 200: `{"ok": bool, "alt_user_id": "...", "reason": ""|"no_alt"|"dm_failed"}`.
+- `GET /clean` — tình trạng phiên dọn kho tự động để app hiển thị: `{"active": bool, "cursor": n, "total": n, "at_epoch": giây, "empty_reason": "...", "pending": n}`. `total` = 0 kèm `empty_reason` nghĩa là Tom không lập được bước nào (vd còn cây chưa rõ bậc); `pending` = số bước đang chờ app lấy.
 - `GET /hub` — trả về **toàn bộ dữ liệu mới nhất bot đã đọc được** để
   app AutoMacro hiện thành màn hình Hub: `daily` (giờ nhận kế tiếp, streak),
   `cowoncy`, `gems` (đang trang bị + gem dự

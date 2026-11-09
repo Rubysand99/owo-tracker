@@ -213,6 +213,17 @@ def cleanup_text(st: dict) -> str:
     return "\n".join(lines)
 
 
+def cleanup_empty_reason(st: dict) -> str:
+    """Vi sao cleanup_steps(st) rong (app hien cho Ruby biet, khong phai doan). Chuoi rong = khong co ly do (co the co buoc)."""
+    if st.get("missing_q"):
+        return f"{st['missing_q']} cây chưa có chất lượng — gõ lại `,weaponimport` kèm file `weapons.json` mới"
+    if st.get("unsure"):
+        ids = ", ".join(st["unsure"][:5]) + (" …" if len(st["unsure"]) > 5 else "")
+        return (f"{len(st['unsure'])} cây có chất lượng ở vùng chưa rõ bậc ({ids}) — bạn kiểm tra tay bậc của các cây này "
+                "(vd `owo w <ID>`), rồi xuất lại `nw inv export`")
+    return "kho không có cây nào cần dọn tự động"
+
+
 def cleanup_steps(st: dict, with_export: bool = False) -> list:
     """Cac buoc DON KHO cho app tu lam (thu tu: sao -> ra theo bac -> ra theo ID). Moi buoc = {action, params} gui qua
     queue_automacro_command. App chi bam Dismantle khi so cay / ID tren man hinh khop `expect` (xem CleanupRunner).

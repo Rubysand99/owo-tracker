@@ -3082,6 +3082,7 @@ async def start_automacro_api_server():
     app.router.add_post("/captcha/clear", handle_post_captcha_clear)
     app.router.add_get("/app-config", handle_get_app_config)
     app.router.add_post("/app-config", handle_post_app_config)
+    app.router.add_get("/clean", handle_get_clean)
     app.router.add_get("/teamcheck", handle_get_teamcheck)
     app.router.add_get("/zoodiff", handle_get_zoodiff)
     app.router.add_get("/unlocked", handle_get_unlocked)
@@ -4715,12 +4716,15 @@ async def import_weapon_export(raw: bytes, auto_session: bool = False) -> str:
             {"$set": {"status": "cancelled", "completed_at": now}})
         if steps:
             await mdb[COL_CONFIG].update_one({"_id": CLEAN_KEY}, {"$set": {"value": {
-                "active": True, "steps": steps, "cursor": 0, "total": len(steps), "at": now}}}, upsert=True)
+                "active": True, "steps": steps, "cursor": 0, "total": len(steps), "at": now, "empty_reason": ""}}}, upsert=True)
             text += (f"\n🧹 Có {len(steps)} bước dọn kho. Bật **Dọn kho tự động** trong menu Hub (tab Misc) thì app tự làm; "
                      "chỉ bấm Dismantle khi số cây khớp, lệch là Cancel và dừng. Không bật thì không có gì xảy ra.")
         else:
-            await mdb[COL_CONFIG].update_one({"_id": CLEAN_KEY}, {"$set": {"value.active": False}}, upsert=True)
-            text += "\nKhông có bước dọn tự động (thiếu chất lượng hoặc có cây ở vùng chưa rõ bậc) — xem `,cleanplan`."
+            # Thay HAN phien cu (truoc day chi tat active nen total/cursor/at cu con sot lai lam app hien sai); luu ly do cho app
+            reason = weapon_import.cleanup_empty_reason(st)
+            await mdb[COL_CONFIG].update_one({"_id": CLEAN_KEY}, {"$set": {"value": {
+                "active": False, "steps": [], "cursor": 0, "total": 0, "at": now, "empty_reason": reason}}}, upsert=True)
+            text += f"\nKhông có bước dọn tự động: {reason}. Xem `,cleanplan`."
     else:
         text += "\nGõ `,cleanplan` để xem các bước dọn kho."
     return text
@@ -4756,8 +4760,32 @@ async def clean_queue_batch():
             return   # buoc cuoi la `nw inv export`: file moi ve se mo phien moi (neu con cay can don)
         await notify_owner(f"✅ App đã dọn xong {s.get('total', 0)} bước. Gõ `nw inv export` lần nữa để kiểm tra kho còn lại.", min_gap=30)
         return
-    for st in steps:
-        await queue_automacro_command(st["action"], st["params"])
+    total = int(s.get("total") or len(s.get("steps") or []))
+    for i, st in enumerate(steps):
+        # step_no / step_total: app hien "Buoc n/tong" cho Ruby biet dang o dau (gia tri la chuoi nhu cac params khac)
+        params = dict(st["params"], step_no=str(cur + i + 1), step_total=str(total))
+        await queue_automacro_command(st["action"], params)
+
+
+def clean_status_snapshot(s: dict) -> dict:
+    """Tom tat phien don kho cho app (GET /clean): app dung de biet bot da lap ke hoach moi chua, con bao nhieu buoc, vi sao khong co buoc."""
+    at_epoch = 0
+    try:
+        if s.get("at"):
+            at_epoch = int(datetime.fromisoformat(str(s["at"])).timestamp())
+    except (ValueError, TypeError):
+        at_epoch = 0
+    return {"active": bool(s.get("active")), "cursor": int(s.get("cursor") or 0), "total": int(s.get("total") or 0),
+            "at_epoch": at_epoch, "empty_reason": str(s.get("empty_reason") or "")}
+
+
+async def handle_get_clean(request: web.Request):
+    """GET /clean: tinh trang phien don kho (xem clean_status_snapshot) + so buoc dang cho app lam (`pending`)."""
+    if not _check_api_token(request):
+        return web.json_response({"error": "unauthorized"}, status=401)
+    snap = clean_status_snapshot(await clean_session())
+    snap["pending"] = await clean_pending_count()
+    return web.json_response(snap)
 
 
 async def after_clean_ack(status: str, cmd: dict):
