@@ -20,6 +20,7 @@ LUAT (Ruby chon, "luat cu"):
   - Con lai                                    -> BO
 """
 import json
+import re
 
 # id loai -> so khoang trong bang dump (= so chi so chinh + 1 chi phi WP; Orb = 0, Rune of the Forgotten = 1)
 WEAPON_STATS = {1: 2, 2: 2, 3: 2, 4: 1, 5: 2, 6: 0, 7: 2, 8: 3, 9: 3, 10: 4, 11: 2, 12: 3, 13: 2, 14: 2, 15: 2,
@@ -166,18 +167,23 @@ EPIC_MIN_KNOWN_Q = 61.2     # cay bac tren thap nhat trong kho luc doi chieu
 SPLIT_Q = 61.0              # < SPLIT: nhom "ra theo bac" (common/uncommon/rare); >= SPLIT: ra theo ID
 
 
-def cleanup_stages(docs) -> dict:
+def cleanup_stages(docs, extra_drop=()) -> dict:
     """docs = [{'_id','decision','reason','q'}] (cac cay ,weaponimport da ghi). Cay da khoa / khong co q bi bo qua.
     -> star_ids (GIU, chua khoa, q < SPLIT: phai SAO truoc khi ra theo bac), low_drop (BO, q < RARE_MIN: common+uncommon),
        rare_drop (BO, RARE_MIN <= q < SPLIT), id_drop (BO, q >= SPLIT: ra theo ID), unsure (q nam giua cay Rare cao nhat va
        cay bac tren thap nhat da biet -> chua chac thuoc bac nao), missing_q (so cay thieu q: can nhap lai file)."""
     out = {"star_ids": [], "low_drop": [], "rare_drop": [], "id_drop": [], "unsure": [], "missing_q": 0}
+    extra = {str(i).upper() for i in (extra_drop or ())}
     for d in docs:
         q = d.get("q")
         if q is None:
             out["missing_q"] += 1
             continue
         wid = str(d["_id"])
+        if wid.upper() in extra and d.get("reason") != "khoa":
+            # Ruby them tay vao danh sach ra: luon ra THEO ID (an toan voi moi bac, ke ca cay o vung chua ro bac)
+            out["id_drop"].append(wid)
+            continue
         if RARE_MAX_KNOWN_Q < q < EPIC_MIN_KNOWN_Q:
             out["unsure"].append(wid)
         if d.get("decision") == "keep":
@@ -247,3 +253,20 @@ def cleanup_steps(st: dict, with_export: bool = False) -> list:
     if steps and with_export:   # cuoi phien: app go `nw inv export` de Tom nhan file moi, kiem tra con gi can don
         steps.append({"action": "clean_export", "params": {"command_text": "nw inv export", "clean_mode": "export"}})
     return steps
+
+
+_WID_RE = re.compile(r"^[A-Za-z0-9]{3,12}$")
+
+
+def parse_weapon_ids(text: str):
+    """Chuoi Ruby go (cach nhau bang dau cach / phay / xuong dong) -> (ids viet hoa khong trung, cac muc khong hop le)."""
+    ids, bad = [], []
+    for tok in re.split(r"[\s,;]+", text or ""):
+        if not tok:
+            continue
+        if _WID_RE.match(tok):
+            if tok.upper() not in ids:
+                ids.append(tok.upper())
+        else:
+            bad.append(tok)
+    return ids, bad

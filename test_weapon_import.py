@@ -115,5 +115,20 @@ def test_cleanup_steps_order_and_gates():
 test_cleanup_steps_order_and_gates()
 print("✅ cleanup_steps")
 
+def test_extra_drop_and_parse_ids():
+    import weapon_import as wi
+    docs = [D("U1", "keep", 60.9), D("U2", "drop", 61.0), D("K1", "keep", 50.0), D("LK", "keep", 90.0, "khoa"), D("L1", "drop", 10.0)]
+    base = wi.cleanup_stages(docs)
+    assert base["unsure"] == ["U1", "U2"] and base["star_ids"] == ["K1", "U1"] and wi.cleanup_steps(base) == []
+    st = wi.cleanup_stages(docs, ["u1", "K1", "LK", "u2"])   # chu thuong van khop; cay KHOA khong bi dong vao
+    assert st["unsure"] == [] and st["id_drop"] == ["K1", "U1", "U2"] and st["star_ids"] == [] and st["low_drop"] == ["L1"]
+    ids = [x["params"]["expect_id"] for x in wi.cleanup_steps(st) if x["action"] == "clean_id"]
+    assert ids == ["K1", "U1", "U2"]
+    assert wi.cleanup_stages(docs, ()) == base
+    assert wi.parse_weapon_ids("c06p72, F40IBT\nc06p72 !!bad ab") == (["C06P72", "F40IBT"], ["!!bad", "ab"])
+    assert wi.parse_weapon_ids("") == ([], [])
+test_extra_drop_and_parse_ids()
+print("✅ extra_drop")
+
 print("\nTAT CA DAT" if not fails else f"\nLOI: {len(fails)}")
 sys.exit(1 if fails else 0)

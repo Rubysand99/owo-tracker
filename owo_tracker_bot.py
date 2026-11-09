@@ -4708,7 +4708,7 @@ async def import_weapon_export(raw: bytes, auto_session: bool = False) -> str:
     text = weapon_import.summary_text(plan)
     if auto_session:
         docs = await mdb[COL_WEAPON_REVIEW].find({"source": "neon_export"}).to_list(length=100000)
-        st = weapon_import.cleanup_stages(docs)
+        st = weapon_import.cleanup_stages(docs, await extra_drop_ids())
         steps = weapon_import.cleanup_steps(st)
         # Phien moi thay phien cu: buoc cu con dang cho (tu export truoc) phai huy, khong de app lam theo ke hoach cu
         await mdb[COL_AUTOMACRO_COMMANDS].update_many(
@@ -4732,9 +4732,15 @@ async def import_weapon_export(raw: bytes, auto_session: bool = False) -> str:
 
 # ===================== Don kho tu dong (app lam, Ruby bat cong tac o Hub) =====================
 CLEAN_KEY = "clean_session"
+EXTRA_DROP_KEY = "clean_extra_drop"   # ID Ruby them tay vao danh sach ra (,dropadd); ben qua cac lan ,weaponimport
 CLEAN_BATCH = 8
 CLEAN_MAX_ROUNDS = 2
 _NEON_EXPORT_RE = re.compile(r"^nw\s+inv\w*\s+export\b", re.I)
+
+
+async def extra_drop_ids() -> list:
+    v = await get_config(EXTRA_DROP_KEY, [])
+    return [str(i).upper() for i in v] if isinstance(v, list) else []
 
 
 async def clean_session() -> dict:
@@ -4905,6 +4911,58 @@ async def neonauto_cmd(ctx, mode: str = ""):
     await ctx.send(f"Đã {'BẬT' if m == 'on' else 'TẮT'} tự nhận file `nw inv export`.")
 
 
+async def dropadd_apply(ids: str = "") -> str:
+    """Them ID vu khi vao danh sach RA (ra theo ID trong ,cleanplan / Don kho tu dong), ben qua cac lan ,weaponimport.
+    `,dropadd C06P72 F40IBT` them; `,dropadd -x C06P72` go khoi danh sach; `,dropadd` khong tham so = xem danh sach."""
+    cur = await extra_drop_ids()
+    raw = (ids or "").strip()
+    remove = False
+    if raw[:2].lower() in ("-x", "-d") and (len(raw) == 2 or raw[2] in " \t\n"):
+        remove, raw = True, raw[2:]
+    new, bad = weapon_import.parse_weapon_ids(raw)
+    if not new and not bad:
+        return ("**Danh sách rã thêm tay** (" + str(len(cur)) + "): " + (" ".join(f"`{i}`" for i in cur) or "trống")
+                + "\nThêm: `,dropadd <ID> <ID>…` · Gỡ: `,dropadd -x <ID>`")
+    msg = []
+    if remove:
+        gone = [i for i in new if i in cur]
+        cur = [i for i in cur if i not in new]
+        await set_config(EXTRA_DROP_KEY, cur)
+        msg.append(f"Đã gỡ {len(gone)} ID khỏi danh sách rã thêm." if gone else "Không có ID nào trong danh sách để gỡ.")
+    else:
+        docs = await mdb[COL_WEAPON_REVIEW].find({"source": "neon_export"}).to_list(length=100000)
+        by_id = {str(d["_id"]).upper(): d for d in docs}
+        added, locked, unknown = [], [], []
+        for i in new:
+            d = by_id.get(i)
+            if d is not None and d.get("reason") == "khoa":
+                locked.append(i)
+            else:
+                if i not in cur:
+                    cur.append(i)
+                added.append(i)
+                if d is None:
+                    unknown.append(i)
+        await set_config(EXTRA_DROP_KEY, cur)
+        if added:
+            msg.append("Đã thêm vào danh sách rã: " + " ".join(f"`{i}`" for i in added))
+        if locked:
+            msg.append("Bỏ qua cây đang KHÓA (không rã được): " + " ".join(f"`{i}`" for i in locked))
+        if unknown:
+            msg.append("Chưa thấy trong file export gần nhất (vẫn nhớ, sẽ áp dụng khi cây xuất hiện): " + " ".join(f"`{i}`" for i in unknown))
+    if bad:
+        msg.append("ID không hợp lệ: " + " ".join(f"`{b}`" for b in bad))
+    msg.append("Gõ `nw inv export` (hoặc bật Dọn kho tự động) để Tom lập lại kế hoạch có các cây này. Xem lại bằng `,cleanplan`.")
+    return "\n".join(msg)
+
+
+@bot.command(name="dropadd")
+@is_owner()
+async def dropadd_cmd(ctx, *, ids: str = ""):
+    """Them ID vu khi vao danh sach RA (xem dropadd_apply)."""
+    await ctx.send(await dropadd_apply(ids))
+
+
 @bot.command(name="cleanstop")
 @is_owner()
 async def cleanstop_cmd(ctx):
@@ -4924,7 +4982,7 @@ async def cleanplan_cmd(ctx):
     if not docs:
         await ctx.send("Chưa có danh sách. Gõ `,weaponimport` kèm file `weapons.json` trước.")
         return
-    await ctx.send(weapon_import.cleanup_text(weapon_import.cleanup_stages(docs)))
+    await ctx.send(weapon_import.cleanup_text(weapon_import.cleanup_stages(docs, await extra_drop_ids())))
 
 
 @bot.command(name="starlist")
@@ -4933,7 +4991,7 @@ async def starlist_cmd(ctx, page: int = 1, *, template: str = ""):
     """Cay GIU chua khoa o chat luong thap (Buoc 1 cua `,cleanplan`) de Ruby TU DANH SAO tay: `owo w <ID>` roi cham nut sao.
     `,starlist 1 owo w` = them tien to lenh truoc moi ID. Bot KHONG tu go/bam."""
     docs = await mdb[COL_WEAPON_REVIEW].find({"source": "neon_export"}).to_list(length=100000)
-    st = weapon_import.cleanup_stages(docs)
+    st = weapon_import.cleanup_stages(docs, await extra_drop_ids())
     if st["missing_q"]:
         await ctx.send(weapon_import.cleanup_text(st))
         return
@@ -4952,7 +5010,7 @@ async def dismantlelist_cmd(ctx, per_cmd: int = 1, page: int = 1):
     """Tao san cac dong `owo dismantle <ID>` cho cay trong danh sach BO (tu `,weaponimport`) de Ruby TU DAN tay tung dong
     roi tu bam nut Dismantle cua OwO. Bot KHONG tu go lenh, KHONG tu bam. per_cmd = so ID moi lenh (mac dinh 1, toi da 10)."""
     docs = await mdb[COL_WEAPON_REVIEW].find({"source": "neon_export"}).to_list(length=100000)
-    st = weapon_import.cleanup_stages(docs)
+    st = weapon_import.cleanup_stages(docs, await extra_drop_ids())
     if st["missing_q"]:
         await ctx.send(weapon_import.cleanup_text(st))
         return
@@ -5621,6 +5679,7 @@ HELP_GROUPS = [
         ("weaponowner", "`,weaponowner [Tên1, Tên2|xoa]` (owner): chỉ ghi vũ khí có tên chủ khớp tên Discord; thêm tên khác hoặc xóa tên đã thêm")]),
     ("Dọn kho vũ khí (từ file NeonUtil, bạn tự làm — bot không tự gõ/bấm)", [
         ("neonauto", "`,neonauto on|off` (owner): Tom tự nhận file khi NeonUtil trả lời đúng lệnh `nw inv export` của chính bạn (mặc định BẬT), rồi lập kế hoạch + phiên dọn kho cho app"),
+        ("dropadd", "`,dropadd <ID>…` (owner): thêm ID vũ khí vào danh sách RÃ (rã theo ID, kể cả cây ở vùng chưa rõ bậc); `,dropadd -x <ID>` gỡ; `,dropadd` xem danh sách"),
         ("cleanstop", "`,cleanstop` (owner): dừng dọn kho tự động và hủy các bước đang chờ (app chỉ làm khi bạn bật công tắc trong Hub)"),
         ("weaponimport", "`,weaponimport` (owner): BƯỚC 1 — tự gõ `nw inv export` (lệnh NeonUtil cho phép) rồi ĐÍNH KÈM file `weapons.json` vào tin này; bot lập danh sách Giữ/Bỏ (khóa · có kill · chỉ số chính ≥ 80% · passive hạng ≥ 5 · không có bp thì chất lượng ≥ 75 → Giữ), gửi `weapon_import_plan.json`, KHÔNG xóa hay bán gì"),
         ("cleanplan", "`,cleanplan` (owner): BƯỚC 2 — xem kế hoạch dọn kho (cách lai) kèm số cây để đối chiếu: sao cây Giữ ở chất lượng thấp → rã theo bậc → rã theo ID phần còn lại"),
