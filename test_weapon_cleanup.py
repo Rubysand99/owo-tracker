@@ -32,10 +32,13 @@ check("vừa ⭐ vừa đang cầm: ghi cả 2 lý do", bucket(W("A5", "pstaff",
 # ---- passive: server khuyên / bạn chọn / hồi WP
 check("passive server khuyên (vban + att=Strength) -> giữ", bucket(W("B1", "vban", ["att"], 79.6, "epic")), ("giu", ["passive_tot"]))
 check("alias sac -> sacrifice, shield + sacrifice là lựa chọn của Ruby -> giữ", bucket(W("B2", "shield", ["sac"]))[0], "giu")
-check("sacrifice trên pstaff: server chỉ khuyên có điều kiện, nhưng là passive hồi WP (chờ Ruby xác nhận) -> giữ", bucket(W("B3", "pstaff", ["sac"])), ("giu", ["passive_tot"]))
+check("luật 11/2026: không còn 'passive hồi WP hợp mọi loại'", rules["ruby"]["passive_hoi_wp"], [])
+check("sacrifice trên pstaff: server chỉ khuyên có điều kiện (cần rstaff) -> XÁM", bucket(W("B3", "pstaff", ["sac"])), ("xam", ["passive_co_dieu_kien"]))
+check("sacrifice trên rstaff vẫn hợp (bạn chọn) -> giữ", bucket(W("B3a", "rstaff", ["sac"])), ("giu", ["passive_tot"]))
 check("sguard trên pstaff: chỉ hợp khi có rstaff -> XÁM, không bị xóa", bucket(W("B3b", "pstaff", ["safeguard"])), ("xam", ["passive_co_dieu_kien"]))
-check("bỏ passive hồi WP khỏi danh sách Ruby thì sacrifice trên pstaff thành XÁM", wc.classify_weapon(W("B3c", "pstaff", ["sac"]), {**rules, "ruby": {**rules["ruby"], "passive_hoi_wp": []}})[:2], ("xam", ["passive_co_dieu_kien"]))
-check("passive hồi WP (wgen) trên loại không liệt kê -> giữ", bucket(W("B4", "lsyth", ["wgen"]))[0], "giu")
+check("wgen trên loại không khuyên nó (lsyth) -> RÁC, không còn được coi là hợp mọi nơi", bucket(W("B4", "lsyth", ["wgen"])), ("rac", ["passive_khong_hop"]))
+check("mtap trên shield (không nằm trong khuyên của shield) -> RÁC", bucket(W("B4b", "shield", ["manatap"])), ("rac", ["passive_khong_hop"]))
+check("wgen trên loại có khuyên wgen (vban) -> giữ", bucket(W("B4c", "vban", ["wgen"])), ("giu", ["passive_tot"]))
 check("có 2 passive, 1 cái tốt -> giữ", bucket(W("B5", "vban", ["swarm", "att"]))[0], "giu")
 
 # ---- XÁM: không chắc thì giữ lại cho Ruby quyết

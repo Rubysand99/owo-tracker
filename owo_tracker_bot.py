@@ -4689,7 +4689,10 @@ async def import_weapon_export(raw: bytes, auto_session: bool = False) -> str:
     """Doc file weapons.json (NeonUtil), ghi Giu/Bo vao COL_WEAPON_REVIEW, gui file ke hoach cho Ruby. Tra ve doan tom tat.
     auto_session=True (file den tu `nw inv export` cua chinh Ruby): lap luon phien don kho cho app (app chi chay khi Ruby BAT cong tac)."""
     weapons = weapon_import.parse_export(raw)
-    plan = weapon_import.build_plan(weapons)
+    # Top Knowledge: gop danh sach da luu voi file moi (cay cao hon thi thay vao), roi luu lai cho lan nhap sau
+    stored_top = await get_config(KNOWLEDGE_TOP_KEY, [])
+    plan = weapon_import.build_plan(weapons, stored_top if isinstance(stored_top, list) else [])
+    await set_config(KNOWLEDGE_TOP_KEY, plan["knowledge_top"])
     now = _utcnow().isoformat()
     seen = set(plan["keep"]) | set(plan["drop"])
     old = await mdb[COL_WEAPON_REVIEW].find({"source": "neon_export"}, {"_id": 1}).to_list(length=100000)
@@ -4732,6 +4735,7 @@ async def import_weapon_export(raw: bytes, auto_session: bool = False) -> str:
 
 # ===================== Don kho tu dong (app lam, Ruby bat cong tac o Hub) =====================
 CLEAN_KEY = "clean_session"
+KNOWLEDGE_TOP_KEY = "weapon_knowledge_top"   # top 6 cay Knowledge cao nhat [{id, v}], luu giua cac lan ,weaponimport
 EXTRA_DROP_KEY = "clean_extra_drop"   # ID Ruby them tay vao danh sach ra (,dropadd); ben qua cac lan ,weaponimport
 CLEAN_BATCH = 8
 CLEAN_MAX_ROUNDS = 2

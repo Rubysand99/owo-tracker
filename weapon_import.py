@@ -9,15 +9,16 @@ Dinh dang 1 cay (theo giai thich cua chu NeonUtil):
   bp = chuoi bac TUNG chi so, chi co o cay da `owo w <ID>`:  "[fine|decent] <loai> a,b,c <passive> NN ..."
        a,b = chi so chinh theo thu tu, SO CUOI = chi phi WP; roi toi passive.  Passive thieu so = 100.
 
-LUAT (Ruby chon, "luat cu"):
+LUAT (v1.33, Ruby chon):
   - Loai dac biet (Rune of Celebration / Luck)  -> GIU (luat cu: khong bao gio ra)
   - Da khoa                                    -> GIU
   - Co kill (k = true)                         -> GIU (khong bo cay da co kill)
-  - Co bp doc duoc: chi so chinh >= 80%        -> GIU   (Mythic tro len; khong tinh chi phi WP va passive)
-  - Passive hang >= 5 (gom Knowledge > 14%)    -> GIU
-  - Khong co bp: q >= 75                       -> GIU
+  - TOP 6 Knowledge cao nhat                   -> GIU (bot luu 6 cay; co cay cao hon thi thay vao, cay bi day ra xet nhu cay thuong)
+  - Co bp doc duoc: TAT CA chi so >= 80%       -> GIU   (Mythic tro len; TINH CA chi phi WP, KHONG tinh passive)
+  - Co bp doc duoc nhung co chi so < 80%       -> BO    (passive khac khong cuu duoc nua)
+  - Khong co bp (chua `owo w <ID>`): khong biet co phai Knowledge khong
+        passive hang >= 5 -> GIU; con lai q >= 75 -> GIU, q < 75 -> BO
   - bp co nhung la / khong doc duoc            -> GIU (thieu du lieu thi khong bao gio Bo)
-  - Con lai                                    -> BO
 """
 import json
 import re
@@ -27,10 +28,12 @@ WEAPON_STATS = {1: 2, 2: 2, 3: 2, 4: 1, 5: 2, 6: 0, 7: 2, 8: 3, 9: 3, 10: 4, 11:
                 16: 4, 17: 3, 18: 3, 19: 3, 20: 5, 21: 3, 22: 6, 23: 3, 24: 3, 25: 4, 26: 3, 27: 3, 28: 4, 29: 3}
 
 NEVER_DROP_TYPES = {18, 22}   # Rune of Celebration, Rune of Luck (weapon_rules.json: never_dismantle 118 / 122)
-STAT_KEEP_MIN = 80        # chi so chinh >= 80% (Mythic tro len)
-PASSIVE_KEEP_RANK = 5     # passive hang >= 5 (~93%+): Legendary tro len, gom Knowledge > 14%
+STAT_KEEP_MIN = 80        # moi chi so (ke ca chi phi WP) >= 80% (Mythic tro len)
+KNOWLEDGE_TOP_N = 6       # luu / giu 6 cay co Knowledge cao nhat
+UNVERIFIED_PASSIVE_RANK = 5   # cay CHUA co bp: passive hang >= 5 (~93%+) -> chua biet co phai Knowledge cao -> khong Bo
 NO_BP_KEEP_Q = 75.0       # cay khong co bp: chat luong tong
 _WEAR = ("fine", "decent", "pristine", "worn")
+_KNOWLEDGE_NAMES = ("kno", "knowledge")
 
 
 def parse_export(data) -> list:
@@ -53,8 +56,9 @@ def parse_export(data) -> list:
     return out
 
 
-def main_stat_qualities(w):
-    """Chat luong (0-100) cac chi so CHINH tu bp (khong tinh chi phi WP). None = khong co bp / khong doc duoc."""
+def all_stat_qualities(w):
+    """Chat luong (0-100) TAT CA chi so tu bp, KE CA chi phi WP (so cuoi). None = khong co bp / khong doc duoc.
+    Orb (khong co chi so nao) tra ve []."""
     s = w.get("bp")
     if not s:
         return None
@@ -74,7 +78,52 @@ def main_stat_qualities(w):
         return None
     if len(nums) != n:
         return None
-    return nums[:-1]
+    return nums
+
+
+def main_stat_qualities(w):
+    """Chat luong (0-100) cac chi so CHINH tu bp (khong tinh chi phi WP). None = khong co bp / khong doc duoc."""
+    nums = all_stat_qualities(w)
+    return None if nums is None else nums[:-1]
+
+
+def knowledge_quality(w):
+    """Chat luong (0-100) cua passive Knowledge doc tu bp (vd `... kno 95`; passive thieu so = 100).
+    None = khong co bp / cay khong co Knowledge. Chat luong cang cao thi % Knowledge cang cao."""
+    s = w.get("bp")
+    n = WEAPON_STATS.get(w.get("t"))
+    if not s or n is None:
+        return None
+    toks = str(s).split()
+    if toks and toks[0] in _WEAR:
+        toks = toks[1:]
+    rest = toks[2:] if n > 0 else toks[1:]       # bo ten loai va (neu co) cum chi so
+    i = 0
+    while i < len(rest):
+        if not rest[i].isalpha():
+            i += 1
+            continue
+        has_num = i + 1 < len(rest) and rest[i + 1].isdigit()
+        if rest[i].lower() in _KNOWLEDGE_NAMES:
+            return int(rest[i + 1]) if has_num else 100
+        i += 2 if has_num else 1
+    return None
+
+
+def knowledge_top(weapons, stored=None, k=KNOWLEDGE_TOP_N):
+    """K cay Knowledge cao nhat: gop file moi voi danh sach da luu (chi giu cay con trong kho; file moi ghi de gia tri cu).
+    Co cay cao hon thi tu thay vao. -> [{'id', 'v'}] giam dan theo v (hoa thi q cao hon, roi theo ID)."""
+    present = {str(w["id"]): w for w in weapons}
+    cand = {}
+    for e in stored or []:
+        if isinstance(e, dict) and str(e.get("id")) in present and isinstance(e.get("v"), (int, float)):
+            cand[str(e["id"])] = e["v"]
+    for wid, w in present.items():
+        v = knowledge_quality(w)
+        if v is not None:
+            cand[wid] = v
+    order = sorted(cand, key=lambda i: (-cand[i], -(present[i].get("q") or 0), i))
+    return [{"id": i, "v": cand[i]} for i in order[:k]]
 
 
 def top_passive_rank(w) -> int:
@@ -82,23 +131,27 @@ def top_passive_rank(w) -> int:
     return max(ranks) if ranks else -1
 
 
-def decide(w):
-    """-> (decision 'keep'|'drop', ly do ngan). Xem LUAT o dau file."""
+def decide(w, kno_top=()):
+    """-> (decision 'keep'|'drop', ly do ngan). Xem LUAT o dau file.
+    kno_top = tap ID nam trong TOP Knowledge (do build_plan tinh bang knowledge_top)."""
     if w.get("t") in NEVER_DROP_TYPES:
         return "keep", "loai_dac_biet"
     if w.get("l"):
         return "keep", "khoa"
     if w.get("k") is True:
         return "keep", "co_kill"
-    if top_passive_rank(w) >= PASSIVE_KEEP_RANK:
-        return "keep", "passive_cao"
+    if str(w.get("id")) in kno_top:
+        return "keep", "knowledge_top"
     if w.get("bp"):
-        stats = main_stat_qualities(w)
+        stats = all_stat_qualities(w)
         if stats is None:
             return "keep", "bp_la"
-        if any(v >= STAT_KEEP_MIN for v in stats):
+        if stats and all(v >= STAT_KEEP_MIN for v in stats):
             return "keep", "chi_so_cao"
         return "drop", "chi_so_thap"
+    # Chua co bp: khong biet cay co Knowledge cao hay khong -> passive hang cao thi khong Bo (Bo la khong quay lai duoc)
+    if top_passive_rank(w) >= UNVERIFIED_PASSIVE_RANK:
+        return "keep", "chua_xem_passive_cao"
     if w["q"] >= NO_BP_KEEP_Q:
         return "keep", "q_cao"
     return "drop", "q_thap"
@@ -108,32 +161,41 @@ REASON_TEXT = {
     "loai_dac_biet": "loại đặc biệt (Rune of Celebration/Luck)",
     "co_kill": "đã có kill",
     "khoa": "đã khóa",
-    "passive_cao": "passive hạng ≥ 5 (gồm Knowledge > 14%)",
-    "chi_so_cao": f"có chỉ số chính ≥ {STAT_KEEP_MIN}%",
+    "knowledge_top": f"nằm trong top {KNOWLEDGE_TOP_N} Knowledge cao nhất",
+    "chi_so_cao": f"mọi chỉ số (gồm chi phí WP) ≥ {STAT_KEEP_MIN}%",
+    "chua_xem_passive_cao": "chưa xem chi tiết (`owo w <ID>`) và có passive hạng ≥ 5 — chưa rõ có phải Knowledge cao",
     "bp_la": "bp lạ/không đọc được (giữ cho an toàn)",
     "q_cao": f"không có bp, chất lượng tổng ≥ {NO_BP_KEEP_Q:g}",
-    "chi_so_thap": "có bp nhưng chỉ số chính đều < 80%",
+    "chi_so_thap": f"có bp nhưng chưa đủ mọi chỉ số ≥ {STAT_KEEP_MIN}%",
     "q_thap": f"không có bp, chất lượng tổng < {NO_BP_KEEP_Q:g}",
 }
+KEEP_REASONS = ("loai_dac_biet", "khoa", "co_kill", "knowledge_top", "chi_so_cao", "chua_xem_passive_cao", "bp_la", "q_cao")
+DROP_REASONS = ("chi_so_thap", "q_thap")
 
 
-def build_plan(weapons: list) -> dict:
-    """-> {'keep': {id: reason}, 'drop': {id: reason}, 'reasons': {reason: n}, 'total': n}"""
+def build_plan(weapons: list, knowledge_stored=None) -> dict:
+    """-> {'keep': {id: reason}, 'drop': {id: reason}, 'reasons': {reason: n}, 'total': n, 'knowledge_top': [{'id','v'}]}
+    knowledge_stored = danh sach top Knowledge da luu o lan nhap truoc (bot luu lai plan['knowledge_top'])."""
+    top = knowledge_top(weapons, knowledge_stored)
+    top_ids = {e["id"] for e in top}
     keep, drop, reasons = {}, {}, {}
     for w in weapons:
-        d, why = decide(w)
+        d, why = decide(w, top_ids)
         (keep if d == "keep" else drop)[str(w["id"])] = why
         reasons[why] = reasons.get(why, 0) + 1
-    return {"keep": keep, "drop": drop, "reasons": reasons, "total": len(weapons)}
+    return {"keep": keep, "drop": drop, "reasons": reasons, "total": len(weapons), "knowledge_top": top}
 
 
 def summary_text(plan: dict) -> str:
     lines = [f"**Nhập file kho vũ khí: {plan['total']} cây**",
              f"✅ Giữ **{len(plan['keep'])}** · 🗑️ Bỏ **{len(plan['drop'])}** (CHƯA xóa gì)"]
-    for why in ("loai_dac_biet", "khoa", "co_kill", "passive_cao", "chi_so_cao", "bp_la", "q_cao", "chi_so_thap", "q_thap"):
+    for why in KEEP_REASONS + DROP_REASONS:
         n = plan["reasons"].get(why)
         if n:
-            lines.append(f"• {'Giữ' if why in ('loai_dac_biet','khoa','co_kill','passive_cao','chi_so_cao','bp_la','q_cao') else 'Bỏ'}: {REASON_TEXT[why]} — {n}")
+            lines.append(f"• {'Giữ' if why in KEEP_REASONS else 'Bỏ'}: {REASON_TEXT[why]} — {n}")
+    top = plan.get("knowledge_top") or []
+    if top:
+        lines.append(f"🧠 Top {KNOWLEDGE_TOP_N} Knowledge: " + " · ".join(f"`{e['id']}` {e['v']:g}" for e in top))
     return "\n".join(lines)
 
 

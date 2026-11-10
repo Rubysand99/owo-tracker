@@ -25,10 +25,48 @@ check("bp loai la (t khong co trong bang) -> None", wi.main_stat_qualities(W(t=9
 
 # --- luat quyet dinh
 check("khoa -> giu", wi.decide(W(l=True, q=5, bp="dagger 1,1,1 att 1")), ("keep", "khoa"))
-check("passive hang 5 -> giu", wi.decide(W(p=[{"t": 21, "r": 5}], bp="dagger 1,1,1 knowledge 95")), ("keep", "passive_cao"))
-check("co chi so chinh >= 80 -> giu", wi.decide(W(bp="dagger 80,10,10 att 20")), ("keep", "chi_so_cao"))
-check("chi so chinh 79 -> bo (chi phi WP cao khong tinh)", wi.decide(W(bp="dagger 79,10,100 att 20")), ("drop", "chi_so_thap"))
-check("chi phi WP 100 khong cuu cay yeu", wi.decide(W(bp="dagger 10,10,100 att 20")), ("drop", "chi_so_thap"))
+check("bp dagger: tat ca chi so KE CA chi phi WP", wi.all_stat_qualities(W(bp="dagger 98,31,65 kkaze 83")), [98, 31, 65])
+check("bp Orb (t=6): khong co chi so -> []", wi.all_stat_qualities(W(t=6, bp="orb sac 98,56 gslay")), [])
+check("khong co bp -> None (all_stat_qualities)", wi.all_stat_qualities(W()), None)
+check("TAT CA chi so (gom WP) >= 80 -> giu", wi.decide(W(bp="dagger 90,85,80 att 20")), ("keep", "chi_so_cao"))
+check("moi chi so deu 100 -> giu", wi.decide(W(bp="dagger 100,100,100")), ("keep", "chi_so_cao"))
+check("chi phi WP 79 keo cay xuong -> bo (WP tinh nhu 1 chi so)", wi.decide(W(bp="dagger 90,90,79 att 20")), ("drop", "chi_so_thap"))
+check("chi 1 chi so cao (80,10,10) khong con du de giu -> bo", wi.decide(W(bp="dagger 80,10,10 att 20")), ("drop", "chi_so_thap"))
+check("chi so chinh cao nhung WP 100 khong cuu cay yeu", wi.decide(W(bp="dagger 10,10,100 att 20")), ("drop", "chi_so_thap"))
+check("Bow (t=3): 2 chi so 94,81 -> giu", wi.decide(W(t=3, bp="bow 94,81 snail 81")), ("keep", "chi_so_cao"))
+check("Orb khong co chi so de xet -> bo (chi giu qua Knowledge top)", wi.decide(W(t=6, bp="orb sac 98,56 gslay")), ("drop", "chi_so_thap"))
+check("passive hang 5 KHONG con cuu cay co bp yeu", wi.decide(W(p=[{"t": 21, "r": 5}], bp="dagger 1,1,1 att 95")), ("drop", "chi_so_thap"))
+check("chua co bp + passive hang 5 -> giu (chua biet co phai Knowledge cao)", wi.decide(W(q=10.0, p=[{"t": 21, "r": 5}])), ("keep", "chua_xem_passive_cao"))
+check("chua co bp + passive hang 4 + q thap -> bo", wi.decide(W(q=10.0, p=[{"t": 21, "r": 4}])), ("drop", "q_thap"))
+
+# --- Knowledge: doc tu bp, giu TOP 6
+check("kno 95", wi.knowledge_quality(W(bp="dagger 1,1,1 kno 95")), 95)
+check("bp co tien to do mon + passive khac truoc kno", wi.knowledge_quality(W(bp="fine dagger 1,1,1 att 5 kno 88")), 88)
+check("ten day du knowledge", wi.knowledge_quality(W(bp="dagger 1,1,1 knowledge 77")), 77)
+check("kno thieu so = 100", wi.knowledge_quality(W(bp="dagger 1,1,1 kno")), 100)
+check("cay khong co Knowledge -> None", wi.knowledge_quality(W(bp="dagger 98,31,65 kkaze 83")), None)
+check("khong co bp -> None (knowledge)", wi.knowledge_quality(W()), None)
+check("Orb + passive kno doc duoc", wi.knowledge_quality(W(t=6, bp="orb kno 90")), 90)
+
+def K(i, v, q=50.0, **kw):
+    return W(id=i, q=q, bp=f"dagger 1,1,1 kno {v}", **kw)
+ws8 = [K("A", 50), K("B", 99), K("C", 70), K("D", 85), K("E", 60), K("F", 92), K("G", 40), K("H", 75), W(id="Z", bp="dagger 1,1,1 att 5")]
+top = wi.knowledge_top(ws8)
+check("top 6 giam dan, dung 6 cay", [(e["id"], e["v"]) for e in top], [("B", 99), ("F", 92), ("D", 85), ("H", 75), ("C", 70), ("E", 60)])
+check("hoa Knowledge: cay q cao hon xep truoc", [e["id"] for e in wi.knowledge_top([K("X1", 80, 40.0), K("X2", 80, 60.0)])], ["X2", "X1"])
+# cay moi cao hon thi thay vao, cay thap nhat bi day ra
+top2 = wi.knowledge_top(ws8 + [K("N", 97)], top)
+check("cay Knowledge cao hon thay vao, cay thap nhat (E) bi day ra", [e["id"] for e in top2], ["B", "N", "F", "D", "H", "C"])
+# danh sach da luu: cay con trong kho nhung export moi khong con bp -> giu gia tri da luu; cay da het trong kho -> bo
+now = [W(id="B"), W(id="F"), K("D", 85)]
+top3 = wi.knowledge_top(now, [{"id": "B", "v": 99}, {"id": "F", "v": 92}, {"id": "GONE", "v": 100}, {"bad": 1}, {"id": "D", "v": 10}])
+check("luu lai: giu gia tri cu neu khong con bp, bo cay khong con, file moi ghi de", [(e["id"], e["v"]) for e in top3], [("B", 99), ("F", 92), ("D", 85)])
+check("danh sach luu hong -> bo qua, khong loi", wi.knowledge_top([K("A", 5)], "oops"), [{"id": "A", "v": 5}])
+# decide voi top Knowledge
+check("cay trong top Knowledge -> giu du chi so thap", wi.decide(K("B", 99), {"B"}), ("keep", "knowledge_top"))
+check("cay co Knowledge nhung khong vao top, chi so thap -> bo", wi.decide(K("G", 40), {"B"}), ("drop", "chi_so_thap"))
+check("cay Knowledge vao top van sau khoa/kill (thu tu uu tien)", wi.decide(K("B", 99, l=True), {"B"}), ("keep", "khoa"))
+check("cay Knowledge ngoai top nhung chi so deu >= 80 -> van giu theo chi so", wi.decide(W(id="G", bp="dagger 90,90,90 kno 40"), {"B"}), ("keep", "chi_so_cao"))
 check("khong bp, q 75 -> giu", wi.decide(W(q=75.0)), ("keep", "q_cao"))
 check("khong bp, q 74.9 -> bo", wi.decide(W(q=74.9)), ("drop", "q_thap"))
 check("bp la -> giu (thieu du lieu khong bao gio bo)", wi.decide(W(bp="dagger abc")), ("keep", "bp_la"))
@@ -87,6 +125,18 @@ check("ke hoach dem dung", (sorted(plan["keep"]), sorted(plan["drop"]), plan["to
 check("ly do dem dung", plan["reasons"], {"khoa": 1, "q_cao": 1, "q_thap": 1, "chi_so_thap": 1})
 txt = wi.summary_text(plan)
 check("tom tat noi ro chua xoa gi", ("CHƯA xóa" in txt and "Giữ **2**" in txt and "Bỏ **2**" in txt), True)
+check("ke hoach khong co Knowledge -> top rong, tom tat khong in dong Top", (plan["knowledge_top"], "Top 6 Knowledge" in txt), ([], False))
+
+# --- ke hoach co Knowledge top 6
+plan2 = wi.build_plan(ws8 + [W(id="Y", bp="dagger 90,90,90 att 20"), W(id="L", l=True)])
+check("ke hoach: 6 cay Knowledge top duoc giu", sorted(i for i, why in plan2["keep"].items() if why == "knowledge_top"), ["B", "C", "D", "E", "F", "H"])
+check("ke hoach: cay Knowledge ngoai top (A, G) bi bo", sorted(i for i, why in plan2["drop"].items() if why == "chi_so_thap" and i in ("A", "G")), ["A", "G"])
+check("ke hoach: ly do dem dung", plan2["reasons"], {"knowledge_top": 6, "chi_so_thap": 3, "chi_so_cao": 1, "khoa": 1})
+check("ke hoach: luu lai top de lan nhap sau", [e["id"] for e in plan2["knowledge_top"]], ["B", "F", "D", "H", "C", "E"])
+txt2 = wi.summary_text(plan2)
+check("tom tat in top Knowledge", ("Top 6 Knowledge" in txt2 and "`B` 99" in txt2), True)
+plan3 = wi.build_plan([K("B", 99), K("NEW", 100)], plan2["knowledge_top"])
+check("lan nhap sau: cay B con kho nen van nam trong top, cay moi cao hon len dau", [e["id"] for e in plan3["knowledge_top"]], ["NEW", "B"])
 
 # --- doc file
 check("parse bo bom UTF-8", len(wi.parse_export("﻿" + json.dumps([W()]))), 1)

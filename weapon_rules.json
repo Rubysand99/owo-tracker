@@ -892,12 +892,8 @@
    "shield",
    "rstaff"
   ],
-  "passive_hoi_wp": [
-   "wgen",
-   "mtap",
-   "sacrifice"
-  ],
-  "ghi_chu_hoi_wp": "Chọn theo mô tả game: Energize (wgen), Mana Tap (mtap), Sacrifice (sacrifice) đều HỒI WP. Ruby nói passive hồi WP rất tốt -> coi là hợp ở mọi vũ khí (chờ Ruby xác nhận)."
+  "passive_hoi_wp": [],
+  "ghi_chu_hoi_wp": "2026-11-10: Ruby bỏ luật 'passive hồi WP (wgen, mtap, sacrifice) hợp ở mọi vũ khí'. Từ nay mỗi loại chỉ nhận passive trong danh sách recommended của nó; Sacrifice vẫn hợp Shield (105) và Resurrection Staff (114) qua ruby_them / sacrifice_hop_voi."
  },
  "never_dismantle": [
   "118",
