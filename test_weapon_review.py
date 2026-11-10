@@ -66,6 +66,7 @@ class Col:
             if not upsert: return
             d = s.docs[f["_id"]] = {"_id": f["_id"]}
         for k, v in u.get("$set", {}).items(): _setpath(d, k, v)
+        for k, v in u.get("$inc", {}).items(): _setpath(d, k, (_getpath(d, k, 0) or 0) + v)
         for k, v in u.get("$addToSet", {}).items():
             cur = _getpath(d, k, []);  cur = list(cur)
             if v not in cur: cur.append(v)
@@ -172,9 +173,49 @@ async def go3():
     res, err = await b.review_decide("keep")
     check("Dừng rồi thì Giữ/Bỏ báo không có cây", err, "khong co cay nao dang duyet")
 
+async def go4():
+    # ---- tu duyet bang dong gon Neon
+    import json as _json, time as _t
+    b.mdb = DB()
+    queued = []
+    async def fake_q(action, params): queued.append(params["command_text"]); return 1
+    b.queue_automacro_command = fake_q
+    async def fake_notify(*a, **k): pass
+    b.notify_owner = fake_notify
+    async def fake_dc(sess): pass
+    b.review_delete_checks = fake_dc
+    async def fake_emb(sess=None): pass
+    b.review_refresh_embed = fake_emb
+    for i, q in (("N1", 50), ("N2", 50), ("N3", 50)):
+        await b.mdb[b.COL_WEAPON_LIST].update_one({"_id": i}, {"$set": {"type": "x", "quality": q}}, upsert=True)
+    R = b.mdb[b.COL_WEAPON_REVIEW]
+    await R.update_one({"_id": "N1"}, {"$set": {"decision": "keep", "reason": "q_thap_chua_chac", "q": 50.0}}, upsert=True)
+    await R.update_one({"_id": "N2"}, {"$set": {"decision": "keep", "reason": "bp_la", "q": 50.0}}, upsert=True)
+    await R.update_one({"_id": "N3"}, {"$set": {"decision": "unknown", "manual": True}}, upsert=True)
+    res, err = await b.autoneon_start()
+    check("tự duyệt: hàng đợi = Chưa rõ trừ cây tự đặt '?'", (res, err, queued), ({"ok": True, "queue": 2}, None, ["owo w N1"]))
+    res, err = await b.review_decide("keep")
+    check("đang tự duyệt thì chặn bấm tay", err, "dang tu duyet, bam Dung truoc khi tu quyet")
+    class Msg:
+        def __init__(s, text): s.text = text; s.created_at = __import__("datetime").datetime.now(__import__("datetime").timezone.utc); s.reference = None
+    b.flatten_message = lambda m: m.text
+    await b.autoneon_handle_neon(Msg("mythic 89.8% max｜`sstaff 100,91,68 knowledge 98`"))
+    doc = await R.find_one({"_id": "N1"})
+    check("Neon: Knowledge 98 vào top 6 -> Giữ", (doc["decision"], doc["reason"], doc.get("manual")), ("keep", "knowledge_top", True))
+    check("chuyển cây kế + nhờ app gõ", queued, ["owo w N1", "owo w N2"])
+    await b.autoneon_handle_neon(Msg("rare 30% max｜`sstaff 10,20,30`"))
+    doc = await R.find_one({"_id": "N2"})
+    check("Neon: không đủ 2 chỉ số -> Bỏ chắc chắn", (doc["decision"], doc["reason"]), ("drop", "chi_so_thap"))
+    sess = await b.review_get()
+    check("hết hàng đợi -> tự tắt", (sess["autoneon"], sess["active"], sess["autoneon_done"], sess["autoneon_changed"]), (False, False, 2, 2))
+    check("N1 ra khỏi Chưa rõ; N2 sang Bỏ", ((await b.review_lists())["unknown"], (await b.review_lists())["drop"]), (["N3"], ["N2"]))
+    top = await b.get_config(b.KNOWLEDGE_TOP_KEY, [])
+    check("top Knowledge cập nhật", top, [{"id": "N1", "v": 98}])
+
 asyncio.run(go())
 asyncio.run(go2())
 asyncio.run(go3())
+asyncio.run(go4())
 if fails:
     print("\n❌ %d bài lỗi" % len(fails)); sys.exit(1)
 print("\n✅ Toàn bộ test weapon_review pass.")

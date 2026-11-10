@@ -1572,6 +1572,8 @@ async def review_select(wid: str):
     if not wid or len(wid) > 20 or not wid.isalnum():
         return None, "ID khong hop le"
     sess = await review_get()
+    if sess.get("autoneon"):
+        return None, "dang tu duyet, bam Dung truoc"
     if sess.get("active") and sess.get("phase") == "scanning":
         return None, "dang quet kho, doi quet xong roi chon cay"
     if sess.get("active") and sess.get("auto"):
@@ -1606,10 +1608,139 @@ async def review_stop():
     await review_delete_checks(sess)
     await mdb[COL_CONFIG].update_one(
         {"_id": REVIEW_KEY},
-        {"$set": {"value.active": False, "value.current": None, "value.check_msg_ids": [], "value.manual_queue": []}},
+        {"$set": {"value.active": False, "value.current": None, "value.check_msg_ids": [], "value.manual_queue": [],
+                  "value.autoneon": False, "value.autoneon_queue": []}},
         upsert=True)
     await review_refresh_embed(await review_get())
     return {"ok": True}
+
+
+# ---- Tu duyet cay "Chua ro" bang dong gon NeonUtil tu tra loi `owo w <ID>` (khong bam nut / khong goi lenh cua Neon) ----
+AUTONEON_WAIT_SECONDS = 30      # qua ngan nay Neon khong tra loi -> bo qua cay do
+AUTONEON_MAX_FAILS = 3          # that bai lien tiep -> dung
+_autoneon_lock = asyncio.Lock()
+
+
+async def autoneon_start():
+    """Xep hang doi = cac cay 'Chua ro' (tru cay Ruby tu dat '?' bang tay), app go `owo w` tung cay. Tra ve (dict, loi)."""
+    sess = await review_get()
+    if sess.get("active") and sess.get("phase") == "scanning":
+        return None, "dang quet kho, doi quet xong"
+    if sess.get("active") and sess.get("auto"):
+        return None, "dang tu duyet bang NeonUtil kieu cu"
+    rows = {str(r["_id"]): r for r in await mdb[COL_WEAPON_REVIEW].find({}).to_list(length=100000)}
+    lists = await review_lists()
+    queue = [i for i in lists["unknown"] if not (rows.get(i, {}).get("manual") and rows[i].get("decision") == "unknown")]
+    if not queue:
+        return None, "khong co cay 'Chua ro' nao can duyet"
+    await mdb[COL_CONFIG].update_one(
+        {"_id": REVIEW_KEY},
+        {"$set": {"value.active": True, "value.phase": "review", "value.manual": True, "value.autoneon": True,
+                  "value.autoneon_queue": queue, "value.autoneon_fails": 0, "value.autoneon_done": 0,
+                  "value.autoneon_changed": 0, "value.check_msg_ids": []}}, upsert=True)
+    await _autoneon_next()
+    return {"ok": True, "queue": len(queue)}, None
+
+
+async def _autoneon_next():
+    """Chon cay ke tiep trong hang doi, nho app go `owo w <ID>`, hen gio bo qua neu Neon im lang."""
+    sess = await review_get()
+    await review_delete_checks(sess)
+    queue = list(sess.get("autoneon_queue") or [])
+    if not sess.get("autoneon") or not queue:
+        done = int(sess.get("autoneon_done") or 0)
+        changed = int(sess.get("autoneon_changed") or 0)
+        await mdb[COL_CONFIG].update_one(
+            {"_id": REVIEW_KEY},
+            {"$set": {"value.active": False, "value.autoneon": False, "value.current": None, "value.autoneon_queue": []}}, upsert=True)
+        await review_refresh_embed(await review_get())
+        if sess.get("autoneon"):
+            await notify_owner(f"✅ Tự duyệt xong: đã đọc {done} cây, xếp lại {changed} cây vào Giữ/Bỏ. Gõ `nw inv export` để lập kế hoạch dọn kho mới.", min_gap=30)
+        return
+    wid = queue[0]
+    started = time.time()
+    await mdb[COL_CONFIG].update_one(
+        {"_id": REVIEW_KEY},
+        {"$set": {"value.current": wid, "value.autoneon_started": started, "value.autoneon_queue": queue[1:], "value.check_msg_ids": []}})
+    await review_refresh_embed(await review_get())
+    qid = await queue_automacro_command("weapon_review", {"command_text": f"owo w {wid}"})
+    if qid is None:
+        await mdb[COL_CONFIG].update_one({"_id": REVIEW_KEY}, {"$set": {"value.autoneon": False, "value.active": False}})
+        await notify_owner("⚠️ App đang TẮT (`,off`) nên chưa giao việc — bật Hub nổi, dừng farm rồi bấm Tự duyệt lại.", min_gap=60)
+        return
+    asyncio.create_task(_autoneon_watch(wid, started))
+
+
+async def _autoneon_watch(wid: str, started: float):
+    await asyncio.sleep(AUTONEON_WAIT_SECONDS)
+    async with _autoneon_lock:
+        sess = await review_get()
+        if not sess.get("autoneon") or sess.get("current") != wid or sess.get("autoneon_started") != started:
+            return   # da xu ly xong / da dung
+        fails = int(sess.get("autoneon_fails") or 0) + 1
+        await mdb[COL_CONFIG].update_one({"_id": REVIEW_KEY}, {"$set": {"value.autoneon_fails": fails}})
+        if fails >= AUTONEON_MAX_FAILS:
+            await mdb[COL_CONFIG].update_one({"_id": REVIEW_KEY}, {"$set": {"value.autoneon": False, "value.active": False}})
+            await review_refresh_embed(await review_get())
+            await notify_owner(f"⚠️ Tự duyệt dừng: {fails} cây liên tiếp không nhận được dòng trả lời của NeonUtil "
+                               "(đã dừng farm chưa? Neon có đang trả lời `owo w` không?).", min_gap=60)
+            return
+        await _autoneon_next()
+
+
+async def autoneon_handle_neon(message):
+    """Tin cua NeonUtil: neu dang tu duyet va doc duoc dong gon cua cay hien tai -> ap luat, ghi Giu/Bo, chuyen cay ke."""
+    sess = await review_get()
+    if not sess.get("autoneon") or not sess.get("current"):
+        return
+    wid = str(sess["current"]).upper()
+    started = float(sess.get("autoneon_started") or 0)
+    if message.created_at.timestamp() < started - 2:
+        return
+    ref = getattr(message, "reference", None)
+    ref_msg = getattr(ref, "resolved", None) if ref else None
+    if ref_msg is not None and hasattr(ref_msg, "embeds"):
+        # tin Neon tra loi dung tin OwO cua cay khac -> bo qua (tin OwO cua cay hien tai co ghi ID)
+        if wid.lower() not in flatten_message(ref_msg).lower():
+            return
+    rules = load_weapon_rules()
+    got = weapon_import.neon_bp(flatten_message(message), rules)
+    if not got:
+        return
+    async with _autoneon_lock:
+        sess = await review_get()
+        if not sess.get("autoneon") or str(sess.get("current") or "").upper() != wid or sess.get("autoneon_started") != started:
+            return
+        doc = await mdb[COL_WEAPON_REVIEW].find_one({"_id": wid}) or {}
+        lst = await mdb[COL_WEAPON_LIST].find_one({"_id": wid}) or {}
+        changed = 0
+        if doc.get("reason") not in ("khoa", "co_kill", "loai_dac_biet"):
+            q = doc.get("q")
+            if q is None:
+                q = lst.get("quality") or 0
+            w = {"id": wid, "t": got["t"], "bp": got["bp"], "q": q}
+            # cap nhat top Knowledge voi cay nay
+            stored = await get_config(KNOWLEDGE_TOP_KEY, [])
+            cand = {str(e["id"]): e["v"] for e in (stored if isinstance(stored, list) else []) if isinstance(e, dict) and "id" in e and "v" in e}
+            kv = weapon_import.knowledge_quality(w)
+            if kv is not None:
+                cand[wid] = kv
+            order = sorted(cand, key=lambda i: (-cand[i], i))[:weapon_import.KNOWLEDGE_TOP_N]
+            await set_config(KNOWLEDGE_TOP_KEY, [{"id": i, "v": cand[i]} for i in order])
+            decision, why = weapon_import.decide(w, set(order))
+            if why == "bp_la":
+                decision = "unknown"       # khong doc ro -> giu o 'Chua ro', khong tu quyet
+            prev = review_bucket(doc) if doc else "unknown"
+            if decision != "unknown" or prev != "unknown":
+                await mdb[COL_WEAPON_REVIEW].update_one(
+                    {"_id": wid}, {"$set": {"decision": decision, "reason": why, "bp": got["bp"], "manual": True,
+                                            "auto_neon": True, "at": _utcnow().isoformat()}}, upsert=True)
+                if decision != prev:
+                    changed = 1
+                    await clean_invalidate("đã tự duyệt thêm cây — gõ lại `nw inv export` để lập kế hoạch dọn kho mới")
+        await mdb[COL_CONFIG].update_one(
+            {"_id": REVIEW_KEY}, {"$set": {"value.autoneon_fails": 0}, "$inc": {"value.autoneon_done": 1, "value.autoneon_changed": changed}})
+        await _autoneon_next()
 
 
 async def review_decide(decision: str):
@@ -1621,6 +1752,8 @@ async def review_decide(decision: str):
     cur = sess.get("current")
     if not sess.get("active") or not cur:
         return None, "khong co cay nao dang duyet"
+    if sess.get("autoneon"):
+        return None, "dang tu duyet, bam Dung truoc khi tu quyet"
     prev = await mdb[COL_WEAPON_REVIEW].find_one({"_id": cur}) or {}
     changed = prev.get("decision") != decision or review_bucket(prev) != decision
     await mdb[COL_WEAPON_REVIEW].update_one(
@@ -1859,6 +1992,16 @@ async def handle_post_weapon_review_stop(request: web.Request):
     if not _check_api_token(request):
         return web.json_response({"error": "unauthorized"}, status=401)
     return web.json_response(await review_stop())
+
+
+async def handle_post_weapon_review_autoneon(request: web.Request):
+    """POST /weapon-review/autoneon -> tu duyet cac cay 'Chua ro' bang dong gon NeonUtil"""
+    if not _check_api_token(request):
+        return web.json_response({"error": "unauthorized"}, status=401)
+    res, err = await autoneon_start()
+    if err:
+        return web.json_response({"error": err}, status=400)
+    return web.json_response(res)
 
 
 async def handle_get_weapon_review_lists(request: web.Request):
@@ -3200,6 +3343,7 @@ async def start_automacro_api_server():
     app.router.add_post("/gemtier", handle_post_gemtier)
     app.router.add_post("/weapon-advice", handle_post_weapon_advice)
     app.router.add_post("/weapon-review", handle_post_weapon_review)
+    app.router.add_post("/weapon-review/autoneon", handle_post_weapon_review_autoneon)
     app.router.add_post("/weapon-review/stop", handle_post_weapon_review_stop)
     app.router.add_get("/weapon-review/lists", handle_get_weapon_review_lists)
     app.router.add_post("/weapon-review/select", handle_post_weapon_review_select)
@@ -3672,6 +3816,10 @@ async def on_message(message: discord.Message):
         return
 
     if message.author.id == NEON_BOT_ID:
+        try:
+            await autoneon_handle_neon(message)   # dong gon Neon tu tra loi `owo w` (chi khi dang tu duyet)
+        except Exception as e:
+            print(f"[tracker][autoneon] Loi doc tin Neon: {e!r}")
         # Chi nhan DUNG file `nw inv export` Neon tra loi lenh cua chinh Ruby (tat bang `,neonauto off`); tin khac cua Neon bo qua
         try:
             await handle_neon_export_reply(message)

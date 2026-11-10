@@ -192,5 +192,9 @@ def test_unknown_is_starred():
 test_unknown_is_starred()
 print("✅ unknown được sao như Giữ")
 
+import json as _j
+_r = _j.load(open("weapon_rules.json", encoding="utf-8"))
+check("neon_bp: dong gon Neon (word-joiner tu man hinh)", wi.neon_bp("mythic 89.8% max\uff5cmsstaff \u200b\u2060sstaff 100,91,68 knowledge 98\u2060\u200b", _r), {"t": 12, "bp": "sstaff 100,91,68 knowledge 98"})
+check("neon_bp: khong co bp -> None", wi.neon_bp("hello world", _r), None)
 print("\nTAT CA DAT" if not fails else f"\nLOI: {len(fails)}")
 sys.exit(1 if fails else 0)

@@ -127,6 +127,36 @@ def knowledge_top(weapons, stored=None, k=KNOWLEDGE_TOP_N):
     return [{"id": i, "v": cand[i]} for i in order[:k]]
 
 
+_ZW = dict.fromkeys(map(ord, "\u200b\u200c\u200d\ufeff"))
+_NUMCSV = re.compile(r"\d+(?:\.\d+)?(?:,\d+(?:\.\d+)?)*")
+
+
+def neon_bp(text, rules):
+    """Doc dong gon NeonUtil tu dong tra loi `owo w <ID>` (vd '... `sstaff 100,91,68 knowledge 98`') -> {'t': id loai, 'bp': chuoi}
+    hoac None neu khong doc ro. Doan bp nam trong dau ` hoac giua 2 ky tu word-joiner (app doc man hinh thay U+2060)."""
+    text = (text or "").translate(_ZW)
+    spans = re.findall(r"`([^`\n]+)`", text) + re.findall(r"\u2060([^\u2060\n]+)\u2060", text)
+    keymap = {}
+    for tid, info in ((rules or {}).get("types") or {}).items():
+        try:
+            t = int(tid) - 100
+        except ValueError:
+            continue
+        for k in (info.get("key"), info.get("tag")):
+            if k:
+                keymap[str(k).lower()] = t
+    for sp in spans:
+        toks = sp.split()
+        if toks and toks[0] in _WEAR:
+            toks = toks[1:]
+        if len(toks) < 1 or toks[0].lower() not in keymap:
+            continue
+        t = keymap[toks[0].lower()]
+        if WEAPON_STATS.get(t) == 0 or (len(toks) > 1 and _NUMCSV.fullmatch(toks[1])):
+            return {"t": t, "bp": " ".join(toks)}
+    return None
+
+
 def top_passive_rank(w) -> int:
     ranks = [p.get("r") for p in (w.get("p") or []) if isinstance(p.get("r"), int)]
     return max(ranks) if ranks else -1
