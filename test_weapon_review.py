@@ -51,9 +51,13 @@ class Cur:
 
 class Col:
     def __init__(s): s.docs = {}
-    def find(s, f=None): return Cur([d for d in s.docs.values() if _match(d, f or {})])
+    def find(s, f=None, proj=None): return Cur([d for d in s.docs.values() if _match(d, f or {})])
     async def find_one(s, f): return next((dict(d) for d in s.docs.values() if _match(d, f)), None)
     async def count_documents(s, f): return len([d for d in s.docs.values() if _match(d, f)])
+    async def update_many(s, f, u):
+        for d in s.docs.values():
+            if d.get("status") == f.get("status") and str(d.get("action", "")).startswith("clean_"):
+                for k, v in u.get("$set", {}).items(): _setpath(d, k, v)
     async def delete_one(s, f): s.docs.pop(f["_id"], None)
     async def delete_many(s, f): s.docs.clear()
     async def update_one(s, f, u, upsert=False):
@@ -130,7 +134,38 @@ async def go():
     check("Hub: tóm tắt phiên", (hub["active"], hub["current_id"], hub["remaining"], hub["kept"], hub["dropped"]), (True, None, 0, 2, 1))
     check("ID dài được cắt gọn, ưu tiên cây mới", b._review_ids_text([f"{i:04d}" for i in range(400)]).startswith("… (+"), True)
 
+async def go2():
+    # ---- 3 danh sach + chon tay
+    b.mdb = DB()
+    for i, (t, q) in enumerate([("a", 10), ("b", 20), ("c", 30), ("d", 40)]):
+        await b.mdb[b.COL_WEAPON_LIST].update_one({"_id": f"W{i}"}, {"$set": {"type": t, "quality": q}}, upsert=True)
+    R = b.mdb[b.COL_WEAPON_REVIEW]
+    await R.update_one({"_id": "W0"}, {"$set": {"decision": "keep", "reason": "chi_so_cao"}}, upsert=True)
+    await R.update_one({"_id": "W1"}, {"$set": {"decision": "keep", "reason": "bp_la"}}, upsert=True)
+    await R.update_one({"_id": "W2"}, {"$set": {"decision": "drop", "reason": "chi_so_thap"}}, upsert=True)
+    L = await b.review_lists()
+    check("lists: Giữ/Bỏ/Không xác định (bp_la tính không xác định, W3 chưa quyết)",
+          (L["keep"], L["drop"], L["unknown"]), (["W0"], ["W2"], ["W1", "W3"]))
+    res, err = await b.review_select("zz9")
+    check("chọn ID lạ bị từ chối", (res, err), (None, "khong tim thay cay nay"))
+    res, err = await b.review_select("w2")
+    check("chọn tay W2", (res and res["id"], err), ("W2", None))
+    res, err = await b.review_decide("keep")
+    check("đổi Bỏ -> Giữ tay, hết hàng đợi", (res["decided"], res["next_id"]), ("W2", None))
+    doc = await R.find_one({"_id": "W2"})
+    check("giữ nguyên lý do gốc, đánh dấu manual", (doc["decision"], doc["reason"], doc.get("manual")), ("keep", "chi_so_thap", True))
+    check("W2 sang danh sách Giữ", (await b.review_lists())["keep"], ["W0", "W2"])
+    await b.review_select("W1")
+    res, err = await b.review_decide("keep")
+    check("quyết tay W1 (bp_la) -> rời Không xác định", (await b.review_lists())["unknown"], ["W3"])
+    await b.review_select("W0")
+    await b.review_decide("unknown")
+    check("đặt tay Không xác định", "W0" in (await b.review_lists())["unknown"], True)
+    cs = await b.clean_session()
+    check("kế hoạch dọn kho bị vô hiệu sau khi đổi tay", (cs["active"], cs["steps"]), (False, []))
+
 asyncio.run(go())
+asyncio.run(go2())
 if fails:
     print("\n❌ %d bài lỗi" % len(fails)); sys.exit(1)
 print("\n✅ Toàn bộ test weapon_review pass.")

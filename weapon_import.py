@@ -170,6 +170,8 @@ REASON_TEXT = {
     "q_thap": f"không có bp, chất lượng tổng < {NO_BP_KEEP_Q:g}",
 }
 KEEP_REASONS = ("loai_dac_biet", "khoa", "co_kill", "knowledge_top", "chi_so_cao", "chua_xem_passive_cao", "bp_la", "q_cao")
+# Cay bot GIU vi chua chac (khong phai vi dat luat): hien o danh sach "Khong xac dinh" cho Ruby tu check tay
+UNSURE_REASONS = ("chua_xem_passive_cao", "bp_la")
 DROP_REASONS = ("chi_so_thap", "q_thap")
 
 
@@ -248,7 +250,7 @@ def cleanup_stages(docs, extra_drop=()) -> dict:
             continue
         if RARE_MAX_KNOWN_Q < q < EPIC_MIN_KNOWN_Q:
             out["unsure"].append(wid)
-        if d.get("decision") == "keep":
+        if d.get("decision") in ("keep", "unknown"):   # "khong xac dinh" = chua chac -> phai SAO nhu GIU (OwO khong ra cay da sao)
             if d.get("reason") != "khoa" and q < SPLIT_Q:
                 out["star_ids"].append(wid)
         elif d.get("decision") == "drop":

@@ -180,5 +180,13 @@ def test_extra_drop_and_parse_ids():
 test_extra_drop_and_parse_ids()
 print("✅ extra_drop")
 
+def test_unknown_is_starred():
+    docs = [{"_id": "U1", "decision": "unknown", "reason": "bp_la", "q": 30.0},
+            {"_id": "U2", "decision": "unknown", "reason": "khoa", "q": 30.0}]
+    st = wi.cleanup_stages(docs, ())
+    assert st["star_ids"] == ["U1"] and st["low_drop"] == []
+test_unknown_is_starred()
+print("✅ unknown được sao như Giữ")
+
 print("\nTAT CA DAT" if not fails else f"\nLOI: {len(fails)}")
 sys.exit(1 if fails else 0)

@@ -1531,26 +1531,108 @@ async def _after_review_scan():
         await queue_automacro_command("weapon_review", {"command_text": f"owo w {nxt}"})
 
 
+def review_bucket(doc: dict) -> str:
+    """Ngan cua 1 cay trong COL_WEAPON_REVIEW: keep / drop / unknown. Cay bot GIU vi chua chac (UNSURE_REASONS) tinh la 'unknown'
+    cho toi khi Ruby tu quyet (manual)."""
+    d = doc.get("decision")
+    if d == "unknown":
+        return "unknown"
+    if d == "keep" and not doc.get("manual") and doc.get("reason") in weapon_import.UNSURE_REASONS:
+        return "unknown"
+    return d if d in ("keep", "drop") else "unknown"
+
+
+async def review_lists() -> dict:
+    """3 danh sach ID cho tab Misc: keep / drop / unknown (gom ca cay chua quyet, khong sao, khong trang bi). Moi danh sach sap xep theo ID."""
+    rows = await mdb[COL_WEAPON_REVIEW].find({}).to_list(length=100000)
+    out = {"keep": [], "drop": [], "unknown": []}
+    for r in rows:
+        out[review_bucket(r)].append(str(r["_id"]))
+    decided = {r["_id"] for r in rows}
+    out["unknown"] += [i for i in await review_pending_ids({i: 1 for i in decided}) if i not in decided]
+    for k in out:
+        out[k] = sorted(set(out[k]))
+    sess = await review_get()
+    return {**out, "current_id": sess.get("current"), "active": bool(sess.get("active"))}
+
+
+async def clean_invalidate(reason: str):
+    """Quyet dinh tay doi -> ke hoach don kho dang cho khong con dung: huy buoc cho, bat Ruby xuat lai `nw inv export`."""
+    now = _utcnow().isoformat()
+    await mdb[COL_AUTOMACRO_COMMANDS].update_many(
+        {"status": "pending", "action": {"$regex": "^clean_"}},
+        {"$set": {"status": "cancelled", "completed_at": now}})
+    await mdb[COL_CONFIG].update_one({"_id": CLEAN_KEY}, {"$set": {"value": {
+        "active": False, "steps": [], "cursor": 0, "total": 0, "at": now, "empty_reason": reason}}}, upsert=True)
+
+
+async def review_select(wid: str):
+    """Ruby chon tay 1 ID trong 3 danh sach de kiem tra (app go `owo w <ID>`). Tra ve (dict, loi)."""
+    wid = str(wid or "").strip().upper()
+    if not wid or len(wid) > 20 or not wid.isalnum():
+        return None, "ID khong hop le"
+    sess = await review_get()
+    if sess.get("active") and sess.get("phase") == "scanning":
+        return None, "dang quet kho, doi quet xong roi chon cay"
+    if sess.get("active") and sess.get("auto"):
+        return None, "dang tu duyet (NeonUtil), chua chon tay duoc"
+    known = await mdb[COL_WEAPON_REVIEW].find_one({"_id": wid}) or await mdb[COL_WEAPON_LIST].find_one({"_id": wid})
+    if not known:
+        return None, "khong tim thay cay nay"
+    lists = await review_lists()
+    queue = []
+    for k in ("keep", "drop", "unknown"):
+        if wid in lists[k]:
+            ids = lists[k]
+            queue = ids[ids.index(wid) + 1:]
+            break
+    await review_delete_checks(sess)
+    await mdb[COL_CONFIG].update_one(
+        {"_id": REVIEW_KEY},
+        {"$set": {"value.active": True, "value.phase": "review", "value.current": wid, "value.check_msg_ids": [],
+                  "value.manual": True, "value.manual_queue": queue[:500]}},
+        upsert=True)
+    sess = await review_get()
+    if not sess.get("channel_id"):
+        # chua co phien duyet nao (khong co kenh de dang embed): chi chay duoc o muc app, khong can embed
+        pass
+    await review_refresh_embed(sess)
+    return {"ok": True, "id": wid, "remaining": len(await review_pending_ids())}, None
+
+
 async def review_decide(decision: str):
-    """Ghi quyet dinh cho cay dang kiem tra, xoa tin cua no, chon cay ke tiep. Tra ve (dict, loi)."""
-    if decision not in ("keep", "drop"):
-        return None, "decision phai la keep hoac drop"
+    """Ghi quyet dinh cho cay dang kiem tra, xoa tin cua no, chon cay ke tiep. Tra ve (dict, loi).
+    Quyet dinh cua Ruby danh dau manual=True: `,weaponimport` lan sau khong ghi de, ly do goc (vd 'khoa') giu nguyen."""
+    if decision not in ("keep", "drop", "unknown"):
+        return None, "decision phai la keep, drop hoac unknown"
     sess = await review_get()
     cur = sess.get("current")
     if not sess.get("active") or not cur:
         return None, "khong co cay nao dang duyet"
+    prev = await mdb[COL_WEAPON_REVIEW].find_one({"_id": cur}) or {}
+    changed = prev.get("decision") != decision or review_bucket(prev) != decision
     await mdb[COL_WEAPON_REVIEW].update_one(
-        {"_id": cur}, {"$set": {"decision": decision, "at": _utcnow().isoformat()}}, upsert=True)
+        {"_id": cur}, {"$set": {"decision": decision, "manual": True, "at": _utcnow().isoformat()}}, upsert=True)
     await review_delete_checks(sess)
-    pending = await review_pending_ids()
-    nxt = pending[0] if pending else None
+    if sess.get("manual"):
+        queue = [i for i in (sess.get("manual_queue") or []) if i != cur]
+        nxt = queue[0] if queue else None
+        rest = queue[1:]
+    else:
+        pending = await review_pending_ids()
+        nxt = pending[0] if pending else None
+        rest = []
     await mdb[COL_CONFIG].update_one(
         {"_id": REVIEW_KEY},
-        {"$set": {"value.current": nxt, "value.check_msg_ids": []}, "$push": {"value.history": {"$each": [cur], "$slice": -50}}},
+        {"$set": {"value.current": nxt, "value.check_msg_ids": [], "value.manual_queue": rest},
+         "$push": {"value.history": {"$each": [cur], "$slice": -50}}},
         upsert=True)
+    if changed:
+        await clean_invalidate("bạn vừa đổi Giữ/Bỏ tay — gõ lại `nw inv export` để lập kế hoạch dọn kho mới")
     sess = await review_get()
     await review_refresh_embed(sess)
-    return {"ok": True, "decided": cur, "decision": decision, "next_id": nxt, "remaining": len(pending)}, None
+    return {"ok": True, "decided": cur, "decision": decision, "next_id": nxt,
+            "remaining": len(await review_pending_ids())}, None
 
 
 # ===================== Tu duyet vu khi (doc bot NeonUtil) =====================
@@ -1740,7 +1822,8 @@ async def _hub_weapon_review():
     return {"active": bool(sess.get("active")), "current_id": sess.get("current"),
             "remaining": len(await review_pending_ids(decided)),
             "kept": sum(1 for d in decided.values() if d == "keep"),
-            "dropped": sum(1 for d in decided.values() if d == "drop")}
+            "dropped": sum(1 for d in decided.values() if d == "drop"),
+            "unknown": len((await review_lists())["unknown"])}
 
 
 async def handle_post_weapon_review(request: web.Request):
@@ -1756,6 +1839,29 @@ async def handle_post_weapon_review(request: web.Request):
     res, err = await review_decide(str(body.get("decision") or ""))
     if err:
         return web.json_response({"error": err}, status=409 if "dang duyet" in err else 400)
+    return web.json_response(res)
+
+
+async def handle_get_weapon_review_lists(request: web.Request):
+    """GET /weapon-review/lists -> {keep:[ID], drop:[ID], unknown:[ID], current_id, active}"""
+    if not _check_api_token(request):
+        return web.json_response({"error": "unauthorized"}, status=401)
+    return web.json_response(await review_lists())
+
+
+async def handle_post_weapon_review_select(request: web.Request):
+    """POST /weapon-review/select {"id": "ABC123"} -> chon cay de kiem tra tay"""
+    if not _check_api_token(request):
+        return web.json_response({"error": "unauthorized"}, status=401)
+    try:
+        body = await request.json()
+    except ValueError:
+        body = {}
+    if not isinstance(body, dict):
+        return web.json_response({"error": "body phai la object JSON"}, status=400)
+    res, err = await review_select(str(body.get("id") or ""))
+    if err:
+        return web.json_response({"error": err}, status=400)
     return web.json_response(res)
 
 
@@ -3075,6 +3181,8 @@ async def start_automacro_api_server():
     app.router.add_post("/gemtier", handle_post_gemtier)
     app.router.add_post("/weapon-advice", handle_post_weapon_advice)
     app.router.add_post("/weapon-review", handle_post_weapon_review)
+    app.router.add_get("/weapon-review/lists", handle_get_weapon_review_lists)
+    app.router.add_post("/weapon-review/select", handle_post_weapon_review_select)
     app.router.add_get("/settings", handle_get_settings)
     app.router.add_post("/settings", handle_post_settings)
     app.router.add_get("/notes", handle_get_notes)
@@ -4700,8 +4808,14 @@ async def import_weapon_export(raw: bytes, auto_session: bool = False) -> str:
     if stale:
         await mdb[COL_WEAPON_REVIEW].delete_many({"_id": {"$in": stale}})
     by_id = {str(w["id"]): w for w in weapons}
+    manual_ids = {r["_id"] for r in await mdb[COL_WEAPON_REVIEW].find({"manual": True}, {"_id": 1}).to_list(length=100000)}
     for decision, bucket in (("keep", plan["keep"]), ("drop", plan["drop"])):
         for wid, why in bucket.items():
+            if wid in manual_ids:
+                # Ruby da quyet tay: giu quyet dinh + ly do, chi lam moi chat luong / loai
+                await mdb[COL_WEAPON_REVIEW].update_one(
+                    {"_id": wid}, {"$set": {"source": "neon_export", "at": now, "q": by_id[wid]["q"], "t": by_id[wid]["t"]}}, upsert=True)
+                continue
             await mdb[COL_WEAPON_REVIEW].update_one(
                 {"_id": wid}, {"$set": {"decision": decision, "reason": why, "source": "neon_export", "at": now,
                                         "q": by_id[wid]["q"], "t": by_id[wid]["t"]}}, upsert=True)
