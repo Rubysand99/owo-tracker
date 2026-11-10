@@ -30,14 +30,18 @@ check("bp Orb (t=6): khong co chi so -> []", wi.all_stat_qualities(W(t=6, bp="or
 check("khong co bp -> None (all_stat_qualities)", wi.all_stat_qualities(W()), None)
 check("TAT CA chi so (gom WP) >= 80 -> giu", wi.decide(W(bp="dagger 90,85,80 att 20")), ("keep", "chi_so_cao"))
 check("moi chi so deu 100 -> giu", wi.decide(W(bp="dagger 100,100,100")), ("keep", "chi_so_cao"))
-check("chi phi WP 79 keo cay xuong -> bo (WP tinh nhu 1 chi so)", wi.decide(W(bp="dagger 90,90,79 att 20")), ("drop", "chi_so_thap"))
+check("loai chi co 1 chi so -> khong tu Bo", wi.decide(W(t=4, bp="rune 90")), ("keep", "bp_la"))
+check("luat moi: 2 chi so >= 80 la du giu (chi phi WP 79 khong keo xuong)", wi.decide(W(bp="dagger 90,90,79 att 20")), ("keep", "chi_so_cao"))
+check("chi phi WP la 1 chi so: 90,10,85 -> giu", wi.decide(W(bp="dagger 90,10,85 att 20")), ("keep", "chi_so_cao"))
+check("dung 80 tinh dat: 80,80,10 -> giu", wi.decide(W(bp="dagger 80,80,10")), ("keep", "chi_so_cao"))
+check("79,80,10 chi 1 chi so dat -> bo (da doc du chi so)", wi.decide(W(bp="dagger 79,80,10")), ("drop", "chi_so_thap"))
 check("chi 1 chi so cao (80,10,10) khong con du de giu -> bo", wi.decide(W(bp="dagger 80,10,10 att 20")), ("drop", "chi_so_thap"))
 check("chi so chinh cao nhung WP 100 khong cuu cay yeu", wi.decide(W(bp="dagger 10,10,100 att 20")), ("drop", "chi_so_thap"))
 check("Bow (t=3): 2 chi so 94,81 -> giu", wi.decide(W(t=3, bp="bow 94,81 snail 81")), ("keep", "chi_so_cao"))
 check("Orb khong co chi so de xet -> bo (chi giu qua Knowledge top)", wi.decide(W(t=6, bp="orb sac 98,56 gslay")), ("drop", "chi_so_thap"))
 check("passive hang 5 KHONG con cuu cay co bp yeu", wi.decide(W(p=[{"t": 21, "r": 5}], bp="dagger 1,1,1 att 95")), ("drop", "chi_so_thap"))
 check("chua co bp + passive hang 5 -> giu (chua biet co phai Knowledge cao)", wi.decide(W(q=10.0, p=[{"t": 21, "r": 5}])), ("keep", "chua_xem_passive_cao"))
-check("chua co bp + passive hang 4 + q thap -> bo", wi.decide(W(q=10.0, p=[{"t": 21, "r": 4}])), ("drop", "q_thap"))
+check("chua co bp + q thap -> KHONG bo (chua chac), de Chua ro", wi.decide(W(q=10.0, p=[{"t": 21, "r": 4}])), ("keep", "q_thap_chua_chac"))
 
 # --- Knowledge: doc tu bp, giu TOP 6
 check("kno 95", wi.knowledge_quality(W(bp="dagger 1,1,1 kno 95")), 95)
@@ -68,7 +72,7 @@ check("cay co Knowledge nhung khong vao top, chi so thap -> bo", wi.decide(K("G"
 check("cay Knowledge vao top van sau khoa/kill (thu tu uu tien)", wi.decide(K("B", 99, l=True), {"B"}), ("keep", "khoa"))
 check("cay Knowledge ngoai top nhung chi so deu >= 80 -> van giu theo chi so", wi.decide(W(id="G", bp="dagger 90,90,90 kno 40"), {"B"}), ("keep", "chi_so_cao"))
 check("khong bp, q 75 -> giu", wi.decide(W(q=75.0)), ("keep", "q_cao"))
-check("khong bp, q 74.9 -> bo", wi.decide(W(q=74.9)), ("drop", "q_thap"))
+check("khong bp, q 74.9 -> khong bo, de Chua ro", wi.decide(W(q=74.9)), ("keep", "q_thap_chua_chac"))
 check("bp la -> giu (thieu du lieu khong bao gio bo)", wi.decide(W(bp="dagger abc")), ("keep", "bp_la"))
 check("bp la voi cay yeu van giu", wi.decide(W(q=5, bp="dagger 98,31")), ("keep", "bp_la"))
 
@@ -76,7 +80,7 @@ check("bp la voi cay yeu van giu", wi.decide(W(q=5, bp="dagger 98,31")), ("keep"
 check("Rune of Luck (t=22) khong bao gio Bo", wi.decide(W(t=22, q=1, bp="x 1,1,1,1,1,1,1")), ("keep", "loai_dac_biet"))
 check("Rune of Celebration (t=18) khong bao gio Bo", wi.decide(W(t=18, q=1)), ("keep", "loai_dac_biet"))
 check("cay da co kill (k=true) -> giu", wi.decide(W(k=True, q=1)), ("keep", "co_kill"))
-check("k=false (chi co TT) van xet theo luat", wi.decide(W(k=False, q=1)), ("drop", "q_thap"))
+check("k=false (chi co TT) van xet theo luat", wi.decide(W(k=False, q=1)), ("keep", "q_thap_chua_chac"))
 
 # --- tao dong lenh de Ruby tu dan
 ids = [f"ID{n:03d}" for n in range(1, 38)]
@@ -121,10 +125,10 @@ check("thieu q -> chi thong bao nhap lai", "weaponimport" in wi.cleanup_text(wi.
 
 # --- ke hoach + tom tat
 plan = wi.build_plan([W(id="A", l=True), W(id="B", q=80.0), W(id="C", q=10.0), W(id="D", bp="dagger 1,1,1 att 1")])
-check("ke hoach dem dung", (sorted(plan["keep"]), sorted(plan["drop"]), plan["total"]), (["A", "B"], ["C", "D"], 4))
-check("ly do dem dung", plan["reasons"], {"khoa": 1, "q_cao": 1, "q_thap": 1, "chi_so_thap": 1})
+check("ke hoach dem dung", (sorted(plan["keep"]), sorted(plan["drop"]), plan["total"]), (["A", "B", "C"], ["D"], 4))
+check("ly do dem dung", plan["reasons"], {"khoa": 1, "q_cao": 1, "q_thap_chua_chac": 1, "chi_so_thap": 1})
 txt = wi.summary_text(plan)
-check("tom tat noi ro chua xoa gi", ("CHƯA xóa" in txt and "Giữ **2**" in txt and "Bỏ **2**" in txt), True)
+check("tom tat noi ro chua xoa gi", ("CHƯA xóa" in txt and "Giữ **3**" in txt and "Bỏ **1**" in txt), True)
 check("ke hoach khong co Knowledge -> top rong, tom tat khong in dong Top", (plan["knowledge_top"], "Top 6 Knowledge" in txt), ([], False))
 
 # --- ke hoach co Knowledge top 6

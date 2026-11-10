@@ -14,10 +14,10 @@ LUAT (v1.33, Ruby chon):
   - Da khoa                                    -> GIU
   - Co kill (k = true)                         -> GIU (khong bo cay da co kill)
   - TOP 6 Knowledge cao nhat                   -> GIU (bot luu 6 cay; co cay cao hon thi thay vao, cay bi day ra xet nhu cay thuong)
-  - Co bp doc duoc: TAT CA chi so >= 80%       -> GIU   (Mythic tro len; TINH CA chi phi WP, KHONG tinh passive)
-  - Co bp doc duoc nhung co chi so < 80%       -> BO    (passive khac khong cuu duoc nua)
+  - Co bp doc duoc: >= 2 chi so >= 80%       -> GIU   (Mythic tro len; TINH CA chi phi WP, KHONG tinh passive); doc du ma khong du -> BO (chac chan)
+  - Co bp doc duoc nhung < 2 chi so >= 80%     -> BO    (passive khac khong cuu duoc nua)
   - Khong co bp (chua `owo w <ID>`): khong biet co phai Knowledge khong
-        passive hang >= 5 -> GIU; con lai q >= 75 -> GIU, q < 75 -> BO
+        passive hang >= 5 -> GIU; q >= 75 -> GIU; con lai KHONG Bo (chua chac) -> GIU + danh dau "Chua ro"
   - bp co nhung la / khong doc duoc            -> GIU (thieu du lieu thi khong bao gio Bo)
 """
 import json
@@ -28,6 +28,7 @@ WEAPON_STATS = {1: 2, 2: 2, 3: 2, 4: 1, 5: 2, 6: 0, 7: 2, 8: 3, 9: 3, 10: 4, 11:
                 16: 4, 17: 3, 18: 3, 19: 3, 20: 5, 21: 3, 22: 6, 23: 3, 24: 3, 25: 4, 26: 3, 27: 3, 28: 4, 29: 3}
 
 NEVER_DROP_TYPES = {18, 22}   # Rune of Celebration, Rune of Luck (weapon_rules.json: never_dismantle 118 / 122)
+STAT_KEEP_COUNT = 2      # can it nhat 2 chi so dat STAT_KEEP_MIN moi giu
 STAT_KEEP_MIN = 80        # moi chi so (ke ca chi phi WP) >= 80% (Mythic tro len)
 KNOWLEDGE_TOP_N = 6       # luu / giu 6 cay co Knowledge cao nhat
 UNVERIFIED_PASSIVE_RANK = 5   # cay CHUA co bp: passive hang >= 5 (~93%+) -> chua biet co phai Knowledge cao -> khong Bo
@@ -146,7 +147,9 @@ def decide(w, kno_top=()):
         stats = all_stat_qualities(w)
         if stats is None:
             return "keep", "bp_la"
-        if stats and all(v >= STAT_KEEP_MIN for v in stats):
+        if 0 < len(stats) < STAT_KEEP_COUNT:
+            return "keep", "bp_la"     # loai chi co 1 chi so: luat "2 chi so" khong ap dung duoc -> khong tu Bo
+        if sum(1 for v in stats if v >= STAT_KEEP_MIN) >= STAT_KEEP_COUNT:
             return "keep", "chi_so_cao"
         return "drop", "chi_so_thap"
     # Chua co bp: khong biet cay co Knowledge cao hay khong -> passive hang cao thi khong Bo (Bo la khong quay lai duoc)
@@ -154,7 +157,8 @@ def decide(w, kno_top=()):
         return "keep", "chua_xem_passive_cao"
     if w["q"] >= NO_BP_KEEP_Q:
         return "keep", "q_cao"
-    return "drop", "q_thap"
+    # Khong co bp thi KHONG biet tung chi so -> khong du can cu Bo (chi Bo khi chac 100%): dua vao "Khong xac dinh"
+    return "keep", "q_thap_chua_chac"
 
 
 REASON_TEXT = {
@@ -162,17 +166,18 @@ REASON_TEXT = {
     "co_kill": "đã có kill",
     "khoa": "đã khóa",
     "knowledge_top": f"nằm trong top {KNOWLEDGE_TOP_N} Knowledge cao nhất",
-    "chi_so_cao": f"mọi chỉ số (gồm chi phí WP) ≥ {STAT_KEEP_MIN}%",
+    "chi_so_cao": f"có ≥ {STAT_KEEP_COUNT} chỉ số (gồm chi phí WP) ≥ {STAT_KEEP_MIN}%",
     "chua_xem_passive_cao": "chưa xem chi tiết (`owo w <ID>`) và có passive hạng ≥ 5 — chưa rõ có phải Knowledge cao",
     "bp_la": "bp lạ/không đọc được (giữ cho an toàn)",
     "q_cao": f"không có bp, chất lượng tổng ≥ {NO_BP_KEEP_Q:g}",
-    "chi_so_thap": f"có bp nhưng chưa đủ mọi chỉ số ≥ {STAT_KEEP_MIN}%",
+    "chi_so_thap": f"đã đọc đủ chỉ số, chưa có {STAT_KEEP_COUNT} chỉ số nào ≥ {STAT_KEEP_MIN}% (chắc chắn không đạt)",
+    "q_thap_chua_chac": f"không có bp, chất lượng tổng < {NO_BP_KEEP_Q:g} — chưa xem chỉ số nên chưa chắc, để 'Chưa rõ'",
     "q_thap": f"không có bp, chất lượng tổng < {NO_BP_KEEP_Q:g}",
 }
-KEEP_REASONS = ("loai_dac_biet", "khoa", "co_kill", "knowledge_top", "chi_so_cao", "chua_xem_passive_cao", "bp_la", "q_cao")
+KEEP_REASONS = ("loai_dac_biet", "khoa", "co_kill", "knowledge_top", "chi_so_cao", "chua_xem_passive_cao", "bp_la", "q_cao", "q_thap_chua_chac")
 # Cay bot GIU vi chua chac (khong phai vi dat luat): hien o danh sach "Khong xac dinh" cho Ruby tu check tay
-UNSURE_REASONS = ("chua_xem_passive_cao", "bp_la")
-DROP_REASONS = ("chi_so_thap", "q_thap")
+UNSURE_REASONS = ("chua_xem_passive_cao", "bp_la", "q_thap_chua_chac")
+DROP_REASONS = ("chi_so_thap",)
 
 
 def build_plan(weapons: list, knowledge_stored=None) -> dict:
