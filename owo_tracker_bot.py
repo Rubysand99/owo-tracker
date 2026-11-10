@@ -1600,6 +1600,18 @@ async def review_select(wid: str):
     return {"ok": True, "id": wid, "remaining": len(await review_pending_ids())}, None
 
 
+async def review_stop():
+    """Ruby bam 'Dung' tren Hub: tat phien duyet (danh sach Giu/Bo van luu), an nut Giu/Bo/?."""
+    sess = await review_get()
+    await review_delete_checks(sess)
+    await mdb[COL_CONFIG].update_one(
+        {"_id": REVIEW_KEY},
+        {"$set": {"value.active": False, "value.current": None, "value.check_msg_ids": [], "value.manual_queue": []}},
+        upsert=True)
+    await review_refresh_embed(await review_get())
+    return {"ok": True}
+
+
 async def review_decide(decision: str):
     """Ghi quyet dinh cho cay dang kiem tra, xoa tin cua no, chon cay ke tiep. Tra ve (dict, loi).
     Quyet dinh cua Ruby danh dau manual=True: `,weaponimport` lan sau khong ghi de, ly do goc (vd 'khoa') giu nguyen."""
@@ -1840,6 +1852,13 @@ async def handle_post_weapon_review(request: web.Request):
     if err:
         return web.json_response({"error": err}, status=409 if "dang duyet" in err else 400)
     return web.json_response(res)
+
+
+async def handle_post_weapon_review_stop(request: web.Request):
+    """POST /weapon-review/stop -> dung duyet vu khi (an nut tren Hub)"""
+    if not _check_api_token(request):
+        return web.json_response({"error": "unauthorized"}, status=401)
+    return web.json_response(await review_stop())
 
 
 async def handle_get_weapon_review_lists(request: web.Request):
@@ -3181,6 +3200,7 @@ async def start_automacro_api_server():
     app.router.add_post("/gemtier", handle_post_gemtier)
     app.router.add_post("/weapon-advice", handle_post_weapon_advice)
     app.router.add_post("/weapon-review", handle_post_weapon_review)
+    app.router.add_post("/weapon-review/stop", handle_post_weapon_review_stop)
     app.router.add_get("/weapon-review/lists", handle_get_weapon_review_lists)
     app.router.add_post("/weapon-review/select", handle_post_weapon_review_select)
     app.router.add_get("/settings", handle_get_settings)

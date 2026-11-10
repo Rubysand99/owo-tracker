@@ -164,8 +164,17 @@ async def go2():
     cs = await b.clean_session()
     check("kế hoạch dọn kho bị vô hiệu sau khi đổi tay", (cs["active"], cs["steps"]), (False, []))
 
+async def go3():
+    await b.review_select("W3")
+    await b.review_stop()
+    sess = await b.review_get()
+    check("Dừng duyệt: tắt phiên, bỏ cây hiện tại", (sess["active"], sess["current"]), (False, None))
+    res, err = await b.review_decide("keep")
+    check("Dừng rồi thì Giữ/Bỏ báo không có cây", err, "khong co cay nao dang duyet")
+
 asyncio.run(go())
 asyncio.run(go2())
+asyncio.run(go3())
 if fails:
     print("\n❌ %d bài lỗi" % len(fails)); sys.exit(1)
 print("\n✅ Toàn bộ test weapon_review pass.")
