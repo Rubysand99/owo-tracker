@@ -1633,9 +1633,11 @@ async def autoneon_start():
     rows = {str(r["_id"]): r for r in await mdb[COL_WEAPON_REVIEW].find({}).to_list(length=100000)}
     lists = await review_lists()
     queue = [i for i in lists["unknown"] if not (rows.get(i, {}).get("manual") and rows[i].get("decision") == "unknown")]
+    # moi cay CHUA co bp (ke ca cay khoa): app go `owo w <ID>` de doc chinh xac chi so + Knowledge. Bo qua cay Ruby da quyet tay / loai dac biet.
+    queue += [i for i, r in rows.items() if not r.get("bp") and not r.get("manual") and r.get("reason") != "loai_dac_biet"]
     queue = sorted(set(queue))
     if not queue:
-        return None, "khong co cay 'Chua ro' nao can duyet"
+        return None, "khong co cay nao can xem chi tiet (moi cay deu da co chi so)"
     await mdb[COL_CONFIG].update_one(
         {"_id": REVIEW_KEY},
         {"$set": {"value.active": True, "value.phase": "review", "value.manual": True, "value.autoneon": True,
@@ -1733,7 +1735,8 @@ async def autoneon_handle_neon(message):
             await set_config(KNOWLEDGE_TOP_KEY, [{"id": i, "v": cand[i]} for i in order])
             decision, why = weapon_import.decide(w, set(order))
             if locked:
-                # Cay khoa: khong doi Giu/Bo; chi bao Ruby neu chi so khong dat luat
+                # Cay khoa: khong doi Giu/Bo; chi bao Ruby neu chi so khong dat luat. Luu bp de lan sau khong phai xem lai
+                await mdb[COL_WEAPON_REVIEW].update_one({"_id": wid}, {"$set": {"bp": got["bp"]}}, upsert=True)
                 if why == "khoa_khong_dat" and doc.get("reason") != "khoa_khong_dat":
                     await mdb[COL_WEAPON_REVIEW].update_one({"_id": wid}, {"$set": {"reason": "khoa_khong_dat", "bp": got["bp"]}}, upsert=True)
                     await notify_owner(f"🔒 Cây khóa `{wid}` có chỉ số KHÔNG đạt luật (cần ≥ 2 chỉ số ≥ 80%): `{got['bp']}`. "
@@ -4993,13 +4996,15 @@ async def import_weapon_export(raw: bytes, auto_session: bool = False) -> str:
             if wid in manual_ids:
                 # Ruby da quyet tay: giu quyet dinh + ly do, chi lam moi chat luong / loai
                 await mdb[COL_WEAPON_REVIEW].update_one(
-                    {"_id": wid}, {"$set": {"source": "neon_export", "at": now, "q": by_id[wid]["q"], "t": by_id[wid]["t"]}}, upsert=True)
+                    {"_id": wid}, {"$set": {"source": "neon_export", "at": now, "q": by_id[wid]["q"], "t": by_id[wid]["t"],
+                                            **({"bp": by_id[wid]["bp"]} if by_id[wid].get("bp") else {})}}, upsert=True)
                 continue
             await mdb[COL_WEAPON_REVIEW].update_one(
                 {"_id": wid}, {"$set": {"decision": decision, "reason": why, "source": "neon_export", "at": now,
-                                        "q": by_id[wid]["q"], "t": by_id[wid]["t"]}}, upsert=True)
+                                        "q": by_id[wid]["q"], "t": by_id[wid]["t"],
+                                        **({"bp": by_id[wid]["bp"]} if by_id[wid].get("bp") else {})}}, upsert=True)
     data = json.dumps({"tao_luc": now, "tong": plan["total"], "ly_do": plan["reasons"],
-                       "giu": plan["keep"], "bo": plan["drop"]}, ensure_ascii=False, indent=1).encode("utf-8")
+                       "knowledge_top": plan["knowledge_top"], "giu": plan["keep"], "bo": plan["drop"]}, ensure_ascii=False, indent=1).encode("utf-8")
     await send_file_to_owner("📦 Kế hoạch Giữ / Bỏ từ file export (chưa xóa gì).", "weapon_import_plan.json", data)
     text = weapon_import.summary_text(plan)
     if auto_session:
