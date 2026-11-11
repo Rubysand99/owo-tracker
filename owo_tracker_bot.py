@@ -1537,6 +1537,8 @@ def review_bucket(doc: dict) -> str:
     d = doc.get("decision")
     if d == "unknown":
         return "unknown"
+    if d == "drop" and not doc.get("manual") and doc.get("reason") == "chua_xem_bp":
+        return "unknown"       # ban v1.36 tung xep Bo; Ruby doi y: chua xem chi so = Chua ro
     if d == "keep" and not doc.get("manual") and doc.get("reason") in weapon_import.UNSURE_REASONS:
         return "unknown"
     return d if d in ("keep", "drop") else "unknown"
@@ -1631,11 +1633,9 @@ async def autoneon_start():
     rows = {str(r["_id"]): r for r in await mdb[COL_WEAPON_REVIEW].find({}).to_list(length=100000)}
     lists = await review_lists()
     queue = [i for i in lists["unknown"] if not (rows.get(i, {}).get("manual") and rows[i].get("decision") == "unknown")]
-    # cay bi Bo chi vi chua xem chi so (chua_xem_bp): cho Neon doc de cuu lai cay tot
-    queue += [i for i, r in rows.items() if r.get("decision") == "drop" and r.get("reason") == "chua_xem_bp" and not r.get("manual")]
     queue = sorted(set(queue))
     if not queue:
-        return None, "khong co cay nao can duyet (Chua ro / chua xem chi so)"
+        return None, "khong co cay 'Chua ro' nao can duyet"
     await mdb[COL_CONFIG].update_one(
         {"_id": REVIEW_KEY},
         {"$set": {"value.active": True, "value.phase": "review", "value.manual": True, "value.autoneon": True,

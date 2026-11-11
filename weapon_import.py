@@ -18,7 +18,7 @@ LUAT (v1.36, Ruby chon; xet tu tren xuong, dung o luat dau tien khop):
   5. Co bp, doc du ma khong dat 4 (ke ca cay co kill, Orb)  -> BO (chac chan)
   6. Co bp nhung la / khong doc duoc / loai chi co 1 chi so -> GIU, vao "Chua ro"
   7. Chua co bp, passive hang >= 5                          -> GIU, vao "Chua ro"
-  8. Chua co bp, con lai (bat ke chat luong tong)           -> BO (Ruby chon; Tu duyet qua NeonUtil co the cuu lai)
+  8. Chua co bp, con lai (bat ke chat luong tong)           -> GIU, vao "Chua ro" (Tu duyet qua NeonUtil doc chi so de xep lai)
 """
 import json
 import re
@@ -194,10 +194,10 @@ def decide(w, kno_top=()):
         if v is None:
             return "keep", "bp_la"
         return ("keep", "chi_so_cao") if v == "ok" else ("drop", "chi_so_thap")
-    # Chua co bp: passive hang cao thi chua ro (co the la Knowledge cao); con lai BO (Ruby chon). Tu duyet qua Neon co the cuu lai.
+    # Chua co bp: khong biet chi so -> KHONG Bo, xep vao "Chua ro" (passive hang cao la 1 ly do rieng). Tu duyet qua Neon doc chi so de xep lai.
     if top_passive_rank(w) >= UNVERIFIED_PASSIVE_RANK:
         return "keep", "chua_xem_passive_cao"
-    return "drop", "chua_xem_bp"
+    return "keep", "chua_xem_bp"
 
 
 REASON_TEXT = {
@@ -213,12 +213,12 @@ REASON_TEXT = {
     "q_thap_chua_chac": f"không có bp, chất lượng tổng < {NO_BP_KEEP_Q:g} — chưa xem chỉ số nên chưa chắc, để 'Chưa rõ'",
     "q_thap": f"không có bp, chất lượng tổng < {NO_BP_KEEP_Q:g}",
     "khoa_khong_dat": f"đã khóa nhưng chỉ số KHÔNG đạt luật (< {STAT_KEEP_COUNT} chỉ số ≥ {STAT_KEEP_MIN}%) — bot không làm gì cây này",
-    "chua_xem_bp": "chưa xem chỉ số (không có bp) và passive thường — Bỏ; muốn kiểm lại thì bấm Tự duyệt",
+    "chua_xem_bp": "chưa xem chỉ số (không có bp) — chưa rõ, bấm Tự duyệt để bot đọc NeonUtil",
 }
-KEEP_REASONS = ("loai_dac_biet", "khoa", "khoa_khong_dat", "knowledge_top", "chi_so_cao", "chua_xem_passive_cao", "bp_la")
+KEEP_REASONS = ("loai_dac_biet", "khoa", "khoa_khong_dat", "knowledge_top", "chi_so_cao", "chua_xem_passive_cao", "chua_xem_bp", "bp_la")
 # Cay bot GIU vi chua chac (khong phai vi dat luat): hien o danh sach "Khong xac dinh" cho Ruby tu check tay
-UNSURE_REASONS = ("chua_xem_passive_cao", "bp_la", "q_thap_chua_chac")
-DROP_REASONS = ("chi_so_thap", "chua_xem_bp")
+UNSURE_REASONS = ("chua_xem_passive_cao", "chua_xem_bp", "bp_la", "q_thap_chua_chac")
+DROP_REASONS = ("chi_so_thap",)
 
 
 def build_plan(weapons: list, knowledge_stored=None) -> dict:
