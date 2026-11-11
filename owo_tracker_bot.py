@@ -1631,8 +1631,11 @@ async def autoneon_start():
     rows = {str(r["_id"]): r for r in await mdb[COL_WEAPON_REVIEW].find({}).to_list(length=100000)}
     lists = await review_lists()
     queue = [i for i in lists["unknown"] if not (rows.get(i, {}).get("manual") and rows[i].get("decision") == "unknown")]
+    # cay bi Bo chi vi chua xem chi so (chua_xem_bp): cho Neon doc de cuu lai cay tot
+    queue += [i for i, r in rows.items() if r.get("decision") == "drop" and r.get("reason") == "chua_xem_bp" and not r.get("manual")]
+    queue = sorted(set(queue))
     if not queue:
-        return None, "khong co cay 'Chua ro' nao can duyet"
+        return None, "khong co cay nao can duyet (Chua ro / chua xem chi so)"
     await mdb[COL_CONFIG].update_one(
         {"_id": REVIEW_KEY},
         {"$set": {"value.active": True, "value.phase": "review", "value.manual": True, "value.autoneon": True,
@@ -1714,11 +1717,12 @@ async def autoneon_handle_neon(message):
         doc = await mdb[COL_WEAPON_REVIEW].find_one({"_id": wid}) or {}
         lst = await mdb[COL_WEAPON_LIST].find_one({"_id": wid}) or {}
         changed = 0
-        if doc.get("reason") not in ("khoa", "co_kill", "loai_dac_biet"):
+        if doc.get("reason") != "loai_dac_biet":
             q = doc.get("q")
             if q is None:
                 q = lst.get("quality") or 0
-            w = {"id": wid, "t": got["t"], "bp": got["bp"], "q": q}
+            locked = weapon_import.is_locked_reason(doc.get("reason"))
+            w = {"id": wid, "t": got["t"], "bp": got["bp"], "q": q, "l": locked}
             # cap nhat top Knowledge voi cay nay
             stored = await get_config(KNOWLEDGE_TOP_KEY, [])
             cand = {str(e["id"]): e["v"] for e in (stored if isinstance(stored, list) else []) if isinstance(e, dict) and "id" in e and "v" in e}
@@ -1728,16 +1732,23 @@ async def autoneon_handle_neon(message):
             order = sorted(cand, key=lambda i: (-cand[i], i))[:weapon_import.KNOWLEDGE_TOP_N]
             await set_config(KNOWLEDGE_TOP_KEY, [{"id": i, "v": cand[i]} for i in order])
             decision, why = weapon_import.decide(w, set(order))
-            if why == "bp_la":
-                decision = "unknown"       # khong doc ro -> giu o 'Chua ro', khong tu quyet
-            prev = review_bucket(doc) if doc else "unknown"
-            if decision != "unknown" or prev != "unknown":
-                await mdb[COL_WEAPON_REVIEW].update_one(
-                    {"_id": wid}, {"$set": {"decision": decision, "reason": why, "bp": got["bp"], "manual": True,
-                                            "auto_neon": True, "at": _utcnow().isoformat()}}, upsert=True)
-                if decision != prev:
-                    changed = 1
-                    await clean_invalidate("đã tự duyệt thêm cây — gõ lại `nw inv export` để lập kế hoạch dọn kho mới")
+            if locked:
+                # Cay khoa: khong doi Giu/Bo; chi bao Ruby neu chi so khong dat luat
+                if why == "khoa_khong_dat" and doc.get("reason") != "khoa_khong_dat":
+                    await mdb[COL_WEAPON_REVIEW].update_one({"_id": wid}, {"$set": {"reason": "khoa_khong_dat", "bp": got["bp"]}}, upsert=True)
+                    await notify_owner(f"🔒 Cây khóa `{wid}` có chỉ số KHÔNG đạt luật (cần ≥ 2 chỉ số ≥ 80%): `{got['bp']}`. "
+                                       "Bot không làm gì cây này, bạn tự quyết.", min_gap=5)
+            else:
+                if why == "bp_la":
+                    decision = "unknown"       # khong doc ro -> giu o 'Chua ro', khong tu quyet
+                prev = review_bucket(doc) if doc else "unknown"
+                if decision != "unknown" or prev != "unknown":
+                    await mdb[COL_WEAPON_REVIEW].update_one(
+                        {"_id": wid}, {"$set": {"decision": decision, "reason": why, "bp": got["bp"], "manual": True,
+                                                "auto_neon": True, "at": _utcnow().isoformat()}}, upsert=True)
+                    if decision != prev:
+                        changed = 1
+                        await clean_invalidate("đã tự duyệt thêm cây — gõ lại `nw inv export` để lập kế hoạch dọn kho mới")
         await mdb[COL_CONFIG].update_one(
             {"_id": REVIEW_KEY}, {"$set": {"value.autoneon_fails": 0}, "$inc": {"value.autoneon_done": 1, "value.autoneon_changed": changed}})
         await _autoneon_next()
@@ -5221,7 +5232,7 @@ async def dropadd_apply(ids: str = "") -> str:
         added, locked, unknown = [], [], []
         for i in new:
             d = by_id.get(i)
-            if d is not None and d.get("reason") == "khoa":
+            if d is not None and weapon_import.is_locked_reason(d.get("reason")):
                 locked.append(i)
             else:
                 if i not in cur:
@@ -5258,6 +5269,32 @@ async def cleanstop_cmd(ctx):
         {"status": "pending", "action": {"$regex": "^clean_"}},
         {"$set": {"status": "cancelled", "completed_at": _utcnow().isoformat()}})
     await ctx.send(f"Đã dừng dọn kho, hủy {getattr(res, 'modified_count', 0)} bước đang chờ.")
+
+
+@bot.command(name="knowledgetop", aliases=["kno", "knowledge"])
+@is_owner()
+async def knowledgetop_cmd(ctx):
+    """Embed top 6 cay vu khi co passive Knowledge cao nhat (bot tu luu, cap nhat moi lan ,weaponimport / tu duyet Neon)."""
+    top = await get_config(KNOWLEDGE_TOP_KEY, [])
+    if not isinstance(top, list) or not top:
+        await ctx.send("Chưa có cây Knowledge nào được lưu. Gõ `nw inv export` (rồi `,weaponimport`) hoặc chạy Tự duyệt để bot ghi nhận.")
+        return
+    rules = load_weapon_rules()
+    types = (rules or {}).get("types") or {}
+    emb = discord.Embed(title=f"🧠 Top {weapon_import.KNOWLEDGE_TOP_N} Knowledge cao nhất", color=0x7B61FF)
+    for n, e in enumerate(top[:weapon_import.KNOWLEDGE_TOP_N], 1):
+        wid = str(e.get("id"))
+        doc = await mdb[COL_WEAPON_REVIEW].find_one({"_id": wid}) or {}
+        t = doc.get("t")
+        tname = (types.get(str(100 + t)) or {}).get("name") if isinstance(t, int) else None
+        bits = [f"Knowledge **{e.get('v'):g}%**"]
+        if tname:
+            bits.append(str(tname))
+        if doc.get("q") is not None:
+            bits.append(f"chất lượng {doc['q']:g}%")
+        emb.add_field(name=f"{n}. `{wid}`", value=" · ".join(bits), inline=False)
+    emb.set_footer(text="Cây cao hơn xuất hiện sẽ thay cây thấp nhất · gõ `owo w <ID>` để xem")
+    await ctx.send(embed=emb)
 
 
 @bot.command(name="cleanplan")
@@ -5969,6 +6006,7 @@ HELP_GROUPS = [
         ("cleanstop", "`,cleanstop` (owner): dừng dọn kho tự động và hủy các bước đang chờ (app chỉ làm khi bạn bật công tắc trong Hub)"),
         ("weaponimport", "`,weaponimport` (owner): BƯỚC 1 — tự gõ `nw inv export` (lệnh NeonUtil cho phép) rồi ĐÍNH KÈM file `weapons.json` vào tin này; bot lập danh sách Giữ/Bỏ (khóa · có kill · chỉ số chính ≥ 80% · passive hạng ≥ 5 · không có bp thì chất lượng ≥ 75 → Giữ), gửi `weapon_import_plan.json`, KHÔNG xóa hay bán gì"),
         ("cleanplan", "`,cleanplan` (owner): BƯỚC 2 — xem kế hoạch dọn kho (cách lai) kèm số cây để đối chiếu: sao cây Giữ ở chất lượng thấp → rã theo bậc → rã theo ID phần còn lại"),
+        ("knowledgetop", "`,knowledgetop` (owner; còn `,kno`): embed top 6 cây có passive Knowledge cao nhất bot đang lưu (ID, % Knowledge, loại, chất lượng); cây cao hơn xuất hiện sẽ thay cây thấp nhất"),
         ("starlist", "`,starlist [trang] [lệnh trước ID]` (owner): liệt kê cây GIỮ cần đánh sao trước khi rã theo bậc (OwO bỏ qua cây đã sao); mỗi cây gõ `owo w <ID>` rồi chạm nút ⭐; ví dụ `,starlist 1 owo w` tạo sẵn từng dòng lệnh"),
         ("dismantlelist", "`,dismantlelist [số ID mỗi lệnh] [trang]` (owner): tạo sẵn các dòng `owo dismantle <ID>` cho cây Bỏ ở chất lượng ≥ 61; bạn tự dán từng dòng, đọc tin xác nhận của OwO rồi tự bấm Dismantle")]),
     ("Huntbot và acc phụ", [

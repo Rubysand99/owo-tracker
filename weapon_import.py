@@ -9,16 +9,16 @@ Dinh dang 1 cay (theo giai thich cua chu NeonUtil):
   bp = chuoi bac TUNG chi so, chi co o cay da `owo w <ID>`:  "[fine|decent] <loai> a,b,c <passive> NN ..."
        a,b = chi so chinh theo thu tu, SO CUOI = chi phi WP; roi toi passive.  Passive thieu so = 100.
 
-LUAT (v1.33, Ruby chon):
-  - Loai dac biet (Rune of Celebration / Luck)  -> GIU (luat cu: khong bao gio ra)
-  - Da khoa                                    -> GIU
-  - Co kill (k = true)                         -> GIU (khong bo cay da co kill)
-  - TOP 6 Knowledge cao nhat                   -> GIU (bot luu 6 cay; co cay cao hon thi thay vao, cay bi day ra xet nhu cay thuong)
-  - Co bp doc duoc: >= 2 chi so >= 80%       -> GIU   (Mythic tro len; TINH CA chi phi WP, KHONG tinh passive); doc du ma khong du -> BO (chac chan)
-  - Co bp doc duoc nhung < 2 chi so >= 80%     -> BO    (passive khac khong cuu duoc nua)
-  - Khong co bp (chua `owo w <ID>`): khong biet co phai Knowledge khong
-        passive hang >= 5 -> GIU; q >= 75 -> GIU; con lai KHONG Bo (chua chac) -> GIU + danh dau "Chua ro"
-  - bp co nhung la / khong doc duoc            -> GIU (thieu du lieu thi khong bao gio Bo)
+LUAT (v1.36, Ruby chon; xet tu tren xuong, dung o luat dau tien khop):
+  1. Loai dac biet (Rune of Celebration / Luck)            -> GIU
+  2. Da khoa                                               -> GIU, KHONG dong vao. Neu da doc du chi so ma khong dat luat 5
+                                                              -> van GIU nhung bao Ruby (khoa_khong_dat)
+  3. TOP 6 Knowledge cao nhat                              -> GIU (bot luu 6 cay; cay cao hon thi thay vao)
+  4. Co bp, >= 2 chi so >= 80% (TINH CA chi phi WP, khong tinh passive) -> GIU (ke ca cay co kill)
+  5. Co bp, doc du ma khong dat 4 (ke ca cay co kill, Orb)  -> BO (chac chan)
+  6. Co bp nhung la / khong doc duoc / loai chi co 1 chi so -> GIU, vao "Chua ro"
+  7. Chua co bp, passive hang >= 5                          -> GIU, vao "Chua ro"
+  8. Chua co bp, con lai (bat ke chat luong tong)           -> BO (Ruby chon; Tu duyet qua NeonUtil co the cuu lai)
 """
 import json
 import re
@@ -162,33 +162,42 @@ def top_passive_rank(w) -> int:
     return max(ranks) if ranks else -1
 
 
+def stat_verdict(w):
+    """Luat 'chi so' tren bp: 'ok' (>= STAT_KEEP_COUNT chi so >= STAT_KEEP_MIN) / 'fail' (da doc du ma khong dat, chac chan)
+    / None (khong doc duoc hoac loai chi co 1 chi so -> khong du can cu)."""
+    stats = all_stat_qualities(w)
+    if stats is None or 0 < len(stats) < STAT_KEEP_COUNT:
+        return None
+    return "ok" if sum(1 for v in stats if v >= STAT_KEEP_MIN) >= STAT_KEEP_COUNT else "fail"
+
+
+def is_locked_reason(reason) -> bool:
+    return str(reason or "").startswith("khoa")
+
+
 def decide(w, kno_top=()):
     """-> (decision 'keep'|'drop', ly do ngan). Xem LUAT o dau file.
-    kno_top = tap ID nam trong TOP Knowledge (do build_plan tinh bang knowledge_top)."""
+    kno_top = tap ID nam trong TOP Knowledge (do build_plan tinh bang knowledge_top).
+    Thu tu: loai dac biet -> khoa -> top Knowledge -> (co bp) luat chi so -> (khong bp) passive cao = chua ro, con lai BO."""
     if w.get("t") in NEVER_DROP_TYPES:
         return "keep", "loai_dac_biet"
+    in_top = str(w.get("id")) in kno_top
     if w.get("l"):
+        # Cay khoa: KHONG BAO GIO dong vao; neu da doc du chi so ma khong dat luat thi chi bao cho Ruby biet (khoa_khong_dat)
+        if not in_top and w.get("bp") and stat_verdict(w) == "fail":
+            return "keep", "khoa_khong_dat"
         return "keep", "khoa"
-    if w.get("k") is True:
-        return "keep", "co_kill"
-    if str(w.get("id")) in kno_top:
+    if in_top:
         return "keep", "knowledge_top"
-    if w.get("bp"):
-        stats = all_stat_qualities(w)
-        if stats is None:
+    if w.get("bp"):                      # ke ca cay co kill: cung phai dat luat chi so
+        v = stat_verdict(w)
+        if v is None:
             return "keep", "bp_la"
-        if 0 < len(stats) < STAT_KEEP_COUNT:
-            return "keep", "bp_la"     # loai chi co 1 chi so: luat "2 chi so" khong ap dung duoc -> khong tu Bo
-        if sum(1 for v in stats if v >= STAT_KEEP_MIN) >= STAT_KEEP_COUNT:
-            return "keep", "chi_so_cao"
-        return "drop", "chi_so_thap"
-    # Chua co bp: khong biet cay co Knowledge cao hay khong -> passive hang cao thi khong Bo (Bo la khong quay lai duoc)
+        return ("keep", "chi_so_cao") if v == "ok" else ("drop", "chi_so_thap")
+    # Chua co bp: passive hang cao thi chua ro (co the la Knowledge cao); con lai BO (Ruby chon). Tu duyet qua Neon co the cuu lai.
     if top_passive_rank(w) >= UNVERIFIED_PASSIVE_RANK:
         return "keep", "chua_xem_passive_cao"
-    if w["q"] >= NO_BP_KEEP_Q:
-        return "keep", "q_cao"
-    # Khong co bp thi KHONG biet tung chi so -> khong du can cu Bo (chi Bo khi chac 100%): dua vao "Khong xac dinh"
-    return "keep", "q_thap_chua_chac"
+    return "drop", "chua_xem_bp"
 
 
 REASON_TEXT = {
@@ -203,11 +212,13 @@ REASON_TEXT = {
     "chi_so_thap": f"đã đọc đủ chỉ số, chưa có {STAT_KEEP_COUNT} chỉ số nào ≥ {STAT_KEEP_MIN}% (chắc chắn không đạt)",
     "q_thap_chua_chac": f"không có bp, chất lượng tổng < {NO_BP_KEEP_Q:g} — chưa xem chỉ số nên chưa chắc, để 'Chưa rõ'",
     "q_thap": f"không có bp, chất lượng tổng < {NO_BP_KEEP_Q:g}",
+    "khoa_khong_dat": f"đã khóa nhưng chỉ số KHÔNG đạt luật (< {STAT_KEEP_COUNT} chỉ số ≥ {STAT_KEEP_MIN}%) — bot không làm gì cây này",
+    "chua_xem_bp": "chưa xem chỉ số (không có bp) và passive thường — Bỏ; muốn kiểm lại thì bấm Tự duyệt",
 }
-KEEP_REASONS = ("loai_dac_biet", "khoa", "co_kill", "knowledge_top", "chi_so_cao", "chua_xem_passive_cao", "bp_la", "q_cao", "q_thap_chua_chac")
+KEEP_REASONS = ("loai_dac_biet", "khoa", "khoa_khong_dat", "knowledge_top", "chi_so_cao", "chua_xem_passive_cao", "bp_la")
 # Cay bot GIU vi chua chac (khong phai vi dat luat): hien o danh sach "Khong xac dinh" cho Ruby tu check tay
 UNSURE_REASONS = ("chua_xem_passive_cao", "bp_la", "q_thap_chua_chac")
-DROP_REASONS = ("chi_so_thap",)
+DROP_REASONS = ("chi_so_thap", "chua_xem_bp")
 
 
 def build_plan(weapons: list, knowledge_stored=None) -> dict:
@@ -230,6 +241,10 @@ def summary_text(plan: dict) -> str:
         n = plan["reasons"].get(why)
         if n:
             lines.append(f"• {'Giữ' if why in KEEP_REASONS else 'Bỏ'}: {REASON_TEXT[why]} — {n}")
+    locked_bad = sorted(i for i, why in plan["keep"].items() if why == "khoa_khong_dat")
+    if locked_bad:
+        lines.append(f"🔒 **{len(locked_bad)} cây KHÓA không đạt luật** (bot không làm gì, bạn tự quyết): "
+                     + " ".join(f"`{i}`" for i in locked_bad[:15]) + (" …" if len(locked_bad) > 15 else ""))
     top = plan.get("knowledge_top") or []
     if top:
         lines.append(f"🧠 Top {KNOWLEDGE_TOP_N} Knowledge: " + " · ".join(f"`{e['id']}` {e['v']:g}" for e in top))
@@ -279,14 +294,14 @@ def cleanup_stages(docs, extra_drop=()) -> dict:
             out["missing_q"] += 1
             continue
         wid = str(d["_id"])
-        if wid.upper() in extra and d.get("reason") != "khoa":
+        if wid.upper() in extra and not is_locked_reason(d.get("reason")):
             # Ruby them tay vao danh sach ra: luon ra THEO ID (an toan voi moi bac, ke ca cay o vung chua ro bac)
             out["id_drop"].append(wid)
             continue
         if RARE_MAX_KNOWN_Q < q < EPIC_MIN_KNOWN_Q:
             out["unsure"].append(wid)
         if d.get("decision") in ("keep", "unknown"):   # "khong xac dinh" = chua chac -> phai SAO nhu GIU (OwO khong ra cay da sao)
-            if d.get("reason") != "khoa" and q < SPLIT_Q:
+            if not is_locked_reason(d.get("reason")) and q < SPLIT_Q:
                 out["star_ids"].append(wid)
         elif d.get("decision") == "drop":
             if q < RARE_MIN_Q:
