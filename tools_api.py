@@ -1,5 +1,5 @@
 """tools_api.py — các hàm THUẦN (không đụng DB/Discord) cho các đường API mới của màn "Công cụ" trong app:
-GET /teamcheck, GET /zoodiff, GET /unlocked, GET|POST /alt, POST /alt/test.
+GET /teamcheck, GET /zoodiff, GET /unlocked, GET|POST /alt, POST /alt/test, POST /manual/pet|weapontype|passive.
 owo_tracker_bot.py lo phần lấy dữ liệu và trả JSON; file này chỉ lo kiểm tra đầu vào và gom/làm sạch chữ,
 nên test được trực tiếp (xem test_tools_api.py).
 """
@@ -13,6 +13,79 @@ ZOODIFF_KINDS = {"d": "all", "all": "all", "now": "current", "current": "current
 
 # Emoji tùy chỉnh của Discord: <:tên:123456> hoặc <a:tên:123456> (a = động)
 _CUSTOM_EMOJI_RE = re.compile(r"<a?:([A-Za-z0-9_~]+):\d+>")
+
+
+# Nhập tay: ,petset ,weapontypeset ,passiveset (POST /manual/pet|weapontype|passive)
+PET_STAT_KEYS = ("hp", "att", "pr", "wp", "mag", "mr")
+PET_STAT_MAX = 100000
+MANUAL_NAME_MAX = 60
+MANUAL_DESC_MAX = 1000
+# Rank chỉ gồm chữ cái (Common, Legendary, Botrank...), tối đa 20 ký tự.
+_RANK_RE = re.compile(r"^[A-Za-z]{1,20}$")
+# Ký tự điều khiển (xuống dòng, tab...) không được lọt vào tên / mô tả.
+_CONTROL_RE = re.compile(r"[\x00-\x1f\x7f]")
+
+
+def _clean_name(raw):
+    """Tên pet / loại vũ khí / passive: chuỗi 1-60 ký tự sau khi cắt khoảng trắng 2 đầu, không có ký tự điều khiển.
+    Trả tên đã cắt, hoặc None nếu sai."""
+    if not isinstance(raw, str):
+        return None
+    s = raw.strip()
+    if not s or len(s) > MANUAL_NAME_MAX or _CONTROL_RE.search(s):
+        return None
+    return s
+
+
+def _clean_desc(raw):
+    """Mô tả: chuỗi 1-1000 ký tự sau khi cắt khoảng trắng; cho phép xuống dòng, cấm các ký tự điều khiển khác."""
+    if not isinstance(raw, str):
+        return None
+    s = raw.strip()
+    if not s or len(s) > MANUAL_DESC_MAX or _CONTROL_RE.search(s.replace("\n", "")):
+        return None
+    return s
+
+
+def _stat(raw):
+    """Chỉ số pet phải là số nguyên (không nhận bool, số thực, chuỗi) trong khoảng 0..PET_STAT_MAX."""
+    if isinstance(raw, bool) or not isinstance(raw, int):
+        return None
+    return raw if 0 <= raw <= PET_STAT_MAX else None
+
+
+def parse_pet_manual(body):
+    """Kiểm tra body của POST /manual/pet: {"name", "rank", "hp", "att", "pr", "wp", "mag", "mr"}.
+    Trả (ok, dữ liệu): ok True -> {"name", "rank" (viết hoa chữ đầu), "hp"...}; sai bất kỳ trường nào -> (False, tên trường sai)."""
+    if not isinstance(body, dict):
+        return False, "body"
+    name = _clean_name(body.get("name"))
+    if name is None:
+        return False, "name"
+    rank = body.get("rank")
+    if not isinstance(rank, str) or not _RANK_RE.match(rank.strip()):
+        return False, "rank"
+    out = {"name": name, "rank": rank.strip().capitalize()}
+    for key in PET_STAT_KEYS:
+        v = _stat(body.get(key))
+        if v is None:
+            return False, key
+        out[key] = v
+    return True, out
+
+
+def parse_desc_manual(body):
+    """Kiểm tra body của POST /manual/weapontype và /manual/passive: {"name", "desc"}.
+    Trả (ok, {"name", "desc"}); sai -> (False, tên trường sai)."""
+    if not isinstance(body, dict):
+        return False, "body"
+    name = _clean_name(body.get("name"))
+    if name is None:
+        return False, "name"
+    desc = _clean_desc(body.get("desc"))
+    if desc is None:
+        return False, "desc"
+    return True, {"name": name, "desc": desc}
 
 
 def parse_alt_id(raw):

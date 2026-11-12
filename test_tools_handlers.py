@@ -37,7 +37,10 @@ async def scenarios():
         for name, h, kw in [("teamcheck", b.handle_get_teamcheck, {}), ("zoodiff", b.handle_get_zoodiff, {}),
                             ("unlocked", b.handle_get_unlocked, {}), ("alt GET", b.handle_get_alt, {}),
                             ("alt POST", b.handle_post_alt, {"body": {"user_id": ""}}),
-                            ("alt/test", b.handle_post_alt_test, {})]:
+                            ("alt/test", b.handle_post_alt_test, {}),
+                            ("manual/pet", b.handle_post_manual_pet, {"body": {}}),
+                            ("manual/weapontype", b.handle_post_manual_weapontype, {"body": {}}),
+                            ("manual/passive", b.handle_post_manual_passive, {"body": {}})]:
             r = await h(req(token="sai", **kw))
             check(f"{name}: sai token -> 401", r.status, 401)
 
@@ -122,6 +125,41 @@ async def scenarios():
         sent.clear(); b.dm_user = fake_dm
         d = json.loads((await b.handle_post_alt_test(req({}))).text)
         check("alt/test: chưa đặt acc phụ -> no_alt, không DM ai", (d, sent), ({"ok": False, "alt_user_id": "", "reason": "no_alt"}, []))
+
+        # ----- /manual/pet -----
+        pet_body = {"name": "Gowl", "rank": "legendary", "hp": 10, "att": 1, "pr": 3, "wp": 1, "mag": 2, "mr": 3}
+        r = await b.handle_post_manual_pet(req(pet_body))
+        doc = await b.mdb[b.COL_PET_SPECIES].find_one({"_id": "gowl"})
+        check("manual/pet: lưu đúng như ,petset", (r.status, json.loads(r.text)), (200, {"ok": True, "name": "Gowl"}))
+        check("manual/pet: bản ghi đủ trường, nguồn manual",
+              (doc["display_name"], doc["rank"], doc["hp"], doc["mr"], doc["source"], doc["confirmed_by"]),
+              ("Gowl", "Legendary", 10, 3, "manual", "app"))
+        r = await b.handle_post_manual_pet(req({**pet_body, "hp": 99, "rank": "rare"}))
+        doc = await b.mdb[b.COL_PET_SPECIES].find_one({"_id": "gowl"})
+        check("manual/pet: nhập lại cùng tên = sửa, không tạo bản ghi thứ 2",
+              (doc["hp"], doc["rank"], await b.mdb[b.COL_PET_SPECIES].count_documents({})), (99, "Rare", 1))
+        r = await b.handle_post_manual_pet(req({**pet_body, "att": "x"}))
+        check("manual/pet: chỉ số sai -> 400 kèm tên trường", (r.status, json.loads(r.text)["field"]), (400, "att"))
+        r = await b.handle_post_manual_pet(req(None))
+        check("manual/pet: body không phải JSON -> 400", r.status, 400)
+
+        # ----- /manual/weapontype -----
+        r = await b.handle_post_manual_weapontype(req({"name": "Poison Dagger", "desc": "Gây Poison"}))
+        doc = await b.mdb[b.COL_WEAPON_TYPES].find_one({"_id": "poison dagger"})
+        check("manual/weapontype: lưu như ,weapontypeset",
+              (r.status, json.loads(r.text), doc["display_name"], doc["main_desc"], doc["confirmed_by"]),
+              (200, {"ok": True, "name": "Poison Dagger"}, "Poison Dagger", "Gây Poison", "app"))
+        r = await b.handle_post_manual_weapontype(req({"name": "Poison Dagger", "desc": ""}))
+        check("manual/weapontype: mô tả rỗng -> 400", (r.status, json.loads(r.text)["field"]), (400, "desc"))
+
+        # ----- /manual/passive -----
+        r = await b.handle_post_manual_passive(req({"name": "Enrage", "desc": "Tăng sát thương khi HP thấp"}))
+        doc = await b.mdb[b.COL_PASSIVES].find_one({"_id": "enrage"})
+        check("manual/passive: lưu như ,passiveset (có bản dịch description_vi)",
+              (r.status, doc["display_name"], doc["description"], "description_vi" in doc, doc["confirmed_by"]),
+              (200, "Enrage", "Tăng sát thương khi HP thấp", True, "app"))
+        r = await b.handle_post_manual_passive(req({"desc": "x"}))
+        check("manual/passive: thiếu tên -> 400", (r.status, json.loads(r.text)["field"]), (400, "name"))
     finally:
         b.AUTOMACRO_API_TOKEN = old_token
         b.dm_user = old_dm

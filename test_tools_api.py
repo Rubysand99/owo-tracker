@@ -60,6 +60,37 @@ check("unlocked: tier không có -> None", t.group_unlocked(rows, "fabled"), Non
 check("unlocked: chưa có dữ liệu -> 0 con", t.group_unlocked([]), {"total": 0, "tiers": []})
 check("unlocked: chưa có dữ liệu + lọc tier -> None", t.group_unlocked([], "rare"), None)
 
+# ----- parse_pet_manual -----
+PET = {"name": " gowl ", "rank": "legendary", "hp": 10, "att": 1, "pr": 3, "wp": 1, "mag": 2, "mr": 3}
+check("pet: hợp lệ -> cắt tên, rank viết hoa chữ đầu",
+      t.parse_pet_manual(PET),
+      (True, {"name": "gowl", "rank": "Legendary", "hp": 10, "att": 1, "pr": 3, "wp": 1, "mag": 2, "mr": 3}))
+check("pet: chỉ số 0 và tối đa đều nhận",
+      t.parse_pet_manual({**PET, "hp": 0, "mr": 100000})[0], True)
+check("pet: không phải dict -> body", t.parse_pet_manual(None), (False, "body"))
+check("pet: thiếu tên -> name", t.parse_pet_manual({**PET, "name": "  "}), (False, "name"))
+check("pet: tên có xuống dòng -> name", t.parse_pet_manual({**PET, "name": "a\nb"}), (False, "name"))
+check("pet: tên quá 60 ký tự -> name", t.parse_pet_manual({**PET, "name": "x" * 61}), (False, "name"))
+check("pet: rank có số -> rank", t.parse_pet_manual({**PET, "rank": "rare2"}), (False, "rank"))
+check("pet: rank thiếu -> rank", t.parse_pet_manual({k: v for k, v in PET.items() if k != "rank"}), (False, "rank"))
+check("pet: chỉ số âm -> đúng trường", t.parse_pet_manual({**PET, "att": -1}), (False, "att"))
+check("pet: chỉ số quá lớn -> đúng trường", t.parse_pet_manual({**PET, "pr": 100001}), (False, "pr"))
+check("pet: chỉ số dạng chuỗi -> đúng trường", t.parse_pet_manual({**PET, "wp": "5"}), (False, "wp"))
+check("pet: chỉ số số thực -> đúng trường", t.parse_pet_manual({**PET, "mag": 1.5}), (False, "mag"))
+check("pet: chỉ số bool -> đúng trường", t.parse_pet_manual({**PET, "mr": True}), (False, "mr"))
+check("pet: thiếu chỉ số -> đúng trường", t.parse_pet_manual({k: v for k, v in PET.items() if k != "hp"}), (False, "hp"))
+
+# ----- parse_desc_manual -----
+check("desc: hợp lệ có khoảng trắng trong tên", t.parse_desc_manual({"name": " poison dagger ", "desc": " Gây Poison \n xuyên giáp "}),
+      (True, {"name": "poison dagger", "desc": "Gây Poison \n xuyên giáp"}))
+check("desc: không phải dict -> body", t.parse_desc_manual([]), (False, "body"))
+check("desc: thiếu tên -> name", t.parse_desc_manual({"desc": "x"}), (False, "name"))
+check("desc: mô tả rỗng -> desc", t.parse_desc_manual({"name": "a", "desc": "   "}), (False, "desc"))
+check("desc: mô tả quá 1000 ký tự -> desc", t.parse_desc_manual({"name": "a", "desc": "x" * 1001}), (False, "desc"))
+check("desc: đúng 1000 ký tự vẫn nhận", t.parse_desc_manual({"name": "a", "desc": "x" * 1000})[0], True)
+check("desc: ký tự điều khiển -> desc", t.parse_desc_manual({"name": "a", "desc": "x\x00y"}), (False, "desc"))
+check("desc: mô tả không phải chuỗi -> desc", t.parse_desc_manual({"name": "a", "desc": 5}), (False, "desc"))
+
 if fails:
     print("\n❌ %d bài lỗi" % len(fails)); sys.exit(1)
 print("\n✅ Toàn bộ test tools_api pass.")

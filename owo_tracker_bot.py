@@ -2798,6 +2798,47 @@ async def handle_post_alt_test(request: web.Request):
     return web.json_response({"ok": bool(sent), "alt_user_id": alt_id, "reason": "" if sent else "dm_failed"})
 
 
+# --- Nhập tay từ app (như `,petset` `,weapontypeset` `,passiveset`). Kiểm tra đầu vào ở tools_api.py. ---
+# Trả {"ok": true, "name": <tên đã lưu>}; sai trường nào -> 400 {"error": "...", "field": <tên trường>}.
+
+def _manual_bad_request(field):
+    return web.json_response({"error": f"truong '{field}' khong hop le", "field": field}, status=400)
+
+
+async def handle_post_manual_pet(request: web.Request):
+    """Như `,petset`. Body: {"name", "rank", "hp", "att", "pr", "wp", "mag", "mr"} (chỉ số là số nguyên 0..100000)."""
+    if not _check_api_token(request):
+        return web.json_response({"error": "unauthorized"}, status=401)
+    ok, data = tools_api.parse_pet_manual(await _read_json_body(request))
+    if not ok:
+        return _manual_bad_request(data)
+    await save_pet_manual(data["name"], data["rank"], data["hp"], data["att"], data["pr"],
+                          data["wp"], data["mag"], data["mr"], "app")
+    return web.json_response({"ok": True, "name": data["name"]})
+
+
+async def handle_post_manual_weapontype(request: web.Request):
+    """Như `,weapontypeset`. Body: {"name": "...", "desc": "..."}."""
+    if not _check_api_token(request):
+        return web.json_response({"error": "unauthorized"}, status=401)
+    ok, data = tools_api.parse_desc_manual(await _read_json_body(request))
+    if not ok:
+        return _manual_bad_request(data)
+    await save_weapontype_manual(data["name"], data["desc"], "app")
+    return web.json_response({"ok": True, "name": data["name"]})
+
+
+async def handle_post_manual_passive(request: web.Request):
+    """Như `,passiveset`. Body: {"name": "...", "desc": "..."}."""
+    if not _check_api_token(request):
+        return web.json_response({"error": "unauthorized"}, status=401)
+    ok, data = tools_api.parse_desc_manual(await _read_json_body(request))
+    if not ok:
+        return _manual_bad_request(data)
+    await save_passive(data["name"], data["desc"], "app")
+    return web.json_response({"ok": True, "name": data["name"]})
+
+
 async def gemtier_snapshot():
     """Cài đặt tier gem cho app: mỗi loại có các tier được phép (✅), ưu tiên và gem còn trong kho."""
     slots = []
@@ -3375,6 +3416,9 @@ async def start_automacro_api_server():
     app.router.add_get("/alt", handle_get_alt)
     app.router.add_post("/alt", handle_post_alt)
     app.router.add_post("/alt/test", handle_post_alt_test)
+    app.router.add_post("/manual/pet", handle_post_manual_pet)
+    app.router.add_post("/manual/weapontype", handle_post_manual_weapontype)
+    app.router.add_post("/manual/passive", handle_post_manual_passive)
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, AUTOMACRO_API_HOST, AUTOMACRO_API_PORT)
@@ -3464,6 +3508,28 @@ async def save_passive(name, desc, source_id=None):
         {"_id": key},
         {"$set": {"display_name": name, "description": desc,
                   "description_vi": translate_effect_text(desc),
+                  "confirmed_at": _utcnow().isoformat(), "confirmed_by": source_id}},
+        upsert=True,
+    )
+
+
+async def save_pet_manual(name, rank, hp, att, pr, wp, mag, mr, source_id=None):
+    """Nhập tay 1 pet (dùng chung cho `,petset` và POST /manual/pet)."""
+    await mdb[COL_PET_SPECIES].update_one(
+        {"_id": name.lower()},
+        {"$set": {"display_name": name, "rank": rank.capitalize(),
+                  "hp": hp, "att": att, "pr": pr, "wp": wp, "mag": mag, "mr": mr,
+                  "confirmed_at": _utcnow().isoformat(),
+                  "confirmed_by": source_id, "source": "manual"}},
+        upsert=True,
+    )
+
+
+async def save_weapontype_manual(name, desc, source_id=None):
+    """Nhập/sửa tay mô tả 1 loại vũ khí (dùng chung cho `,weapontypeset` và POST /manual/weapontype)."""
+    await mdb[COL_WEAPON_TYPES].update_one(
+        {"_id": name.lower()},
+        {"$set": {"display_name": name, "main_desc": desc,
                   "confirmed_at": _utcnow().isoformat(), "confirmed_by": source_id}},
         upsert=True,
     )
@@ -5868,15 +5934,7 @@ async def pets_cmd(ctx, *, search: str = ""):
 async def petset_cmd(ctx, name: str, rank: str, hp: int, att: int, pr: int, wp: int, mag: int, mr: int):
     """Nhập tay 1 pet khi không có sẵn owodex — vd đọc từ nguồn khác.
     Dùng: ,petset <tên> <rank> <hp> <att> <pr> <wp> <mag> <mr>"""
-    key = name.lower()
-    await mdb[COL_PET_SPECIES].update_one(
-        {"_id": key},
-        {"$set": {"display_name": name, "rank": rank.capitalize(),
-                  "hp": hp, "att": att, "pr": pr, "wp": wp, "mag": mag, "mr": mr,
-                  "confirmed_at": _utcnow().isoformat(),
-                  "confirmed_by": str(ctx.author.id), "source": "manual"}},
-        upsert=True,
-    )
+    await save_pet_manual(name, rank, hp, att, pr, wp, mag, mr, str(ctx.author.id))
     await ctx.send(f"Đã lưu **{name}** ({rank}) — HP{hp}/ATT{att}/PR{pr}/WP{wp}/MAG{mag}/MR{mr}.")
 
 
@@ -5923,13 +5981,7 @@ async def weapontypes_cmd(ctx, *, search: str = ""):
 @is_owner()
 async def weapontypeset_cmd(ctx, name: str, *, desc: str):
     """Nhập/sửa tay mô tả 1 loại vũ khí. Dùng: ,weapontypeset <tên> <mô tả>"""
-    key = name.lower()
-    await mdb[COL_WEAPON_TYPES].update_one(
-        {"_id": key},
-        {"$set": {"display_name": name, "main_desc": desc,
-                  "confirmed_at": _utcnow().isoformat(), "confirmed_by": str(ctx.author.id)}},
-        upsert=True,
-    )
+    await save_weapontype_manual(name, desc, str(ctx.author.id))
     await ctx.send(f"Đã lưu mô tả cho **{name}**.")
 
 
