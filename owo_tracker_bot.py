@@ -124,6 +124,23 @@ def _utcnow() -> datetime:
 OWO_BOT_ID = 408785106942164992  # kiểm tra lại ID thật trong server bạn
 import weapon_auto
 import weapon_import
+
+# Tac vu nen "ban roi quen": asyncio chi giu THAM CHIEU YEU toi task, nen task khong ai giu co the bi don giua chung
+# (Python docs: "Save a reference to the result of this function"), va loi trong task chi lo ra luc don rac.
+# spawn() giu tham chieu cho toi khi xong + in loi ra Logs ngay.
+_bg_tasks = set()
+
+
+def spawn(coro, name: str = ""):
+    task = asyncio.create_task(coro, name=name or None)
+    _bg_tasks.add(task)
+
+    def _done(t):
+        _bg_tasks.discard(t)
+        if not t.cancelled() and t.exception() is not None:
+            print(f"[tracker] Loi trong tac vu nen {name or t.get_name()}: {t.exception()!r}")
+    task.add_done_callback(_done)
+    return task
 NEON_BOT_ID = weapon_auto.NEON_BOT_ID  # bot NeonUtil (chỉ số/bậc vũ khí), chỉ đọc trong kênh farm
 DISCORD_TOKEN = os.environ.get("DISCORD_TOKEN")
 OWNER_ID = os.environ.get("OWNER_ID")
@@ -1673,7 +1690,7 @@ async def _autoneon_next():
         await mdb[COL_CONFIG].update_one({"_id": REVIEW_KEY}, {"$set": {"value.autoneon": False, "value.active": False}})
         await notify_owner("⚠️ App đang TẮT (`,off`) nên chưa giao việc — bật Hub nổi, dừng farm rồi bấm Tự duyệt lại.", min_gap=60)
         return
-    asyncio.create_task(_autoneon_watch(wid, started))
+    spawn(_autoneon_watch(wid, started), "autoneon_watch")
 
 
 async def _autoneon_watch(wid: str, started: float):
@@ -2136,24 +2153,24 @@ async def handle_ack_command(request: web.Request):
             await mdb[COL_INVENTORY].update_one({"_id": code, "count": {"$gt": 0}}, {"$inc": {"count": -1}})
     action = (cmd or {}).get("action")
     if str(action or "").startswith("clean_"):
-        asyncio.create_task(after_clean_ack(status, cmd))
+        spawn(after_clean_ack(status, cmd), "after_clean_ack")
     elif action == "weapon_scan":
         if status == "done":
-            asyncio.create_task(_after_weapon_scan())
+            spawn(_after_weapon_scan(), "after_weapon_scan")
         else:
             await notify_owner("⚠️ App không quét được danh sách vũ khí (hãy DỪNG farm rồi thử lại bằng `,weaponscan`).", min_gap=60)
     elif action == "weapon_probe":
-        asyncio.create_task(_after_weapon_probe())
+        spawn(_after_weapon_probe(), "after_weapon_probe")
     elif action == "weapon_detail_check":
         mw = re.search(r"\bw\s+([A-Za-z0-9]{4,8})$", str((cmd.get("params") or {}).get("command_text") or ""))
         if mw:
             if status == "done":
-                asyncio.create_task(_auto_watchdog(mw.group(1).upper()))
+                spawn(_auto_watchdog(mw.group(1).upper()), "auto_watchdog")
             else:
-                asyncio.create_task(_auto_on_failed(mw.group(1).upper()))
+                spawn(_auto_on_failed(mw.group(1).upper()), "auto_on_failed")
     elif action == "weapon_review_scan":
         if status == "done":
-            asyncio.create_task(_after_review_scan())
+            spawn(_after_review_scan(), "after_review_scan")
         else:
             await mdb[COL_CONFIG].update_one({"_id": REVIEW_KEY}, {"$set": {"value.active": False}}, upsert=True)
             await review_refresh_embed(await review_get())
@@ -2597,7 +2614,7 @@ async def handle_post_weapon_advice(request: web.Request):
     docs = await store_weapon_advice(tags)
     if not docs:
         return web.json_response({"error": "khong co muc hop le"}, status=400)
-    asyncio.create_task(send_weapon_advice_file(docs))
+    spawn(send_weapon_advice_file(docs), "send_weapon_advice_file")
     return web.json_response({"stored": len(docs)})
 
 
@@ -3725,7 +3742,7 @@ async def on_ready():
                       "Hãy dùng chuỗi ngẫu nhiên dài hơn (vd `openssl rand -hex 24`), vì API này mở ra internet "
                       "và chỉ được bảo vệ bằng token.")
             else:
-                asyncio.create_task(start_automacro_api_server())
+                spawn(start_automacro_api_server(), "automacro_api_server")
     else:
         print("[tracker] Chưa đặt AUTOMACRO_API_TOKEN — API cho AutoMacro KHÔNG chạy (an toàn mặc định).")
 
