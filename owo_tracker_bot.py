@@ -1549,26 +1549,31 @@ async def _after_review_scan():
 
 
 def review_bucket(doc: dict) -> str:
-    """Ngan cua 1 cay trong COL_WEAPON_REVIEW: keep / drop / unknown. Cay bot GIU vi chua chac (UNSURE_REASONS) tinh la 'unknown'
-    cho toi khi Ruby tu quyet (manual)."""
+    """Ngan cua 1 cay trong COL_WEAPON_REVIEW: keep / drop / unknown (Chua ro: da xem nhung khong chac) / unseen (Chua xem: chua co bp).
+    Cay bot GIU vi chua chac / chua xem tinh vao 2 ngan sau cho toi khi Ruby tu quyet (manual) hoac tu duyet doc duoc chi so."""
     d = doc.get("decision")
     if d == "unknown":
         return "unknown"
-    if d == "drop" and not doc.get("manual") and doc.get("reason") == "chua_xem_bp":
-        return "unknown"       # ban v1.36 tung xep Bo; Ruby doi y: chua xem chi so = Chua ro
-    if d == "keep" and not doc.get("manual") and doc.get("reason") in weapon_import.UNSURE_REASONS:
-        return "unknown"
+    if not doc.get("manual"):
+        why = doc.get("reason")
+        if d == "drop" and why == "chua_xem_bp":
+            return "unseen"        # ban v1.36 tung xep Bo; Ruby doi y: chua xem chi so = Chua xem
+        if d == "keep" and why in weapon_import.UNSEEN_REASONS:
+            return "unseen"
+        if d == "keep" and why in weapon_import.UNSURE_REASONS:
+            return "unknown"
     return d if d in ("keep", "drop") else "unknown"
 
 
 async def review_lists() -> dict:
-    """3 danh sach ID cho tab Misc: keep / drop / unknown (gom ca cay chua quyet, khong sao, khong trang bi). Moi danh sach sap xep theo ID."""
+    """4 danh sach ID cho tab Misc: keep / drop / unknown (Chua ro: da xem, khong chac) / unseen (Chua xem, ke ca cay chua quyet).
+    Moi danh sach sap xep theo ID."""
     rows = await mdb[COL_WEAPON_REVIEW].find({}).to_list(length=100000)
-    out = {"keep": [], "drop": [], "unknown": []}
+    out = {"keep": [], "drop": [], "unknown": [], "unseen": []}
     for r in rows:
         out[review_bucket(r)].append(str(r["_id"]))
     decided = {r["_id"] for r in rows}
-    out["unknown"] += [i for i in await review_pending_ids({i: 1 for i in decided}) if i not in decided]
+    out["unseen"] += [i for i in await review_pending_ids({i: 1 for i in decided}) if i not in decided]
     for k in out:
         out[k] = sorted(set(out[k]))
     sess = await review_get()
@@ -1602,7 +1607,7 @@ async def review_select(wid: str):
         return None, "khong tim thay cay nay"
     lists = await review_lists()
     queue = []
-    for k in ("keep", "drop", "unknown"):
+    for k in ("keep", "drop", "unknown", "unseen"):
         if wid in lists[k]:
             ids = lists[k]
             queue = ids[ids.index(wid) + 1:]
@@ -1649,7 +1654,7 @@ async def autoneon_start():
         return None, "dang tu duyet bang NeonUtil kieu cu"
     rows = {str(r["_id"]): r for r in await mdb[COL_WEAPON_REVIEW].find({}).to_list(length=100000)}
     lists = await review_lists()
-    queue = [i for i in lists["unknown"] if not (rows.get(i, {}).get("manual") and rows[i].get("decision") == "unknown")]
+    queue = list(lists["unseen"]) + [i for i in lists["unknown"] if not (rows.get(i, {}).get("manual") and rows[i].get("decision") == "unknown")]
     # moi cay CHUA co bp (ke ca cay khoa): app go `owo w <ID>` de doc chinh xac chi so + Knowledge. Bo qua cay Ruby da quyet tay / loai dac biet.
     queue += [i for i, r in rows.items() if not r.get("bp") and not r.get("manual") and r.get("reason") != "loai_dac_biet"]
     queue = sorted(set(queue))
@@ -1761,7 +1766,7 @@ async def autoneon_handle_neon(message):
             else:
                 if why == "bp_la":
                     decision = "unknown"       # khong doc ro -> giu o 'Chua ro', khong tu quyet
-                prev = review_bucket(doc) if doc else "unknown"
+                prev = review_bucket(doc) if doc else "unseen"
                 if decision != "unknown" or prev != "unknown":
                     await mdb[COL_WEAPON_REVIEW].update_one(
                         {"_id": wid}, {"$set": {"decision": decision, "reason": why, "bp": got["bp"], "manual": True,
@@ -1995,11 +2000,12 @@ async def _hub_weapon_review():
     if not sess:
         return None
     decided = await review_decisions()
+    lists = await review_lists()
     return {"active": bool(sess.get("active")), "current_id": sess.get("current"),
             "remaining": len(await review_pending_ids(decided)),
             "kept": sum(1 for d in decided.values() if d == "keep"),
             "dropped": sum(1 for d in decided.values() if d == "drop"),
-            "unknown": len((await review_lists())["unknown"])}
+            "unknown": len(lists["unknown"]), "unseen": len(lists["unseen"])}
 
 
 async def handle_post_weapon_review(request: web.Request):
@@ -5091,8 +5097,12 @@ async def import_weapon_export(raw: bytes, auto_session: bool = False) -> str:
     await send_file_to_owner("📦 Kế hoạch Giữ / Bỏ từ file export (chưa xóa gì).", "weapon_import_plan.json", data)
     text = weapon_import.summary_text(plan)
     if auto_session:
+        prev_clean = await clean_session()
         docs = await mdb[COL_WEAPON_REVIEW].find({"source": "neon_export"}).to_list(length=100000)
         st = weapon_import.cleanup_stages(docs, await extra_drop_ids())
+        if prev_clean.get("awaiting_export"):
+            # File nay la export CUOI PHIEN don: doi chieu ngay xem kho da sach cay Bo chua (khong can Ruby nhin man hinh)
+            text += "\n" + weapon_import.cleanup_verdict(st)
         steps = weapon_import.cleanup_steps(st)
         # Phien moi thay phien cu: buoc cu con dang cho (tu export truoc) phai huy, khong de app lam theo ke hoach cu
         await mdb[COL_AUTOMACRO_COMMANDS].update_many(
@@ -5119,7 +5129,7 @@ CLEAN_KEY = "clean_session"
 KNOWLEDGE_TOP_KEY = "weapon_knowledge_top"   # top 6 cay Knowledge cao nhat [{id, v}], luu giua cac lan ,weaponimport
 EXTRA_DROP_KEY = "clean_extra_drop"   # ID Ruby them tay vao danh sach ra (,dropadd); ben qua cac lan ,weaponimport
 CLEAN_BATCH = 8
-CLEAN_MAX_ROUNDS = 2
+CLEAN_EXPORT_WAIT_SECONDS = 240   # sau buoc export cuoi phien: qua ngan nay chua thay file thi bao Ruby
 _NEON_EXPORT_RE = re.compile(r"^nw\s+inv\w*\s+export\b", re.I)
 
 
@@ -5195,8 +5205,19 @@ async def after_clean_ack(status: str, cmd: dict):
     if (cmd.get("action") or "") == "clean_export":
         await mdb[COL_CONFIG].update_one({"_id": CLEAN_KEY}, {"$set": {"value.awaiting_export": True}})
         s["awaiting_export"] = True
+        spawn(_clean_export_watch(s.get("at")), name="clean_export_watch")
     await mdb[COL_CONFIG].update_one({"_id": CLEAN_KEY}, {"$inc": {"value.cursor": 1}})
     await clean_queue_batch()
+
+
+async def _clean_export_watch(session_at):
+    """Sau `nw inv export` cuoi phien: file ve thi import_weapon_export ghi de phien (mat awaiting_export). Qua han van con co
+    nghia Neon khong tra file -> bao Ruby (kho co the da sach nhung chua duoc doi chieu)."""
+    await asyncio.sleep(CLEAN_EXPORT_WAIT_SECONDS)
+    s = await clean_session()
+    if s.get("awaiting_export") and s.get("at") == session_at:
+        await notify_owner("⚠️ App đã dọn xong nhưng Tom chưa nhận được file `nw inv export` cuối phiên nên chưa đối chiếu được. "
+                           "Gõ `nw inv export` để kiểm tra kho còn cây Bỏ nào không.", min_gap=60)
 
 
 NEON_EXPORT_LOOKBACK_SECONDS = 180   # file Neon khong reply: chi tinh lenh export cua OWNER trong 3 phut truoc do
@@ -5399,7 +5420,7 @@ async def cleanplan_cmd(ctx):
 @bot.command(name="starlist")
 @is_owner()
 async def starlist_cmd(ctx, page: int = 1, *, template: str = ""):
-    """Cay GIU chua khoa o chat luong thap (Buoc 1 cua `,cleanplan`) de Ruby TU DANH SAO tay: `owo w <ID>` roi cham nut sao.
+    """Cay GIU chua khoa, ke ca Chua ro / Chua xem (Buoc 1 cua `,cleanplan`) de Ruby TU DANH SAO tay: `owo w <ID>` roi cham nut sao.
     `,starlist 1 owo w` = them tien to lenh truoc moi ID. Bot KHONG tu go/bam."""
     docs = await mdb[COL_WEAPON_REVIEW].find({"source": "neon_export"}).to_list(length=100000)
     st = weapon_import.cleanup_stages(docs, await extra_drop_ids())
@@ -5432,7 +5453,7 @@ async def dismantlelist_cmd(ctx, per_cmd: int = 1, page: int = 1):
     lines, total, pages = weapon_import.dismantle_commands([r["_id"] for r in rows], per_cmd, page)
     shown = max(1, min(int(page or 1), pages))
     body = "\n".join(lines)
-    await ctx.send(f"**{len(rows)} cây Bỏ ở chất lượng ≥ {weapon_import.SPLIT_Q:g}** (Bước 3 của `,cleanplan`) → {total} lệnh, trang {shown}/{pages} (`,dismantlelist {max(1, min(int(per_cmd or 1), 10))} <số trang>`)\n"
+    await ctx.send(f"**{len(rows)} cây Bỏ rã theo ID** (cây bạn thêm tay bằng `,dropadd`; các cây khác rã theo bậc, xem `,cleanplan`) → {total} lệnh, trang {shown}/{pages} (`,dismantlelist {max(1, min(int(per_cmd or 1), 10))} <số trang>`)\n"
                    f"```\n{body}\n```"
                    "Dán **từng dòng** vào kênh, đọc kỹ tin xác nhận của OwO (số cây, ID) rồi **tự bấm Dismantle**. "
                    "Xong cả danh sách thì xuất lại `nw inv export` và `,weaponimport` để cập nhật.")

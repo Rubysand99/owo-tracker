@@ -145,8 +145,8 @@ async def go2():
     await R.update_one({"_id": "W1"}, {"$set": {"decision": "keep", "reason": "bp_la"}}, upsert=True)
     await R.update_one({"_id": "W2"}, {"$set": {"decision": "drop", "reason": "chi_so_thap"}}, upsert=True)
     L = await b.review_lists()
-    check("lists: Giữ/Bỏ/Không xác định (bp_la tính không xác định, W3 chưa quyết)",
-          (L["keep"], L["drop"], L["unknown"]), (["W0"], ["W2"], ["W1", "W3"]))
+    check("lists: Giữ/Bỏ/Chưa rõ/Chưa xem (bp_la = Chưa rõ, W3 chưa quyết = Chưa xem)",
+          (L["keep"], L["drop"], L["unknown"], L["unseen"]), (["W0"], ["W2"], ["W1"], ["W3"]))
     res, err = await b.review_select("zz9")
     check("chọn ID lạ bị từ chối", (res, err), (None, "khong tim thay cay nay"))
     res, err = await b.review_select("w2")
@@ -158,7 +158,7 @@ async def go2():
     check("W2 sang danh sách Giữ", (await b.review_lists())["keep"], ["W0", "W2"])
     await b.review_select("W1")
     res, err = await b.review_decide("keep")
-    check("quyết tay W1 (bp_la) -> rời Không xác định", (await b.review_lists())["unknown"], ["W3"])
+    check("quyết tay W1 (bp_la) -> rời Chưa rõ; W3 vẫn Chưa xem", ((await b.review_lists())["unknown"], (await b.review_lists())["unseen"]), ([], ["W3"]))
     await b.review_select("W0")
     await b.review_decide("unknown")
     check("đặt tay Không xác định", "W0" in (await b.review_lists())["unknown"], True)

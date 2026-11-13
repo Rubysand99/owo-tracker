@@ -216,8 +216,19 @@ REASON_TEXT = {
     "chua_xem_bp": "chưa xem chỉ số (không có bp) — chưa rõ, bấm Tự duyệt để bot đọc NeonUtil",
 }
 KEEP_REASONS = ("loai_dac_biet", "khoa", "khoa_khong_dat", "knowledge_top", "chi_so_cao", "chua_xem_passive_cao", "chua_xem_bp", "bp_la")
-# Cay bot GIU vi chua chac (khong phai vi dat luat): hien o danh sach "Khong xac dinh" cho Ruby tu check tay
-UNSURE_REASONS = ("chua_xem_passive_cao", "chua_xem_bp", "bp_la", "q_thap_chua_chac")
+# 4 danh sach: GIU / BO / CHUA RO (da xem chi tiet nhung khong chac -> Ruby tu check tay) / CHUA XEM (chua co bp -> bot chua biet chi so).
+# Chua ro va Chua xem deu bi GIU (duoc SAO truoc khi ra theo bac), khong bao gio bi ra.
+UNSURE_REASONS = ("bp_la",)
+UNSEEN_REASONS = ("chua_xem_passive_cao", "chua_xem_bp", "q_thap_chua_chac")
+
+
+def list_of(decision, reason) -> str:
+    """Cay nay thuoc danh sach nao: 'keep' | 'drop' | 'unsure' (chua ro) | 'unseen' (chua xem)."""
+    if reason in UNSEEN_REASONS:
+        return "unseen"
+    if reason in UNSURE_REASONS:
+        return "unsure"
+    return "drop" if decision == "drop" else "keep"
 DROP_REASONS = ("chi_so_thap",)
 
 
@@ -235,8 +246,13 @@ def build_plan(weapons: list, knowledge_stored=None) -> dict:
 
 
 def summary_text(plan: dict) -> str:
+    counts = {"keep": 0, "drop": 0, "unsure": 0, "unseen": 0}
+    for dec, bucket in (("keep", plan["keep"]), ("drop", plan["drop"])):
+        for why in bucket.values():
+            counts[list_of(dec, why)] += 1
     lines = [f"**Nhập file kho vũ khí: {plan['total']} cây**",
-             f"✅ Giữ **{len(plan['keep'])}** · 🗑️ Bỏ **{len(plan['drop'])}** (CHƯA xóa gì)"]
+             f"✅ Giữ **{counts['keep']}** · 🗑️ Bỏ **{counts['drop']}** · ❓ Chưa rõ **{counts['unsure']}** (đã xem, không chắc) · "
+             f"👁️ Chưa xem **{counts['unseen']}** (CHƯA xóa gì; Chưa rõ và Chưa xem đều được GIỮ)"]
     for why in KEEP_REASONS + DROP_REASONS:
         n = plan["reasons"].get(why)
         if n:
@@ -273,20 +289,24 @@ def star_lines(keep_ids, template: str = "", page: int = 1, page_size: int = 20)
     return lines[(page - 1) * page_size: page * page_size], len(lines), pages
 
 
-# ---------------- Don kho theo "cach lai" ----------------
-# OwO bo qua cay DA SAO khi ra theo bac -> sao cay GIU o cac bac thap, ra theo bac cho phan do; dai cao ra theo ID.
+# ---------------- Don kho theo BAC (tier) ----------------
+# Moi cay GIU chua khoa (ke ca Chua ro / Chua xem) duoc SAO truoc; OwO bo qua cay da sao / da khoa khi ra theo bac. Sau do chi con cay BO,
+# nen ra thang theo bac (common -> uncommon -> rare -> epic ...), khong can ra tung ID. App chi bam Dismantle khi so cay khop ke hoach.
 RARE_MIN_Q = 40.0           # Rare tu ~40% (doi chieu: tin OwO "71 Rare" = 73 cay q 40..60.6 tru 2 cay da khoa)
 RARE_MAX_KNOWN_Q = 60.6     # cay Rare cao nhat da thay (anh OwO)
 EPIC_MIN_KNOWN_Q = 61.2     # cay bac tren thap nhat trong kho luc doi chieu
-SPLIT_Q = 61.0              # < SPLIT: nhom "ra theo bac" (common/uncommon/rare); >= SPLIT: ra theo ID
+SPLIT_Q = 61.0              # < SPLIT: common/uncommon/rare; >= SPLIT: epic tro len
+HIGH_TIERS = ("epic", "mythical", "legendary", "fabled")   # bac cao: ra theo bac, kiem tra theo TONG so cay Bo cua nhom
 
 
 def cleanup_stages(docs, extra_drop=()) -> dict:
-    """docs = [{'_id','decision','reason','q'}] (cac cay ,weaponimport da ghi). Cay da khoa / khong co q bi bo qua.
-    -> star_ids (GIU, chua khoa, q < SPLIT: phai SAO truoc khi ra theo bac), low_drop (BO, q < RARE_MIN: common+uncommon),
-       rare_drop (BO, RARE_MIN <= q < SPLIT), id_drop (BO, q >= SPLIT: ra theo ID), unsure (q nam giua cay Rare cao nhat va
-       cay bac tren thap nhat da biet -> chua chac thuoc bac nao), missing_q (so cay thieu q: can nhap lai file)."""
-    out = {"star_ids": [], "low_drop": [], "rare_drop": [], "id_drop": [], "unsure": [], "missing_q": 0}
+    """docs = [{'_id','decision','reason','q'}] (cac cay ,weaponimport da ghi). Cay thieu q bi bo qua (dem vao missing_q).
+    -> star_ids (GIU chua khoa, MOI bac: phai SAO truoc khi ra theo bac), low_drop (BO, q < RARE_MIN: common+uncommon),
+       rare_drop (BO, RARE_MIN <= q < SPLIT), high_drop (BO, q >= SPLIT: epic tro len, ra theo bac),
+       id_drop (cay Ruby them tay bang ,dropadd: ra THEO ID, chay truoc cac bac),
+       unsure (cay BO co q nam giua cay Rare cao nhat va cay bac tren thap nhat da biet -> chua chac thuoc bac nao;
+       van ra tu dong, chi noi long khoang so cay cua bac rare / nhom cao), missing_q (so cay thieu q: can nhap lai file)."""
+    out = {"star_ids": [], "low_drop": [], "rare_drop": [], "high_drop": [], "id_drop": [], "unsure": [], "missing_q": 0}
     extra = {str(i).upper() for i in (extra_drop or ())}
     for d in docs:
         q = d.get("q")
@@ -294,23 +314,24 @@ def cleanup_stages(docs, extra_drop=()) -> dict:
             out["missing_q"] += 1
             continue
         wid = str(d["_id"])
-        if wid.upper() in extra and not is_locked_reason(d.get("reason")):
-            # Ruby them tay vao danh sach ra: luon ra THEO ID (an toan voi moi bac, ke ca cay o vung chua ro bac)
+        locked = is_locked_reason(d.get("reason"))
+        if wid.upper() in extra and not locked:
+            # Ruby them tay vao danh sach ra: luon ra THEO ID (chinh xac voi moi bac)
             out["id_drop"].append(wid)
             continue
-        if RARE_MAX_KNOWN_Q < q < EPIC_MIN_KNOWN_Q:
-            out["unsure"].append(wid)
-        if d.get("decision") in ("keep", "unknown"):   # "khong xac dinh" = chua chac -> phai SAO nhu GIU (OwO khong ra cay da sao)
-            if not is_locked_reason(d.get("reason")) and q < SPLIT_Q:
+        if d.get("decision") in ("keep", "unknown"):   # Giu / Chua ro / Chua xem: deu phai SAO (OwO khong ra cay da sao)
+            if not locked:
                 out["star_ids"].append(wid)
-        elif d.get("decision") == "drop":
+        elif d.get("decision") == "drop" and not locked:
+            if RARE_MAX_KNOWN_Q < q < EPIC_MIN_KNOWN_Q:
+                out["unsure"].append(wid)
             if q < RARE_MIN_Q:
                 out["low_drop"].append(wid)
             elif q < SPLIT_Q:
                 out["rare_drop"].append(wid)
             else:
-                out["id_drop"].append(wid)
-    for k in ("star_ids", "low_drop", "rare_drop", "id_drop", "unsure"):
+                out["high_drop"].append(wid)
+    for k in ("star_ids", "low_drop", "rare_drop", "high_drop", "id_drop", "unsure"):
         out[k].sort()
     return out
 
@@ -319,17 +340,19 @@ def cleanup_text(st: dict) -> str:
     if st["missing_q"]:
         return (f"⚠️ {st['missing_q']} cây trong danh sách chưa có chất lượng (nhập từ bản cũ). "
                 "Gõ lại `,weaponimport` kèm file `weapons.json` mới rồi chạy `,cleanplan` lại.")
-    n_low, n_rare, n_id = len(st["low_drop"]), len(st["rare_drop"]), len(st["id_drop"])
-    lines = ["**Kế hoạch dọn kho (cách lai) — bạn tự làm từng bước, bot không tự gõ/bấm**",
-             f"**Bước 1 — Đánh sao {len(st['star_ids'])} cây GIỮ** ở chất lượng < {SPLIT_Q:g} (OwO bỏ qua cây đã sao khi rã theo bậc). "
-             "Danh sách: `,starlist` (mỗi cây: `owo w <ID>` rồi chạm nút sao).",
-             f"**Bước 2 — Rã theo bậc**: `owo dismantle common`, `owo dismantle uncommon` rồi `owo dismantle rare`. "
-             f"Common + Uncommon cộng lại phải đúng **{n_low}** cây, Rare phải đúng **{n_rare}** cây. Lệch số là bấm **Cancel** và báo lại.",
-             f"**Bước 3 — Rã theo ID {n_id} cây** (chất lượng ≥ {SPLIT_Q:g}): `,dismantlelist`, dán từng dòng rồi tự bấm Dismantle.",
-             "**Bước 4**: gõ `nw inv export`, rồi `,weaponimport` để cập nhật và kiểm tra lại."]
+    n_low, n_rare, n_high, n_id = len(st["low_drop"]), len(st["rare_drop"]), len(st["high_drop"]), len(st["id_drop"])
+    lines = ["**Kế hoạch dọn kho (theo bậc) — app tự làm khi bạn bật công tắc Dọn kho tự động trong Hub**",
+             f"**Bước 1 — Đánh sao {len(st['star_ids'])} cây GIỮ** (kể cả Chưa rõ / Chưa xem; OwO bỏ qua cây đã sao khi rã theo bậc). "
+             "Danh sách: `,starlist`.",
+             f"**Bước 2 — Rã theo bậc**: `owo dismantle common`, `uncommon` (cộng lại tối đa **{n_low}** cây), "
+             f"`rare` (đúng **{n_rare}** cây), rồi " + ", ".join(f"`{t}`" for t in HIGH_TIERS) + f" (cộng lại tối đa **{n_high + len(st['unsure'])}** cây). "
+             "Lệch số là app bấm **Cancel** và dừng, báo bạn."]
+    if n_id:
+        lines.append(f"**Cây bạn thêm tay (`,dropadd`)**: {n_id} cây rã theo ID trước các bậc.")
+    lines.append("**Cuối phiên**: app gõ `nw inv export`, Tom nhập lại và báo kho đã sạch cây Bỏ hay còn sót cây nào.")
     if st["unsure"]:
-        lines.append(f"⚠️ {len(st['unsure'])} cây có chất lượng ở vùng chưa rõ bậc ({RARE_MAX_KNOWN_Q:g}–{EPIC_MIN_KNOWN_Q:g}): "
-                     + " ".join(f"`{i}`" for i in st["unsure"][:10]) + " — bạn kiểm tra tay trước khi rã.")
+        lines.append(f"ℹ️ {len(st['unsure'])} cây Bỏ có chất lượng ở vùng chưa rõ bậc ({RARE_MAX_KNOWN_Q:g}–{EPIC_MIN_KNOWN_Q:g}): "
+                     + " ".join(f"`{i}`" for i in st["unsure"][:10]) + " — vẫn rã tự động, số cây chỉ kiểm tra theo khoảng.")
     return "\n".join(lines)
 
 
@@ -337,36 +360,62 @@ def cleanup_empty_reason(st: dict) -> str:
     """Vi sao cleanup_steps(st) rong (app hien cho Ruby biet, khong phai doan). Chuoi rong = khong co ly do (co the co buoc)."""
     if st.get("missing_q"):
         return f"{st['missing_q']} cây chưa có chất lượng — gõ lại `,weaponimport` kèm file `weapons.json` mới"
-    if st.get("unsure"):
-        ids = ", ".join(st["unsure"][:5]) + (" …" if len(st["unsure"]) > 5 else "")
-        return (f"{len(st['unsure'])} cây có chất lượng ở vùng chưa rõ bậc ({ids}) — bạn kiểm tra tay bậc của các cây này "
-                "(vd `owo w <ID>`), rồi xuất lại `nw inv export`")
     return "kho không có cây nào cần dọn tự động"
 
 
-def cleanup_steps(st: dict, with_export: bool = False) -> list:
-    """Cac buoc DON KHO cho app tu lam (thu tu: sao -> ra theo bac -> ra theo ID). Moi buoc = {action, params} gui qua
-    queue_automacro_command. App chi bam Dismantle khi so cay / ID tren man hinh khop `expect` (xem CleanupRunner).
-    Rong neu thieu q hoac con cay o vung chua ro bac (khong du chac de tu dong)."""
-    if st.get("missing_q") or st.get("unsure"):
+def cleanup_steps(st: dict, with_export: bool = True) -> list:
+    """Cac buoc DON KHO cho app tu lam: sao -> ra theo ID (cay Ruby them tay) -> ra theo bac thap -> rare -> bac cao -> export lai.
+    Moi buoc = {action, params} gui qua queue_automacro_command. App chi bam Dismantle khi so cay / ID tren man hinh khop
+    (xem CleanupRunner). `cum_group` + `cum_cap`: TONG so cay da ra trong nhom khong duoc vuot cum_cap (nhom 'low' = common+uncommon;
+    'high' = epic tro len). Rong neu thieu q, hoac khong co gi de lam."""
+    if st.get("missing_q"):
         return []
     steps = []
     for wid in st["star_ids"]:
         steps.append({"action": "clean_star", "params": {"command_text": f"owo w {wid}", "clean_mode": "star"}})
-    n_low, n_rare = len(st["low_drop"]), len(st["rare_drop"])
-    if n_low:   # common + uncommon cong lai dung n_low; moi lenh <= n_low, khong co cay nao thi bo qua (optional)
-        for tier in ("common", "uncommon"):
-            steps.append({"action": "clean_tier", "params": {
-                "command_text": f"owo dismantle {tier}", "clean_mode": "tier", "expect_max": str(n_low), "optional": "1"}})
-    if n_rare:
-        steps.append({"action": "clean_tier", "params": {
-            "command_text": "owo dismantle rare", "clean_mode": "tier", "expect": str(n_rare)}})
     for wid in st["id_drop"]:
         steps.append({"action": "clean_id", "params": {
             "command_text": f"owo dismantle {wid}", "clean_mode": "id", "expect_id": str(wid), "optional": "1"}})
-    if steps and with_export:   # cuoi phien: app go `nw inv export` de Tom nhan file moi, kiem tra con gi can don
+    n_low, n_rare, n_high = len(st["low_drop"]), len(st["rare_drop"]), len(st["high_drop"])
+    n_zone = len(st.get("unsure") or [])   # cay Bo chua ro thuoc rare hay epic: tinh vao ca hai bac (noi long khoang)
+    if n_low:
+        for tier in ("common", "uncommon"):
+            steps.append({"action": "clean_tier", "params": {
+                "command_text": f"owo dismantle {tier}", "clean_mode": "tier", "expect_max": str(n_low),
+                "cum_group": "low", "cum_cap": str(n_low), "optional": "1"}})
+    if n_rare or n_zone:
+        if n_zone:
+            p = {"command_text": "owo dismantle rare", "clean_mode": "tier", "expect_min": str(n_rare),
+                 "expect_max": str(n_rare + n_zone)}
+            if not n_rare:
+                p["optional"] = "1"
+        else:
+            p = {"command_text": "owo dismantle rare", "clean_mode": "tier", "expect": str(n_rare)}
+        steps.append({"action": "clean_tier", "params": p})
+    if n_high or n_zone:
+        cap = n_high + n_zone
+        for tier in HIGH_TIERS:
+            steps.append({"action": "clean_tier", "params": {
+                "command_text": f"owo dismantle {tier}", "clean_mode": "tier", "expect_max": str(cap),
+                "cum_group": "high", "cum_cap": str(cap), "optional": "1"}})
+    if steps and with_export:   # cuoi phien: app go `nw inv export`, Tom nhap lai va bao con sot cay nao (xem import_weapon_export)
         steps.append({"action": "clean_export", "params": {"command_text": "nw inv export", "clean_mode": "export"}})
     return steps
+
+
+def cleanup_verdict(st: dict) -> str:
+    """Sau phien don (file export moi): kho da sach cay Bo chua? Tra ve doan bao cho Ruby."""
+    left = [*st["low_drop"], *st["rare_drop"], *st["high_drop"], *st["id_drop"]]
+    unstarred = st["star_ids"]
+    if not left and not unstarred:
+        return "✅ **Kho đã sạch**: không còn cây Bỏ nào, mọi cây Giữ đều đã được sao/khóa."
+    parts = ["⚠️ **Kho chưa sạch hẳn**:"]
+    if left:
+        parts.append(f"còn {len(left)} cây Bỏ chưa rã: " + " ".join(f"`{i}`" for i in left[:15]) + (" …" if len(left) > 15 else ""))
+    if unstarred:
+        parts.append(f"{len(unstarred)} cây Giữ chưa được sao/khóa: " + " ".join(f"`{i}`" for i in unstarred[:15]) + (" …" if len(unstarred) > 15 else ""))
+    parts.append("Bật lại **Dọn kho tự động** để làm tiếp.")
+    return " ".join(parts)
 
 
 _WID_RE = re.compile(r"^[A-Za-z0-9]{3,12}$")

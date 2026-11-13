@@ -27,10 +27,8 @@ def req(token="tok"):
 # ----- cleanup_empty_reason (thuần) -----
 r = weapon_import.cleanup_empty_reason({"missing_q": 3, "unsure": []})
 check("lý do: thiếu chất lượng -> nêu số cây + cách xử lý", ("3 cây chưa có chất lượng" in r, "weaponimport" in r), (True, True))
-r = weapon_import.cleanup_empty_reason({"missing_q": 0, "unsure": ["C06P72", "F40IBT"]})
-check("lý do: vùng chưa rõ bậc -> nêu số cây và ID", ("2 cây" in r, "C06P72" in r, "F40IBT" in r, "…" in r), (True, True, True, False))
-r = weapon_import.cleanup_empty_reason({"missing_q": 0, "unsure": [f"ID{i}" for i in range(9)]})
-check("lý do: hơn 5 cây -> cắt còn 5 ID + dấu …", ("9 cây" in r, "ID4" in r, "ID5" in r, "…" in r), (True, True, False, True))
+check("lý do: cây Bỏ ở vùng chưa rõ bậc KHÔNG còn chặn kế hoạch",
+      weapon_import.cleanup_empty_reason({"missing_q": 0, "unsure": ["C06P72", "F40IBT"]}), "kho không có cây nào cần dọn tự động")
 check("lý do: missing_q được ưu tiên hơn unsure",
       "chưa có chất lượng" in weapon_import.cleanup_empty_reason({"missing_q": 1, "unsure": ["X"]}), True)
 check("lý do: không vướng gì -> kho không có gì cần dọn",
