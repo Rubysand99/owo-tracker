@@ -207,8 +207,9 @@ def parse_huntbot_status(text: str):
     essence_line = next((ln for ln in text.split("\n") if "Animal Essence" in ln), "")
     essence_line = re.sub(r"<a?:\w+:\d+>", "", essence_line)
     essence_m = re.search(r"Animal Essence\D*?(\d[\d,]*)", essence_line)
-    progress_m = re.search(r"([\d.]+)%\s*DONE", text.upper())
-    animals_m = re.search(r"([\d,]+)\s*ANIMALS CAPTURED", text.upper())
+    # Bat buoc bat dau bang chu so (khong dinh vao so thap phan do dang "1.2.3"): "([\d.]+)" co the bat trung moi dau cham -> float() loi
+    progress_m = re.search(r"(?<![\d.])(\d+(?:\.\d+)?)%\s*DONE", text.upper())
+    animals_m = re.search(r"(\d[\d,]*)\s*ANIMALS CAPTURED", text.upper())
     time_m = re.search(r"BACK IN\s*([0-9HMhm ]+)", text.upper())
     # Dang san khi: tin trang thai ("STILL HUNTING" / "currently hunting"), HOAC tin BAT DAU chuyen moi
     # ("I WILL BE BACK IN 24H ...") — tin nay khong co chu STILL HUNTING nhung co gio ve. Neu khong tinh no la
@@ -386,8 +387,8 @@ def parse_daily(text: str, command: str = ""):
     """
     plain = _plain(text)
     if re.search(r"here is your daily", plain, re.I):
-        reward_m = re.search(r"here is your daily.*?([\d,]+)\s*cowoncy", plain, re.I)
-        streak_m = re.search(r"([\d,]+)\s*daily streak", plain, re.I)
+        reward_m = re.search(r"here is your daily.*?(\d[\d,]*)\s*cowoncy", plain, re.I)
+        streak_m = re.search(r"(\d[\d,]*)\s*daily streak", plain, re.I)
         next_m = re.search(r"next daily is in:?\s*" + _DURATION_PATTERN, plain, re.I)
         return {
             "state": "claimed",
