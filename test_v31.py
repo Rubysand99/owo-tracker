@@ -46,7 +46,6 @@ async def queued():
 
 async def scenarios():
     old_notify, b.notify_owner = b.notify_owner, fake_notify
-    old_token = b.AUTOMACRO_API_TOKEN
     try:
         # ---------- chỉ nhận trang của mình khi đang quét ----------
         await fresh_db()

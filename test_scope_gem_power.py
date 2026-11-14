@@ -36,7 +36,7 @@ check("bỏ qua kênh: danh sách rỗng = không ảnh hưởng", S("900", "", 
 check("bỏ qua kênh: đọc danh sách ID (bỏ trùng, bỏ chữ lạ)", b.parse_id_list("5, 6 6 abc,7"), ["5", "6", "7"])
 
 async def scenarios():
-    db = b.mdb = AsyncMongoMockClient()["scope_test"]
+    b.mdb = AsyncMongoMockClient()["scope_test"]
     await b.set_config("tracked_user_id", "555")
     b.tracked_names.clear(); b.pending_commands.clear(); b.last_owo_command.clear()
     b._last_farm_channel["id"] = None

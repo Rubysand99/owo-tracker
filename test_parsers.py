@@ -796,7 +796,6 @@ async def run_emoji_owner_tests():
     check("hub team: du lieu cu -> ten sach, so ID emoji bi bo (None)", (m0["name"], m0["hp"], m0["wp"]), ("slothbot", None, 968))
 
     # --- Chu vu khi ---
-    ME = SimpleNamespace(id=555, display_name="Ruby", global_name="Ruby", nick=None, name="ruby_dev")
     bot_mod.tracked_names.clear()
     bot_mod.tracked_names["555"] = {"Ruby", "ruby_dev"}
 
@@ -1265,7 +1264,7 @@ async def run_pet_dex_tests():
           any(p["name"] == "dragon" for p in dex["species"]), False)
 
     # Chua tung tra owodex loai nao -> pet_dex = None (khong phai list rong)
-    m2 = bot_mod.mdb = AsyncMongoMockClient()["pet_dex_empty"]
+    bot_mod.mdb = AsyncMongoMockClient()["pet_dex_empty"]
     check("pet_dex: chua tra owodex loai nao -> None", (await bot_mod.build_hub(bot_mod._utcnow()))["pet_dex"], None)
     check("pet_dex: JSON hop le", isinstance(json.dumps(hub), str), True)
 

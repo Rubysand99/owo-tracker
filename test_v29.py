@@ -303,7 +303,6 @@ async def run_zoo():
     mid_pet = next(p["name"] for p in (await b.handle_zoo_text(99, _FX["middle_part"], "u"))[1]["pets"] if p["count"] >= 0)
     await b.mdb[b.COL_ZOO].delete_many({}); b.zoo_session.clear()
     await feed(["header"], ch=3)
-    old = (b._utcnow().replace(microsecond=0)).isoformat()
     await b.mdb[b.COL_ZOO].update_one({"_id": "latest"}, {"$set": {"updated_at": "2000-01-01T00:00:00"}})
     check("zoo chỉ có tin tiêu đề -> không kết luận pet mới", await b.record_new_pets({"animals": [{"name": mid_pet}]}, "u"), None)
     # E) đủ 3 tin + đã ổn định: pet có trong tin giữa KHÔNG bị báo mới; pet lạ thì báo
