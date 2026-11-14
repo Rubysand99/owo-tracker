@@ -1,6 +1,6 @@
 """test_v31.py — ,weaponreview quét lại kho (owo w + lật trang) rồi mới duyệt; chỉ nhận trang <@bạn>'s Weapons;
 ID không còn trong kho thì tự bỏ qua. Chạy: python test_v31.py"""
-import sys, asyncio, re
+import sys, asyncio
 from types import SimpleNamespace as NS
 from unittest.mock import MagicMock
 for m in ["discord", "discord.ext", "discord.ext.commands", "motor", "motor.motor_asyncio", "aiohttp"]:

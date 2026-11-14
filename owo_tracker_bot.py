@@ -40,12 +40,12 @@ import auto_refresh   # quyết định thuần: nhắc huntbot + chen lệnh ch
 import tools_api      # hàm thuần cho các đường API của màn "Công cụ": teamcheck / zoodiff / unlocked / acc phụ
 # Các hàm đọc tin OwO nằm ở owo_parsers.py; import lại đây để code cũ và test (b.parse_xxx) chạy như trước.
 from owo_parsers import (
-    _GEM_TIER_RANK,
+    _GEM_TIER_RANK,  # noqa: F401  (re-export cho test)
     _fold,
     _KNOWN_PASSIVES,
     _parse_utc,
     clean_owner_name,
-    decode_superscript_number,
+    decode_superscript_number,  # noqa: F401
     duration_to_seconds,
     emoji_to_name,
     GEM_SLOTS,
@@ -61,7 +61,7 @@ from owo_parsers import (
     parse_cowoncy,
     parse_daily,
     parse_event_hunt,
-    parse_gem_name,
+    parse_gem_name,  # noqa: F401
     parse_hunt_found,
     parse_hunt_gem_status,
     parse_huntbot_status,

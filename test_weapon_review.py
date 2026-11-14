@@ -175,7 +175,6 @@ async def go3():
 
 async def go4():
     # ---- tu duyet bang dong gon Neon
-    import json as _json, time as _t
     b.mdb = DB()
     queued = []
     async def fake_q(action, params): queued.append(params["command_text"]); return 1

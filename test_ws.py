@@ -40,7 +40,6 @@ check("ws: tin lạ trả None", b.parse_weapon_shards("Ruby, hunt is empowered 
 async def roundtrip():
     b.mdb = AsyncMongoMockClient()["ws_test"]
     await b.load_emoji_cache()
-    from datetime import datetime
     check("hub ws: chưa có dữ liệu -> None", await b._hub_weapon_shards(b._utcnow()), None)
     await b.save_weapon_shards({"amount": 1174}, "999")
     h = await b._hub_weapon_shards(b._utcnow())

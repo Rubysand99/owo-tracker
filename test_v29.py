@@ -10,7 +10,6 @@ for m in ["discord", "discord.ext", "discord.ext.commands", "motor", "motor.moto
             sys.modules[m] = MagicMock()
 import owo_tracker_bot as b
 from mongomock_motor import AsyncMongoMockClient
-from datetime import datetime
 
 fails = []
 def check(label, got, want):
@@ -354,7 +353,6 @@ none = b.parse_weapon_advice("Không có gì ở đây")
 check("advice: tin lạ -> không bịa passive", (none["recommended"], none["co_muc_passive"]), ([], False))
 
 async def run_advice():
-    from datetime import datetime
     b.mdb = AsyncMongoMockClient()["v29_advice"]
     b.AUTOMACRO_API_TOKEN = "tok"
     sent = {}
@@ -404,7 +402,6 @@ rules = b.load_weapon_rules(force=True)
 check("bộ luật: 28 loại + Rune không bao giờ dismantle", (len(rules["types"]), rules["never_dismantle"]), (28, ["118", "122"]))
 
 async def run_team():
-    from datetime import datetime, timedelta
     b.mdb = AsyncMongoMockClient()["v29_team"]
     await b.load_emoji_cache()
     await b.save_team(tm)
@@ -432,7 +429,7 @@ async def run_team():
 asyncio.run(run_team())
 
 async def run_hb_idle():
-    from datetime import datetime, timedelta
+    from datetime import timedelta
     b.mdb = AsyncMongoMockClient()["v29_hbidle"]
     await b.load_emoji_cache()
     notes = []

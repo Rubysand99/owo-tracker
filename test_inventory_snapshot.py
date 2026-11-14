@@ -1,7 +1,6 @@
 """test_inventory_snapshot.py — kiểm tra "mỗi lần gõ owo inv = 1 lần chụp mới, món không còn thì bị xóa".
 Dùng đúng 2 tin kho thật (4/10/2026) mà Ruby gửi. Chạy: python test_inventory_snapshot.py"""
 import asyncio
-from datetime import datetime
 
 from mongomock_motor import AsyncMongoMockClient
 

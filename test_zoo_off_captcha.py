@@ -1,6 +1,6 @@
 """test_zoo_off_captcha.py — kiểm tra các tính năng Ruby thêm (lịch sử zoo, owo zoo d, ⭐/➤ trong danh sách vũ khí,
 công tắc ,off) + 2 lỗi đã sửa (lịch sử zoo lưu bản thiếu, ,captcha clear không giới hạn chủ bot). Chạy: python test_zoo_off_captcha.py"""
-import sys, asyncio, json, re, os
+import sys, asyncio, json, re
 FAILS = []
 from unittest.mock import MagicMock
 from types import SimpleNamespace as NS
