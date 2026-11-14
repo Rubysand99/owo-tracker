@@ -41,9 +41,8 @@ async def main():
     text = await b.import_weapon_export(json.dumps(export1).encode(), auto_session=True)
     s = await b.clean_session()
     acts = [x["action"] for x in s["steps"]]
-    check("kế hoạch: sao cả cây Giữ q cao + cây Chưa xem", acts[:2], ["clean_star", "clean_star"])
-    check("kế hoạch: có rã bậc thấp và bậc cao, kết thúc bằng export", ("clean_tier" in acts, acts[-1]), (True, "clean_export"))
-    check("kế hoạch: không còn rã theo ID", "clean_id" in acts, False)
+    check("kế hoạch: sao cây Giữ bậc thấp (Chưa xem q 30) rồi rã theo ID cây Bỏ bậc cao", acts[:2], ["clean_star", "clean_id"])
+    check("kế hoạch: rã theo bậc cho cây Bỏ bậc thấp, kết thúc bằng export", ("clean_tier" in acts, acts[-1]), (True, "clean_export"))
     check("tóm tắt có 4 danh sách", all(k in text for k in ("Giữ **", "Bỏ **", "Chưa rõ **", "Chưa xem **")), True)
 
     # Giả lập app làm xong bước export -> bot đánh dấu chờ file cuối phiên

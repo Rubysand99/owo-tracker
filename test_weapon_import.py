@@ -111,20 +111,19 @@ def D(i, dec, q, why="x"): return {"_id": i, "decision": dec, "reason": why, "q"
 st = wi.cleanup_stages([
     D("K_khoa", "keep", 30, "khoa"),          # da khoa -> khong can sao
     D("K_thap", "keep", 50),                  # giu, q thap -> phai sao
-    D("K_cao", "keep", 85),                   # giu, q cao -> khong sao
+    D("K_zone", "keep", 61.1),                # giu, vung chua ro bac (co the la Rare) -> sao cho chac
+    D("K_cao", "keep", 85),                   # giu, q cao -> khong sao (bac cao ra theo ID)
     D("B_low", "drop", 20), D("B_rare", "drop", 40.0), D("B_rare2", "drop", 60.6),
     D("B_epic", "drop", 61.2), D("B_cao", "drop", 75),
-    D("U", "drop", 60.9),                     # vung chua ro bac
+    D("U", "drop", 60.9),                     # vung chua ro bac -> ra theo ID
 ])
-check("sao: MOI cay GIU chua khoa (ke ca q cao)", st["star_ids"], ["K_cao", "K_thap"])
+check("sao: cay GIU chua khoa q < 61.2", st["star_ids"], ["K_thap", "K_zone"])
 check("bo common+uncommon (q < 40)", st["low_drop"], ["B_low"])
-check("bo Rare (40 <= q < 61)", st["rare_drop"], ["B_rare", "B_rare2", "U"])
-check("bo bac cao (q >= 61) ra theo bac", (st["high_drop"], st["id_drop"]), (["B_cao", "B_epic"], []))
-check("ghi nhan cay Bo o vung chua ro bac", st["unsure"], ["U"])
+check("bo Rare (40 <= q <= 60.6)", st["rare_drop"], ["B_rare", "B_rare2"])
+check("bo q > 60.6 ra THEO ID (ke ca vung chua ro)", st["id_drop"], ["B_cao", "B_epic", "U"])
 check("thieu q -> yeu cau nhap lai", wi.cleanup_stages([{"_id": "A", "decision": "drop"}])["missing_q"], 1)
 txt = wi.cleanup_text(st)
-check("ke hoach co so cay de doi chieu", ("Đánh sao 2 cây" in txt and "tối đa **1** cây" in txt and "đúng **3** cây" in txt and "tối đa **3** cây" in txt), True)
-check("ke hoach nhac vung chua ro nhung van ra tu dong", ("`U`" in txt and "vẫn rã tự động" in txt), True)
+check("ke hoach co so cay de doi chieu", ("Đánh sao 2 cây" in txt and "Rã 3 cây Bỏ bậc cao theo ID" in txt and "tối đa **1** cây" in txt and "đúng **2** cây" in txt), True)
 check("thieu q -> chi thong bao nhap lai", "weaponimport" in wi.cleanup_text(wi.cleanup_stages([{"_id": "A", "decision": "drop"}])), True)
 
 # --- ke hoach + tom tat
@@ -159,32 +158,22 @@ check("parse bo cay thieu truong", len(wi.parse_export(json.dumps([W(), {"id": "
 
 def test_cleanup_steps_order_and_gates():
     import weapon_import as wi
-    st = {"star_ids": ["A1", "B2"], "low_drop": ["L1", "L2", "L3"], "rare_drop": ["R1", "R2"], "high_drop": ["H1", "H2"],
-          "id_drop": ["X9"], "unsure": [], "missing_q": 0}
+    st = {"star_ids": ["A1", "B2"], "low_drop": ["L1", "L2", "L3"], "rare_drop": ["R1", "R2"], "id_drop": ["X9", "Y8"], "missing_q": 0}
     steps = wi.cleanup_steps(st, with_export=False)
     acts = [s["action"] for s in steps]
-    assert acts == ["clean_star", "clean_star", "clean_id", "clean_tier", "clean_tier", "clean_tier",
-                    "clean_tier", "clean_tier", "clean_tier", "clean_tier"], acts
+    assert acts == ["clean_star", "clean_star", "clean_id", "clean_id", "clean_tier", "clean_tier", "clean_tier"], acts
     assert steps[0]["params"]["command_text"] == "owo w A1"
-    assert steps[2]["params"]["expect_id"] == "X9"
-    assert steps[3]["params"]["command_text"] == "owo dismantle common" and steps[3]["params"]["cum_group"] == "low" and steps[3]["params"]["cum_cap"] == "3"
-    assert steps[4]["params"]["command_text"] == "owo dismantle uncommon" and steps[4]["params"]["expect_max"] == "3"
-    assert steps[5]["params"]["expect"] == "2" and steps[5]["params"]["command_text"] == "owo dismantle rare"
-    tiers = [s["params"]["command_text"] for s in steps[6:]]
-    assert tiers == ["owo dismantle " + t for t in wi.HIGH_TIERS], tiers
-    assert all(s["params"]["cum_group"] == "high" and s["params"]["cum_cap"] == "2" and s["params"]["optional"] == "1" for s in steps[6:])
-    # mac dinh co buoc export cuoi phien
+    assert steps[2]["params"]["expect_id"] == "X9" and steps[2]["params"]["command_text"] == "owo dismantle X9"
+    assert steps[4]["params"]["command_text"] == "owo dismantle common" and steps[4]["params"]["cum_group"] == "low" and steps[4]["params"]["cum_cap"] == "3"
+    assert steps[5]["params"]["command_text"] == "owo dismantle uncommon" and steps[5]["params"]["expect_max"] == "3"
+    assert steps[6]["params"]["expect"] == "2" and steps[6]["params"]["command_text"] == "owo dismantle rare"
+    # khong bao gio rã bac cao theo bac
+    assert not any(t in s["params"]["command_text"] for s in steps for t in ("epic", "mythic", "legend", "fabled", " all"))
     ex = wi.cleanup_steps(st)
     assert ex[-1]["action"] == "clean_export" and ex[-1]["params"]["command_text"] == "nw inv export" and len(ex) == len(steps) + 1
-    empty = dict(st, star_ids=[], low_drop=[], rare_drop=[], high_drop=[], id_drop=[])
+    empty = dict(st, star_ids=[], low_drop=[], rare_drop=[], id_drop=[])
     assert wi.cleanup_steps(empty) == []
     assert wi.cleanup_steps(dict(st, missing_q=1)) == []
-    # cay Bo o vung chua ro bac: khong chan, noi long khoang
-    z = wi.cleanup_steps(dict(st, unsure=["Z"], rare_drop=["R1", "Z"], high_drop=["H1"]), with_export=False)
-    rare = [s for s in z if s["params"]["command_text"] == "owo dismantle rare"][0]["params"]
-    assert rare["expect_min"] == "2" and rare["expect_max"] == "3" and "expect" not in rare
-    hi = [s for s in z if s["params"]["command_text"] == "owo dismantle epic"][0]["params"]
-    assert hi["cum_cap"] == "2"
 test_cleanup_steps_order_and_gates()
 print("✅ cleanup_steps")
 
@@ -202,9 +191,9 @@ def test_extra_drop_and_parse_ids():
     import weapon_import as wi
     docs = [D("U1", "keep", 60.9), D("U2", "drop", 61.0), D("K1", "keep", 50.0), D("LK", "keep", 90.0, "khoa"), D("L1", "drop", 10.0)]
     base = wi.cleanup_stages(docs)
-    assert base["unsure"] == ["U2"] and base["star_ids"] == ["K1", "U1"] and base["high_drop"] == ["U2"]
+    assert base["star_ids"] == ["K1", "U1"] and base["id_drop"] == ["U2"]
     st = wi.cleanup_stages(docs, ["u1", "K1", "LK", "u2"])   # chu thuong van khop; cay KHOA khong bi dong vao
-    assert st["id_drop"] == ["K1", "U1", "U2"] and st["star_ids"] == [] and st["low_drop"] == ["L1"] and st["high_drop"] == []
+    assert st["id_drop"] == ["K1", "U1", "U2"] and st["star_ids"] == [] and st["low_drop"] == ["L1"]
     ids = [x["params"]["expect_id"] for x in wi.cleanup_steps(st) if x["action"] == "clean_id"]
     assert ids == ["K1", "U1", "U2"]
     assert wi.cleanup_stages(docs, ()) == base

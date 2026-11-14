@@ -32,8 +32,8 @@ async def main():
     check("thêm trùng không nhân đôi", await b.extra_drop_ids(), ["C06P72", "F40IBT", "ZZZ999"])
     docs = await b.mdb[b.COL_WEAPON_REVIEW].find({"source": "neon_export"}).to_list(length=100)
     st = weapon_import.cleanup_stages(docs, await b.extra_drop_ids())
-    check("kế hoạch: 2 cây vào rã theo ID, hết vùng chưa rõ, cây khóa không đụng",
-          (st["id_drop"], st["unsure"], st["star_ids"]), (["C06P72", "F40IBT"], [], []))
+    check("kế hoạch: 2 cây vào rã theo ID, không rã theo bậc, cây khóa không đụng",
+          (st["id_drop"], st["rare_drop"], st["star_ids"]), (["C06P72", "F40IBT"], [], []))
     r = await b.dropadd_apply("-x zzz999")
     check("gỡ ID", (await b.extra_drop_ids(), "Đã gỡ 1" in r), (["C06P72", "F40IBT"], True))
     r = await b.dropadd_apply("-x NOPE")
