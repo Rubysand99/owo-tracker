@@ -55,6 +55,7 @@ báo rỗng dù bạn chơi bình thường. Kiểm tra và sửa:
 - `owo_tracker_bot.py` — bot Discord, lệnh, lưu MongoDB, API cho AutoMacro.
 - `owo_parsers.py` — các hàm **thuần** đọc/phân tích tin nhắn OwO (`parse_*`, regex, hằng số đi kèm). Không đụng DB hay Discord nên test được trực tiếp. `owo_tracker_bot.py` import lại các tên này nên `b.parse_xxx` trong test vẫn chạy.
 - `auto_refresh.py` — quyết định thuần cho 2 việc: nhắc huntbot còn 10 phút, và chọn lệnh check để chen vào khi app đang farm.
+- `mcp_server/` — MCP server (Python, stdio) để hỏi/điều khiển bot ngay trong Claude, bọc đúng API mà app dùng. Cách cài + cấu hình: `mcp_server/README.md`.
 - `tools_api.py` — hàm thuần cho các đường API của màn "Công cụ" trong app (kiểm tra ID acc phụ / tham số `kind`, gom pet đã mở khóa theo tier, bỏ ký hiệu Discord khỏi chữ, kiểm tra body nhập tay pet / loại vũ khí / passive). **Luật nhập tay có bản sao ở app (`ManualInput` trong `BotTools.kt` của AutoMacro): sửa luật ở đây thì sửa cả bên đó.** Test: `test_tools_api.py` (không cần thư viện ngoài) và `test_tools_handlers.py` (cần `mongomock-motor`).
 - `weapon_cleanup.py`, `weapon_rules.json` — luật dọn vũ khí.
 - `test_*.py` — test (dữ liệu mẫu thật nằm trong `fixtures_*.json`).
