@@ -77,8 +77,24 @@ async def scenarios():
         await b.on_message(owo("Ruby, you currently have 999998 cowoncy!", 5, None))
         check("server: tin riêng (DM) bị bỏ qua", await cash(), 700)
         b.pending_commands.clear()   # không có lệnh chờ ở kênh 444
+        # Chế độ chặt: tin không có tên chủ và không reply bạn -> có thể của người khác -> KHÔNG đọc
+        before = await cash()
         await b.on_message(owo("Ruby, you currently have 321 cowoncy!", 444, 900))
-        check("server: đã biết tên -> đọc cả tin OwO ở kênh chưa gõ lệnh (không cần đợi lệnh)", await cash(), 321)
+        check("server: tin không rõ chủ (không reply bạn) -> bỏ qua", await cash(), before)
+        mine = owo("Ruby, you currently have 321 cowoncy!", 444, 900)
+        mine.reference = NS(resolved=NS(author=NS(id=555)), message_id=7)   # OwO reply đúng tin của bạn
+        await b.on_message(mine)
+        check("server: đã biết tên + OwO reply tin của bạn -> đọc cả ở kênh chưa gõ lệnh (không cần đợi lệnh)", await cash(), 321)
+        theirs = owo("Ruby, you currently have 654 cowoncy!", 444, 900)
+        theirs.reference = NS(resolved=NS(author=NS(id=999)), message_id=8)  # reply người khác
+        await b.on_message(theirs)
+        check("server: OwO reply người khác -> bỏ qua", await cash(), 321)
+        b.STRICT_OWNER = False   # công tắc OWO_STRICT_OWNER=0 trả về hành vi cũ
+        try:
+            await b.on_message(owo("Ruby, you currently have 777 cowoncy!", 444, 900))
+            check("OWO_STRICT_OWNER=0: tin không rõ chủ lại được đọc (hành vi cũ)", await cash(), 777)
+        finally:
+            b.STRICT_OWNER = True
 
         # nhớ kênh farm gần nhất
         await b.on_message(cmd("owo hunt", 222, 900))

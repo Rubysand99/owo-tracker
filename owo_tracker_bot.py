@@ -419,8 +419,43 @@ def reply_target(message, tracked_id):
     resolved = getattr(ref, "resolved", None) if ref else None
     author = getattr(resolved, "author", None)
     if author is None:
+        # Lenh slash: OwO tra loi kem thong tin nguoi go lenh (interaction), khong co reference
+        inter = getattr(message, "interaction_metadata", None) or getattr(message, "interaction", None)
+        author = getattr(inter, "user", None)
+    if author is None:
         return "khong_co"
     return "ban" if str(getattr(author, "id", "")) == str(tracked_id) else "nguoi_khac"
+
+
+STRICT_OWNER = os.environ.get("OWO_STRICT_OWNER", "1").strip().lower() not in ("0", "off", "false", "no")
+_ref_author_cache = {}   # message_id tin goc -> author_id (tranh fetch lai cung 1 tin)
+
+
+async def resolve_reply_target(message, tracked_id):
+    """Nhu reply_target, nhung khi discord.py chua co tin goc trong cache (reference.resolved rong)
+    thi TAI tin goc theo message_id de biet OwO dang tra loi ai. Khong tai duoc -> 'khong_co'."""
+    r = reply_target(message, tracked_id)
+    if r != "khong_co":
+        return r
+    ref = getattr(message, "reference", None)
+    mid = getattr(ref, "message_id", None) if ref else None
+    if not mid:
+        return "khong_co"
+    aid = _ref_author_cache.get(mid)
+    if aid is None:
+        try:
+            orig = await message.channel.fetch_message(mid)
+            aid = str(getattr(getattr(orig, "author", None), "id", "") or "")
+        except Exception as e:
+            print(f"[tracker] Khong tai duoc tin goc cua reply ({type(e).__name__}) -> coi nhu khong ro chu")
+            return "khong_co"
+        if aid:
+            if len(_ref_author_cache) > 500:
+                _ref_author_cache.clear()
+            _ref_author_cache[mid] = aid
+    if not aid:
+        return "khong_co"
+    return "ban" if aid == str(tracked_id) else "nguoi_khac"
 
 
 def speaker_name(text):
@@ -3948,7 +3983,8 @@ async def on_message(message: discord.Message):
         except Exception as e:
             print(f"[tracker][dex] Loi nhan dex theo alias: {e!r}")
 
-    if message.author.id == OWO_BOT_ID and reply_target(message, tracked_id) == "nguoi_khac":
+    rt = await resolve_reply_target(message, tracked_id) if message.author.id == OWO_BOT_ID else "khong_co"
+    if message.author.id == OWO_BOT_ID and rt == "nguoi_khac":
         # Chac chan OwO dang tra loi tin cua NGUOI KHAC -> bo qua, du loai tin nao (team, quest, ...)
         print("[tracker] Bo qua tin OwO tra loi nguoi khac (reply)")
     elif message.author.id == OWO_BOT_ID:
@@ -3957,14 +3993,24 @@ async def on_message(message: discord.Message):
             # KHONG gia han cua so khi OwO tra loi: neu gia han, tin OwO tra loi nguoi KHAC
             # trong cung kenh se bi tinh la cua ban (gem, tien, zoo cua nguoi do lan vao du lieu).
             farm_watch["last_reply_at"] = time.time()
-            await handle_owo_response(message, tracked_id)
+            await handle_owo_response(message, tracked_id, rt)
         elif scoped and await tracked_name_set(tracked_id):
             # v29: da chon kenh (,setchannel) hoac ca server (,setserver) -> doc MOI tin OwO, khong can cho lenh
             # (tin su kien tu bung ra, lenh go tat nhu Oah/Oq...). Tin cua nguoi khac van bi loc
             # theo ten/<@id>/reply. CHI khi bot da biet ten cua ban (tracked_names nam trong RAM,
             # mat sau moi lan khoi dong lai): chua biet ten thi khong loc duoc tin nguoi khac,
             # nen quay ve cach cu (chi doc trong cua so sau lenh) cho den khi ban nhan tin 1 lan.
-            await handle_owo_response(message, tracked_id)
+            # Che do CHAT (mac dinh, tat bang OWO_STRICT_OWNER=0): ngoai cua so lenh, chi nhan tin co BANG CHUNG la cua ban
+            # (OwO reply tin ban, hoac ten/<@id> khop). Tin khong ro chu = co the cua nguoi khac trong server -> bo.
+            if STRICT_OWNER and rt != "ban":
+                v, who = owner_verdict(flatten_message(message), tracked_id, await tracked_name_set(tracked_id))
+                if v != "mine":
+                    print("[tracker] Bo qua tin OwO khong chung minh duoc la cua ban (che do chat)")
+                    await record_raw("foreign_skipped", flatten_message(message),
+                                     {"ten_trong_tin": who, "ly_do": "khong ro chu (che do chat)"}, message)
+                    await bot.process_commands(message)
+                    return
+            await handle_owo_response(message, tracked_id, rt)
         elif _continuation_open(message.channel.id):
             await handle_continuation_only(message, tracked_id)
 
@@ -4069,7 +4115,9 @@ async def record_unrecognized(text, message):
     await mdb[COL_RAW].update_one({"_id": "unrecognized"}, {"$set": {"items": items[-UNRECOGNIZED_KEEP:]}}, upsert=True)
 
 
-async def handle_owo_response(message: discord.Message, source_id):
+async def handle_owo_response(message: discord.Message, source_id, rt=None):
+    if rt is None:
+        rt = await resolve_reply_target(message, source_id)
     text = flatten_message(message)
     if not text.strip():
         return
@@ -4152,7 +4200,7 @@ async def handle_owo_response(message: discord.Message, source_id):
             recognized = True
 
     hunt = parse_huntbot_status(text)
-    if hunt and verdict != "mine" and reply_target(message, source_id) != "ban" \
+    if hunt and verdict != "mine" and rt != "ban" \
             and not command_recent(message.channel.id, HB_COMMAND_RE):
         # Tin huntbot KHONG co ten nguoi choi: chi nhan khi chac la cua ban (ping/reply cho ban) hoac ban vua go
         # lenh hb. Neu khong, do la `owo hb` cua nguoi khac trong server va se ghi de gio huntbot cua ban.

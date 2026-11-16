@@ -121,7 +121,7 @@ print("✅ Test tên loại gem pass.")
 async def run_gate():
     from types import SimpleNamespace as NS
     seen = []
-    async def fake_handle(message, tid):
+    async def fake_handle(message, tid, rt=None):
         seen.append(message.content)
     async def noop(*a, **k):
         return None
@@ -137,7 +137,10 @@ async def run_gate():
         check("vừa khởi động (chưa biết tên) + không có lệnh -> KHÔNG đọc tin OwO", seen, [])
         b.tracked_names["1"] = {"ruby"}
         await b.on_message(owo)
-        check("đã biết tên + kênh farm -> đọc mọi tin OwO", seen, ["tin OwO"])
+        check("đã biết tên + kênh farm + tin không rõ chủ -> bỏ qua (chế độ chặt)", seen, [])
+        owo = NS(**{**owo.__dict__, "reference": NS(resolved=NS(author=NS(id=1)), message_id=3)})
+        await b.on_message(owo)
+        check("đã biết tên + kênh farm -> đọc tin OwO reply bạn", seen, ["tin OwO"])
         other = NS(**{**owo.__dict__, "channel": NS(id=99)})
         await b.on_message(other)
         check("kênh khác kênh farm -> bỏ qua", len(seen), 1)
