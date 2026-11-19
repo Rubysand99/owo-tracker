@@ -3301,7 +3301,14 @@ async def check_captcha_message(message, tracked_id):
         if jump:
             lines.append(f"💬 Mở tin OwO: {jump}")
         lines.append("Giải xong gõ `,captcha clear` rồi bấm Bắt đầu farm lại trong app.")
-        await notify_owner("\n".join(lines), min_gap=120)
+        text_out = "\n".join(lines)
+        sent_owner = await notify_owner(text_out, min_gap=120)
+        if sent_owner and await is_app_off():
+            # Hub TAT: app khong canh/reo chuong nua -> DM them acc phu de dien thoai/may phu van bao captcha.
+            # (Cung min_gap voi tin tren: chi gui khi tin chinh vua duoc gui, khong lap lai moi tin OwO.)
+            alt_id = await get_config("alt_user_id", ALT_USER_ID_DEFAULT)
+            if alt_id and not await dm_user(alt_id, text_out):
+                print("[tracker][captcha] Hub tat nhung khong DM duoc acc phu (tin da gui acc chinh)")
     elif is_captcha_solved_text(text):
         doc = await mdb[COL_ALERTS].find_one({"_id": "captcha"})
         if doc and doc.get("active"):
