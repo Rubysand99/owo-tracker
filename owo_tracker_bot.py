@@ -2557,6 +2557,13 @@ async def notify_owner(text: str, dm: bool = True, min_gap: int = 90, target: st
     last = _notify_recent.get(text, 0)
     if now - last < min_gap:
         return False
+    if await is_app_off():
+        # Hub TAT (,off): khong DM ai ca (acc chinh lan acc phu). Tin nhac danh cho acc phu (huntbot, mat khau) bo han;
+        # tin danh cho acc chinh van tag trong kenh thong bao (neu da dat) de khong bo lo captcha.
+        if target == "alt":
+            print("[tracker][notify] Hub tat - bo tin danh cho acc phu")
+            return False
+        dm = False
     _notify_recent[text] = now
     if len(_notify_recent) > 200:   # khong de dict phinh mai (moi noi dung khac nhau la 1 khoa)
         for k in [k for k, t in _notify_recent.items() if now - t > 3600]:
@@ -3319,14 +3326,7 @@ async def check_captcha_message(message, tracked_id, rt=None):
         if jump:
             lines.append(f"💬 Mở tin OwO: {jump}")
         lines.append("Giải xong gõ `,captcha clear` rồi bấm Bắt đầu farm lại trong app.")
-        text_out = "\n".join(lines)
-        sent_owner = await notify_owner(text_out, min_gap=120)
-        if sent_owner and await is_app_off():
-            # Hub TAT: app khong canh/reo chuong nua -> DM them acc phu de dien thoai/may phu van bao captcha.
-            # (Cung min_gap voi tin tren: chi gui khi tin chinh vua duoc gui, khong lap lai moi tin OwO.)
-            alt_id = await get_config("alt_user_id", ALT_USER_ID_DEFAULT)
-            if alt_id and not await dm_user(alt_id, text_out):
-                print("[tracker][captcha] Hub tat nhung khong DM duoc acc phu (tin da gui acc chinh)")
+        await notify_owner("\n".join(lines), min_gap=120)
     elif is_captcha_solved_text(text):
         doc = await mdb[COL_ALERTS].find_one({"_id": "captcha"})
         if doc and doc.get("active"):
