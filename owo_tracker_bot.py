@@ -3027,18 +3027,24 @@ async def _huntbot_timing(now):
 
 
 async def hb_reminder_tick(now):
-    """Con <= 10 phut nua huntbot ve -> DM acc phu (CHI khi Ruby bat `,hbalert on`). Thong bao tren dien thoai
+    """Con <= 10 phut nua huntbot ve, roi TOI DUNG GIO huntbot xong -> DM acc phu (2 luot; CHI khi Ruby bat `,hbalert on`). Thong bao tren dien thoai
     do AutoMacro tu lam (hoi /alerts), nen day chi la ban du phong khi app khong chay."""
     if (await get_config("hb_alert", "off")) != "on":
         return None
     t = await _huntbot_timing(now)
     last = float(await get_config("hb_alert_ready", "0") or 0) or None
-    if not auto_refresh.huntbot_alert_due(t["hunting"], t["seconds_left"], t["ready_epoch"], last):
-        return None
-    await set_config("hb_alert_ready", str(t["ready_epoch"]))   # danh dau TRUOC khi gui: loi gui cung khong lap lai
-    mins = max(1, round(t["seconds_left"] / 60))
-    await notify_owner(f"⏰ Huntbot còn khoảng {mins} phút nữa là về.", target="alt", min_gap=300)
-    return mins
+    if auto_refresh.huntbot_alert_due(t["hunting"], t["seconds_left"], t["ready_epoch"], last):
+        await set_config("hb_alert_ready", str(t["ready_epoch"]))   # danh dau TRUOC khi gui: loi gui cung khong lap lai
+        mins = max(1, round(t["seconds_left"] / 60))
+        await notify_owner(f"⏰ Huntbot còn khoảng {mins} phút nữa là về.", target="alt", min_gap=300)
+        return mins
+    # Luot 2: toi dung gio huntbot xong
+    last_done = float(await get_config("hb_alert_done", "0") or 0) or None
+    if auto_refresh.huntbot_ready_due(t["hunting"], t["ready_epoch"], _epoch(now), last_done):
+        await set_config("hb_alert_done", str(t["ready_epoch"]))
+        await notify_owner("✅ Huntbot đã về tới giờ rồi! Vào nhận thôi.", target="alt", min_gap=300)
+        return "ready"
+    return None
 
 
 async def _slowdown_recent(now_ts, within=SLOWDOWN_BACKOFF) -> bool:
@@ -4455,7 +4461,7 @@ async def autocheck_cmd(ctx, state: str = ""):
 @bot.command(name="hbalert")
 @is_owner()
 async def hbalert_cmd(ctx, state: str = ""):
-    """`,hbalert on` = DM acc phu khi huntbot con 10 phut nua ve (ban du phong cho thong bao tren app)."""
+    """`,hbalert on` = DM acc phu 2 luot: khi huntbot con 10 phut nua ve va khi toi dung gio xong (ban du phong cho thong bao tren app)."""
     st = state.strip().lower()
     if st in ("on", "bat", "bật"):
         await set_config("hb_alert", "on")

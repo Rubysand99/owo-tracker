@@ -31,6 +31,12 @@ check("nhắc: chưa biết giờ về -> không", ar.huntbot_alert_due(True, No
 check("nhắc: đã nhắc chuyến này -> không lặp", ar.huntbot_alert_due(True, 500, E, E), False)
 check("nhắc: giờ về dao động 2 phút vẫn là cùng chuyến", ar.huntbot_alert_due(True, 500, E + 120, E), False)
 check("nhắc: chuyến MỚI (24h sau) -> nhắc lại", ar.huntbot_alert_due(True, 500, E + 86400, E), True)
+check("giờ xong: vừa tới giờ -> báo", ar.huntbot_ready_due(True, E, E + 5, None), True)
+check("giờ xong: chưa tới giờ -> không", ar.huntbot_ready_due(True, E, E - 5, None), False)
+check("giờ xong: trễ quá cửa sổ -> không", ar.huntbot_ready_due(True, E, E + ar.HB_READY_WINDOW + 1, None), False)
+check("giờ xong: OwO đã báo về (hunting=False) -> không", ar.huntbot_ready_due(False, E, E + 5, None), False)
+check("giờ xong: đã báo chuyến này -> không lặp", ar.huntbot_ready_due(True, E + 60, E + 100, E), False)
+check("giờ xong: chuyến MỚI -> báo", ar.huntbot_ready_due(True, E + 86400, E + 86400 + 5, E), True)
 
 # ---------- check huntbot đến hạn ----------
 check("hb: chưa từng thấy -> check", ar.huntbot_check_due(E, False, None, None), True)
@@ -147,6 +153,17 @@ async def scenarios():
         check("nhắc: lần sau cùng chuyến -> KHÔNG lặp", await b.hb_reminder_tick(now), None)
         await db[b.COL_HUNTBOT].delete_many({}); await hb_row(db, "3H 0M")
         check("nhắc: còn 3 giờ -> chưa nhắc", await b.hb_reminder_tick(now), None)
+        # Lượt 2: tới đúng giờ huntbot xong
+        await db[b.COL_HUNTBOT].delete_many({}); await hb_row(db, "9M")
+        await b.set_config("hb_alert_ready", "0"); await b.set_config("hb_alert_done", "0"); sent.clear()
+        check("giờ xong: chưa tới giờ (còn 8 phút) -> chưa báo lượt 2", await b.hb_reminder_tick(now + timedelta(minutes=1)), 8)  # lượt 1 (10 phút) báo trước
+        sent.clear()
+        check("giờ xong: chưa tới giờ nữa -> không báo", await b.hb_reminder_tick(now + timedelta(minutes=8)), None)
+        check("giờ xong: tới giờ -> báo lượt 2", await b.hb_reminder_tick(now + timedelta(minutes=9, seconds=30)), "ready")
+        check("giờ xong: nội dung + gửi acc phụ", sent, [("✅ Huntbot đã về tới giờ rồi! Vào nhận thôi.", "alt")])
+        check("giờ xong: cùng chuyến -> KHÔNG lặp", await b.hb_reminder_tick(now + timedelta(minutes=10)), None)
+        await db[b.COL_HUNTBOT].delete_many({}); await hb_row(db, "9M")
+        check("giờ xong: quá 10 phút sau giờ về mà chưa báo -> thôi", await b.hb_reminder_tick(now + timedelta(minutes=9) + timedelta(seconds=ar.HB_READY_WINDOW + 60)), None)
     finally:
         b.notify_owner = real_notify
 

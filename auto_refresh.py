@@ -8,6 +8,7 @@
 # ---- Nhắc huntbot -------------------------------------------------------------------------
 HB_ALERT_SECONDS = 600       # nhắc khi còn <= 10 phút
 HB_ALERT_MIN_LEFT = 60       # còn chưa tới 1 phút thì thôi (nhắc muộn vô nghĩa)
+HB_READY_WINDOW = 600         # báo "đã tới giờ" trong tối đa bấy nhiêu giây sau giờ về (bot tắt/khởi động lại vẫn kịp báo)
 HB_SAME_HUNT_WINDOW = 1800   # giờ về lệch < 30 phút = vẫn là CÙNG 1 chuyến (OwO chỉ báo theo phút nên giờ về dao động)
 
 
@@ -20,6 +21,20 @@ def huntbot_alert_due(hunting, seconds_left, ready_epoch, last_notified_epoch,
     if not (min_left < seconds_left <= alert_seconds):
         return False
     if last_notified_epoch is not None and abs(ready_epoch - last_notified_epoch) < same_hunt_window:
+        return False
+    return True
+
+
+def huntbot_ready_due(hunting, ready_epoch, now_epoch, last_ready_epoch,
+                      ready_window=HB_READY_WINDOW, same_hunt_window=HB_SAME_HUNT_WINDOW):
+    """True nếu NÊN báo "huntbot đã tới giờ" ngay bây giờ: đã qua giờ về nhưng chưa quá ready_window giây,
+    và chưa báo cho chuyến này (mỗi chuyến đúng 1 lần). Chuyến đã được OwO báo về (hunting=False) thì không báo."""
+    if not hunting or ready_epoch is None or now_epoch is None:
+        return False
+    late = now_epoch - ready_epoch
+    if not (0 <= late <= ready_window):
+        return False
+    if last_ready_epoch is not None and abs(ready_epoch - last_ready_epoch) < same_hunt_window:
         return False
     return True
 

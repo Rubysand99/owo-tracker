@@ -105,7 +105,7 @@ gần nhất **thấp hơn** trước (đỡ phí gem xịn), không còn thấp
 huntbot còn ≤ 10 phút nữa là về — mỗi chuyến chỉ 1 lần. Thông báo có **giờ về theo giờ máy** và **đồng hồ đếm ngược thật**
 (vẫn đúng dù bạn mở máy xem muộn). Tin OwO "bắt đầu chuyến mới" (`I WILL BE BACK IN ...`) cũng được tính là đang săn, nên chuyến
 vừa bắt đầu có giờ về ngay, không phải chờ bạn gõ `owo hb`. Muốn thêm bản dự phòng qua Discord (DM acc phụ, phòng khi app
-không chạy): `,hbalert on` (mặc định tắt; `,hbalert off` để tắt).
+không chạy): `,hbalert on` (mặc định tắt; `,hbalert off` để tắt). Bản DM có **2 lượt** mỗi chuyến: khi còn ≤ 10 phút và **đúng giờ huntbot xong** (trong 10 phút sau giờ về, nếu OwO chưa báo huntbot về). Hub tắt (`,off`) thì bot không gửi cả hai.
 
 **Dữ liệu trên Hub luôn mới:**
 - Bot đọc MỌI tin OwO trong phạm vi được theo dõi (cả server nếu đã `,setserver`), dù **bạn tự gõ** hay **app gõ**. Khi app tắt hoặc không farm, Hub cập nhật theo
