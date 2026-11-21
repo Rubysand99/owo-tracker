@@ -2550,20 +2550,18 @@ async def _hub_new_pets(now):
     return {"pets": pets}
 
 
-async def notify_owner(text: str, dm: bool = True, min_gap: int = 90, target: str = "owner", images=None):
+async def notify_owner(text: str, dm: bool = True, min_gap: int = 90, target: str = "owner", images=None, force: bool = False):
     """Nhan tin TAG ban trong kenh duoc theo doi (+ DM neu duoc) de dien thoai/may khac cua ban cung bao.
     Cung noi dung trong min_gap giay thi chi gui 1 lan (chong spam)."""
     now = time.time()
     last = _notify_recent.get(text, 0)
     if now - last < min_gap:
         return False
-    if await is_app_off():
-        # Hub TAT (,off): khong DM ai ca (acc chinh lan acc phu). Tin nhac danh cho acc phu (huntbot, mat khau) bo han;
-        # tin danh cho acc chinh van tag trong kenh thong bao (neu da dat) de khong bo lo captcha.
-        if target == "alt":
-            print("[tracker][notify] Hub tat - bo tin danh cho acc phu")
-            return False
-        dm = False
+    if not force and await is_app_off():
+        # Hub TAT (,off): im lang hoan toan - khong DM (acc chinh lan acc phu), khong tag trong kenh.
+        # force=True chi dung cho tin tra loi dung viec ban vua tu lam (vd gui file export cho bot).
+        print("[tracker][notify] Hub tat - khong gui thong bao")
+        return False
     _notify_recent[text] = now
     if len(_notify_recent) > 200:   # khong de dict phinh mai (moi noi dung khac nhau la 1 khoa)
         for k in [k for k, t in _notify_recent.items() if now - t > 3600]:
@@ -5351,9 +5349,9 @@ async def handle_neon_export_reply(message: discord.Message):
     try:
         text = await import_weapon_export(await atts[0].read(), auto_session=True)
     except ValueError as e:
-        await notify_owner(f"Không đọc được file export của Neon: {e}", min_gap=30)
+        await notify_owner(f"Không đọc được file export của Neon: {e}", min_gap=30, force=True)
         return
-    await notify_owner("📥 Tom đã tự nhận file `nw inv export` của bạn.\n" + text, min_gap=5)
+    await notify_owner("📥 Tom đã tự nhận file `nw inv export` của bạn.\n" + text, min_gap=5, force=True)
 
 
 @bot.command(name="weaponimport")

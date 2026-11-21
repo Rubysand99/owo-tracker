@@ -85,7 +85,7 @@ bạn, hoặc bạn vừa gõ lệnh `hb` / `huntbot` / `autohunt` trong vòng 2
 gõ `owo hb` không ghi đè giờ huntbot của bạn. Giới hạn còn lại: nếu người khác gõ `owo hb` đúng vài giây sau lệnh `owo hb` của bạn
 trong cùng kênh thì vẫn có thể lẫn; tin `owo team` cũng chưa có tên chủ nên chưa lọc được theo cách này.
 
-**Hub tắt (`,off`) = không DM ai:** bot không DM acc chính lẫn acc phụ (huntbot, mật khẩu huntbot, captcha, tin app nhờ gửi). Tin cho acc chính vẫn tag trong kênh thông báo (kênh đã `,setchannel` hoặc kênh gần nhất khi `,setserver`) để không bỏ lỡ captcha. Tin bạn tự gọi bằng lệnh (`,testalt`, file xuất vũ khí...) vẫn gửi bình thường.
+**Hub tắt (`,off`) = bot im lặng:** không DM ai (acc chính lẫn acc phụ) và không tag bạn trong kênh (huntbot, mật khẩu huntbot, captcha, cảnh báo app, tin app nhờ gửi). Ngoại lệ: tin trả lời đúng việc bạn vừa tự làm (nhận file export của Neon) và các lệnh bạn tự gõ (`,testalt`, file xuất vũ khí...). Bot vẫn ghi nhận captcha để `/alerts` báo đúng khi bật Hub lại.
 
 **Mật khẩu huntbot / captcha của người khác:** OwO reply tin của người khác thì bot không DM gì cả (kể cả khi tin gốc chưa có trong cache, bot sẽ tải về kiểm tra). Hub tắt thì bot không chuyển ảnh mật khẩu huntbot sang acc phụ. Mật khẩu không rõ chủ chỉ được chuyển khi bạn vừa xin mật khẩu (trong 10 phút).
 

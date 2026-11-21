@@ -1,4 +1,4 @@
-"""test_off_no_dm.py — Hub TẮT (,off) thì bot không DM ai (acc chính lẫn acc phụ). Chạy: python test_off_no_dm.py"""
+"""test_off_no_dm.py — Hub TẮT (,off) thì bot im lặng: không DM ai (acc chính lẫn acc phụ), không tag trong kênh. Chạy: python test_off_no_dm.py"""
 import sys, asyncio
 from unittest.mock import MagicMock
 from types import SimpleNamespace as NS
@@ -14,7 +14,7 @@ def r(label, got, want):
     print(("✅ " if ok else "❌ ") + label + ("" if ok else f"\n     thực tế: {got!r}  mong đợi: {want!r}"))
     if not ok: FAILS.append(label)
 
-async def run(off, target="owner", dm=True):
+async def run(off, target="owner", dm=True, force=False):
     b.mdb = AsyncMongoMockClient()["nodm_%s_%s_%s" % (off, target, dm)]
     await b.set_config("alt_user_id", "777"); await b.set_config("tracked_user_id", "5"); await b.set_app_off(off)
     b._notify_recent.clear()
@@ -28,7 +28,7 @@ async def run(off, target="owner", dm=True):
     b.notify_channel_id = nci
     b.bot = NS(get_channel=lambda i: Chan(), fetch_channel=None, get_user=lambda i: User(str(i)), fetch_user=None)
     b.discord = MagicMock()
-    ok = await b.notify_owner("hello " + str(off) + target, dm=dm, target=target, min_gap=0)
+    ok = await b.notify_owner("hello " + str(off) + target, dm=dm, target=target, min_gap=0, force=force)
     return ok, log
 
 async def main():
@@ -37,7 +37,9 @@ async def main():
     ok, log = await run(off=False, target="alt")
     r("Hub bật: tin cho acc phụ DM acc phụ (như cũ)", log, [("dm", "777")])
     ok, log = await run(off=True)
-    r("Hub tắt: không DM acc chính (vẫn tag trong kênh)", log, [("kenh", "tag")])
+    r("Hub tắt: không DM acc chính, không tag trong kênh", (ok, log), (False, []))
+    ok, log = await run(off=True, force=True)
+    r("Hub tắt + force=True (trả lời việc bạn vừa tự làm): vẫn gửi", log, [("kenh", "tag"), ("dm", "5")])
     ok, log = await run(off=True, target="alt")
     r("Hub tắt: tin cho acc phụ bị bỏ, không DM ai, không chuyển sang acc chính", (ok, log), (False, []))
 asyncio.run(main())
