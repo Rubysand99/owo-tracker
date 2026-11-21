@@ -87,6 +87,8 @@ trong cùng kênh thì vẫn có thể lẫn; tin `owo team` cũng chưa có tê
 
 **Captcha khi Hub tắt (`,off`):** app không còn canh/reo chuông nên bot DM thêm cho **acc phụ** (ngoài tin tag + DM acc chính). Hub bật thì không gửi thêm. Cần đã `,setalt`.
 
+**Mật khẩu huntbot / captcha của người khác:** OwO reply tin của người khác thì bot không DM gì cả (kể cả khi tin gốc chưa có trong cache, bot sẽ tải về kiểm tra). Hub tắt thì bot không chuyển ảnh mật khẩu huntbot sang acc phụ. Mật khẩu không rõ chủ chỉ được chuyển khi bạn vừa xin mật khẩu (trong 10 phút).
+
 **Chế độ chặt khi theo dõi cả server/kênh (v1.47):** ngoài cửa sổ sau lệnh của bạn, bot chỉ nhận tin OwO có **bằng chứng là của bạn** (OwO reply đúng tin của bạn,
 hoặc `<@id>` / tên ở dòng đầu khớp). Tin không rõ chủ bị bỏ (ghi vào `foreign_skipped` của `,rawdump`, lý do "khong ro chu"). Khi OwO reply mà discord.py chưa có tin gốc
 trong cache, bot tải tin gốc theo `message_id` để biết OwO đang trả lời ai; lệnh slash thì lấy người gõ từ `interaction`. Muốn về hành vi cũ: đặt biến môi trường `OWO_STRICT_OWNER=0`.

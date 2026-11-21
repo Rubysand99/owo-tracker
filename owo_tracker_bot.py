@@ -3168,17 +3168,20 @@ def is_captcha_solved_text(text: str) -> bool:
     return bool(_CAPTCHA_SOLVED_RE.search(normalize_alert_text(text)))
 
 
-async def captcha_addressed_to_tracked(message, text: str, tracked_id) -> bool:
-    """Canh bao captcha nay la goi BAN? Chua biet ban la ai -> coi la cua ban (thà dung nham con hon bo sot)."""
+async def captcha_addressed_to_tracked(message, text: str, tracked_id, rt=None) -> bool:
+    """Canh bao captcha nay la goi BAN? Chua biet ban la ai -> coi la cua ban (thà dung nham con hon bo sot).
+    rt = ket qua resolve_reply_target (da tai tin goc neu can): 'nguoi_khac' -> chac chan khong phai cua ban."""
     if not tracked_id:
         return True
+    if rt == "nguoi_khac":
+        return False
     tid = str(tracked_id)
     raw = _ZERO_WIDTH_RE.sub("", text or "")
     if f"<@{tid}>" in raw or f"<@!{tid}>" in raw:
         return True
     if any(str(getattr(u, "id", "")) == tid for u in (getattr(message, "mentions", None) or [])):
         return True
-    if reply_target(message, tracked_id) == "ban":
+    if rt == "ban" or reply_target(message, tracked_id) == "ban":
         return True
     names = await tracked_name_set(tracked_id)
     low = normalize_alert_text(raw)
@@ -3227,13 +3230,26 @@ def find_message_image_urls(message):
     return out[:2]
 
 
-async def check_hb_password_message(message, tracked_id):
+async def check_hb_password_message(message, tracked_id, rt=None):
     """OwO dua MAT KHAU huntbot (anh) khi go `owo hb <so> `: chuyen anh sang DM acc phu de Ruby TU DOC.
     Bot KHONG doc anh va KHONG giai ma. Ruby doc ma roi nhan lai dung ma do trong DM de app go giup."""
     text = flatten_message(message)
     if "password" not in normalize_alert_text(text):
         return
-    if not await captcha_addressed_to_tracked(message, text, tracked_id):
+    if rt is None:
+        rt = await resolve_reply_target(message, tracked_id)
+    if rt == "nguoi_khac":
+        print("[tracker][hb] Mat khau huntbot cua nguoi khac (OwO reply tin ho) - bo qua")
+        return
+    if await is_app_off():
+        # Hub TAT: app khong xin mat khau va se tu choi go ma -> DM sang acc phu chi la lam phien
+        print("[tracker][hb] Hub tat - khong chuyen mat khau huntbot sang acc phu")
+        return
+    if not await captcha_addressed_to_tracked(message, text, tracked_id, rt):
+        return
+    if rt != "ban" and (time.time() - hb_pending["at"]) > HB_PENDING_SECONDS:
+        # Khong co bang chung la cua ban (khong reply tin ban) va ban cung khong vua xin mat khau -> co the cua nguoi khac
+        print("[tracker][hb] Mat khau huntbot khong ro chu va khong co yeu cau dang cho - bo qua")
         return
     images = find_message_image_urls(message)
     lines = ["hb",
@@ -3277,13 +3293,15 @@ def find_captcha_links(message, text: str):
     return out[:2]
 
 
-async def check_captcha_message(message, tracked_id):
+async def check_captcha_message(message, tracked_id, rt=None):
     """Goi voi MOI tin cua OwO trong kenh duoc theo doi (khong can doi ban vua go lenh)."""
     text = flatten_message(message)
     if not text.strip():
         return
     if is_captcha_text(text):
-        if not await captcha_addressed_to_tracked(message, text, tracked_id):
+        if rt is None:
+            rt = await resolve_reply_target(message, tracked_id)
+        if not await captcha_addressed_to_tracked(message, text, tracked_id, rt):
             print("[tracker][captcha] Canh bao captcha cua nguoi khac - bo qua")
             return
         now_iso = _utcnow().isoformat()
@@ -3972,13 +3990,14 @@ async def on_message(message: discord.Message):
             print(f"[tracker][neon] Loi nhan file export: {e!r}")
         return
 
+    rt = await resolve_reply_target(message, tracked_id) if message.author.id == OWO_BOT_ID else "khong_co"
     if message.author.id == OWO_BOT_ID:
         try:
-            await check_captcha_message(message, tracked_id)
+            await check_captcha_message(message, tracked_id, rt)
         except Exception as e:  # khong de loi o day lam hong luong doc tin con lai
             print(f"[tracker][captcha] Loi kiem tra captcha: {e!r}")
         try:
-            await check_hb_password_message(message, tracked_id)
+            await check_hb_password_message(message, tracked_id, rt)
         except Exception as e:
             print(f"[tracker][hb] Loi chuyen mat khau huntbot: {e!r}")
 
@@ -3990,7 +4009,6 @@ async def on_message(message: discord.Message):
         except Exception as e:
             print(f"[tracker][dex] Loi nhan dex theo alias: {e!r}")
 
-    rt = await resolve_reply_target(message, tracked_id) if message.author.id == OWO_BOT_ID else "khong_co"
     if message.author.id == OWO_BOT_ID and rt == "nguoi_khac":
         # Chac chan OwO dang tra loi tin cua NGUOI KHAC -> bo qua, du loai tin nao (team, quest, ...)
         print("[tracker] Bo qua tin OwO tra loi nguoi khac (reply)")
