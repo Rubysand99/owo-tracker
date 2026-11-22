@@ -41,7 +41,8 @@ hub = {
                          {"hp": 50, "att": None, "level": 20, "weaponId": None, "quality": None}]},
     "battle": {"result": "win", "turns": 6, "xp": 120, "streak": 4, "best_streak": 9, "last_lost_streak": 2},
     "event": {"counters": [{"kind": "hunt", "current": 4, "max": 10}], "recent": [{}, {}]},
-    "event_pets": {"found_count": 1, "total": 2},
+    "event_pets": {"found_count": 1, "total": 2, "ends_epoch": 1795939140,
+                   "pets": [{"label": "Pumpkin Pie", "found": True, "age_seconds": 7300}, {"label": "Autumn Hsin", "found": False}]},
     "new_pets": {"pets": [{}]}, "slowdown": {"count_30m": 2}, "captcha": {"active": False},
     "checklists": {"daily": {"progress": "3/5"}, "weekly": {"progress": {"a": 1}}},
 }
@@ -78,7 +79,9 @@ check("gem: slot + dự phòng", (by["gems"]["Slot Hunting (legendary)"], by["ge
 check("zoo: theo bậc + đã hiến tế", (by["zoo"]["Theo bậc"], by["zoo"]["Loài đã hiến tế hết"]), ("common 5 loài/300 con · rare 2 loài/9 con", "2"))
 check("đội hình: tổng bỏ qua giá trị thiếu", (by["team"]["Số pet trong đội"], by["team"]["Tổng HP"], by["team"]["Tổng ATT"], by["team"]["Tổng MR"]), ("2", "150", "10", "3"))
 check("battle", (by["battle"]["Kết quả"], by["battle"]["Chuỗi thắng cao nhất"]), ("win", "9"))
-check("sự kiện: bộ đếm + pet sự kiện", (by["event"]["Bộ đếm hunt"], by["event"]["Pet sự kiện đã tìm"], by["event"]["Nhật ký sự kiện gần đây"]), ("4/10", "1/2", "2"))
+check("sự kiện: tiến độ, pet, kết thúc, tin đã ghi", (by["event"]["Tiến độ săn (hunt)"], by["event"]["Pet sự kiện đã tìm"], by["event"]["Tin sự kiện đã ghi"], by["event"]["Kết thúc"]),
+      ("4/10", "1/2", "2", "<t:1795939140:R>"))
+check("sự kiện: từng pet rõ tìm/chưa", (by["event"]["✅ Pumpkin Pie"], by["event"]["⬜ Autumn Hsin"]), ("đã tìm thấy · lần cuối 2 giờ trước", "chưa tìm thấy"))
 check("khác: pet mới, quá nhanh, captcha", (by["misc"]["Pet mới chưa vào zoo"], by["misc"]["Lần bị OwO báo quá nhanh (30 phút)"], by["misc"]["Captcha"]), ("1", "2", "không"))
 check("checklist: số thì in, dạng lạ thì 'đã ghi nhận'", (by["checklist"]["Checklist Daily"], by["checklist"]["Checklist Weekly"]), ("3/5", "đã ghi nhận"))
 total, filled = ov.count_metrics(g)
