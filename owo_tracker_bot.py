@@ -37,6 +37,7 @@ from discord.ext import commands
 from motor.motor_asyncio import AsyncIOMotorClient
 from aiohttp import web
 import auto_refresh   # quyết định thuần: nhắc huntbot + chen lệnh check khi đang farm
+import stat_info       # 6 chỉ số chiến đấu (HP/ATT/PR/WP/MAG/MR) cho lệnh ,stats
 import new_pet         # pet mới khi hunt: lệnh owo dex cho app + nội dung DM
 import event_pets      # pet của sự kiện đang diễn ra (tháng 11): nhận diện + dữ liệu cho /hub
 import tools_api      # hàm thuần cho các đường API của màn "Công cụ": teamcheck / zoodiff / unlocked / acc phụ
@@ -4977,6 +4978,17 @@ async def team_cmd(ctx):
     await ctx.send("\n".join(lines))
 
 
+@bot.command(name="stats")
+@is_owner()
+async def stats_cmd(ctx):
+    """Gửi 1 embed liệt kê đủ các chỉ số chiến đấu + tổng chỉ số đội hình hiện tại."""
+    rows = await mdb[COL_TEAM].find().sort("_id", 1).to_list(length=10)
+    embed = discord.Embed(title=f"Chỉ số chiến đấu ({len(stat_info.STATS)})", color=0x4CAF50)
+    for name, value, inline in stat_info.embed_fields(rows):
+        embed.add_field(name=name, value=value, inline=inline)
+    await ctx.send(embed=embed)
+
+
 @bot.command(name="myweapons")
 @is_owner()
 async def myweapons_cmd(ctx, *, search: str = ""):
@@ -6230,6 +6242,7 @@ HELP_GROUPS = [
         ("huntbot", "`,huntbot` (owner): trạng thái HuntBot — tiến độ, số pet bắt được, còn bao lâu nữa về"),
         ("quests", "`,quests` (owner): quest hôm nay và tiến độ từng quest"),
         ("team", "`,team` (owner): đội hình gần nhất bot đọc được"),
+        ("stats", "`,stats` (owner): 1 embed liệt kê đủ 6 chỉ số chiến đấu (HP/ATT/PR/WP/MAG/MR) kèm ý nghĩa và tổng chỉ số đội hình hiện tại"),
         ("teamcheck", "`,teamcheck` (owner): chấm đội hình đang đứng"),
         ("inv", "`,inv [tìm]` (owner): kho đồ đã ghi nhận, lọc theo tên"),
         ("gems", "`,gems` (owner): độ bền từng slot gem đang trang bị"),
