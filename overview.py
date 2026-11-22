@@ -27,7 +27,7 @@ FIXED_LABELS = {
     "team": ["Số pet trong đội", "Tổng HP", "Tổng ATT", "Tổng PR", "Tổng WP", "Tổng MAG", "Tổng MR",
              "Level TB", "Level cao nhất", "Pet đang cầm vũ khí", "Chất lượng vũ khí TB"],
     "battle": ["Kết quả", "Số lượt", "XP", "Chuỗi thắng", "Chuỗi thắng cao nhất", "Chuỗi thua gần nhất"],
-    "event": ["Pet sự kiện đã tìm", "Kết thúc", "Tin sự kiện đã ghi"],
+    "event": ["Pet sự kiện đã tìm", "Kết thúc", "Tiến độ săn sự kiện", "Tin sự kiện đã ghi"],
     "misc": ["Pet mới chưa vào zoo", "Lần bị OwO báo quá nhanh (30 phút)", "Captcha"],
     "checklist": ["Checklist Daily", "Checklist Weekly"],
     "knowledge": ["Loài pet đã biết", "Pet đã mở khóa (lưu vĩnh viễn)", "Loại vũ khí đã biết", "Passive đã biết",
@@ -286,8 +286,9 @@ def build_groups(hub, extras=None):
             ev_lines.append((f"⬜ {p_.get('label') or p_.get('key')}", "chưa tìm thấy"))
     end = _g(ep, "ends_epoch")
     ev_lines.append(("Kết thúc", (f"<t:{end}:R>" if isinstance(end, int) else "—") if ep else NO_DATA))
-    for c in _g(ev, "counters") or []:
-        ev_lines.append((f"Tiến độ săn ({c.get('kind') or '?'})", f"{num(c.get('current'))}/{num(c.get('max'))}"))
+    cs = [c for c in (_g(ev, "counters") or []) if isinstance(c, dict)]
+    c0 = cs[0] if cs else None   # bản ghi mới nhất (hub đã sắp mới -> cũ); chỉ hiện 1 bộ đếm x/y
+    ev_lines.append(("Tiến độ săn sự kiện", (f"{num(c0.get('current'))}/{num(c0.get('max'))}" if c0 else "—") if ev else NO_DATA))
     ev_lines.append(("Tin sự kiện đã ghi", num(len(_g(ev, "recent") or [])) if ev else NO_DATA))
     out.append(_group("event", "🍂 Sự kiện", ev, ev_lines))
 

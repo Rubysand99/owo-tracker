@@ -40,7 +40,7 @@ hub = {
     "team": {"members": [{"hp": 100, "att": 10, "pr": 5, "wp": 20, "mag": 7, "mr": 3, "level": 30, "weaponId": "ab", "quality": 80},
                          {"hp": 50, "att": None, "level": 20, "weaponId": None, "quality": None}]},
     "battle": {"result": "win", "turns": 6, "xp": 120, "streak": 4, "best_streak": 9, "last_lost_streak": 2},
-    "event": {"counters": [{"kind": "hunt", "current": 4, "max": 10}], "recent": [{}, {}]},
+    "event": {"counters": [{"kind": "hunt", "current": 4, "max": 10}, {"kind": "khac", "current": 9, "max": 10}], "recent": [{}, {}]},
     "event_pets": {"found_count": 1, "total": 2, "ends_epoch": 1795939140,
                    "pets": [{"label": "Pumpkin Pie", "found": True, "age_seconds": 7300}, {"label": "Autumn Hsin", "found": False}]},
     "new_pets": {"pets": [{}]}, "slowdown": {"count_30m": 2}, "captcha": {"active": False},
@@ -79,8 +79,9 @@ check("gem: slot + dự phòng", (by["gems"]["Slot Hunting (legendary)"], by["ge
 check("zoo: theo bậc + đã hiến tế", (by["zoo"]["Theo bậc"], by["zoo"]["Loài đã hiến tế hết"]), ("common 5 loài/300 con · rare 2 loài/9 con", "2"))
 check("đội hình: tổng bỏ qua giá trị thiếu", (by["team"]["Số pet trong đội"], by["team"]["Tổng HP"], by["team"]["Tổng ATT"], by["team"]["Tổng MR"]), ("2", "150", "10", "3"))
 check("battle", (by["battle"]["Kết quả"], by["battle"]["Chuỗi thắng cao nhất"]), ("win", "9"))
-check("sự kiện: tiến độ, pet, kết thúc, tin đã ghi", (by["event"]["Tiến độ săn (hunt)"], by["event"]["Pet sự kiện đã tìm"], by["event"]["Tin sự kiện đã ghi"], by["event"]["Kết thúc"]),
+check("sự kiện: tiến độ, pet, kết thúc, tin đã ghi", (by["event"]["Tiến độ săn sự kiện"], by["event"]["Pet sự kiện đã tìm"], by["event"]["Tin sự kiện đã ghi"], by["event"]["Kết thúc"]),
       ("4/10", "1/2", "2", "<t:1795939140:R>"))
+check("chỉ 1 dòng bộ đếm (không tách theo loại)", sum(1 for l in by["event"] if "Tiến độ" in l), 1)
 check("sự kiện: từng pet rõ tìm/chưa", (by["event"]["✅ Pumpkin Pie"], by["event"]["⬜ Autumn Hsin"]), ("đã tìm thấy · lần cuối 2 giờ trước", "chưa tìm thấy"))
 check("khác: pet mới, quá nhanh, captcha", (by["misc"]["Pet mới chưa vào zoo"], by["misc"]["Lần bị OwO báo quá nhanh (30 phút)"], by["misc"]["Captcha"]), ("1", "2", "không"))
 check("checklist: số thì in, dạng lạ thì 'đã ghi nhận'", (by["checklist"]["Checklist Daily"], by["checklist"]["Checklist Weekly"]), ("3/5", "đã ghi nhận"))

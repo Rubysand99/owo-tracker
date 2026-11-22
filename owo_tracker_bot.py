@@ -6288,7 +6288,7 @@ HELP_GROUPS = [
         ("huntbot", "`,huntbot` (owner): trạng thái HuntBot — tiến độ, số pet bắt được, còn bao lâu nữa về"),
         ("quests", "`,quests` (owner): quest hôm nay và tiến độ từng quest"),
         ("team", "`,team` (owner): đội hình gần nhất bot đọc được"),
-        ("thongke", "`,thongke` (owner, còn gọi `,overview` / `,sotieu`): gửi embed gom MỌI số liệu thống kê đang theo dõi — tiền, daily, huntbot, quest, gem, zoo, dex, kho, vũ khí, đội hình, battle, sự kiện, checklist, duyệt vũ khí, dữ liệu bot đã học, cài đặt bot (94 số liệu cố định); mục nào chưa có dữ liệu thì ghi rõ"),
+        ("thongke", "`,thongke` (owner, còn gọi `,overview` / `,sotieu`): gửi embed gom MỌI số liệu thống kê đang theo dõi — tiền, daily, huntbot, quest, gem, zoo, dex, kho, vũ khí, đội hình, battle, sự kiện, checklist, duyệt vũ khí, dữ liệu bot đã học, cài đặt bot (95 số liệu cố định); mục nào chưa có dữ liệu thì ghi rõ"),
         ("stats", "`,stats` (owner): 1 embed liệt kê đủ 6 chỉ số chiến đấu (HP/ATT/PR/WP/MAG/MR) kèm ý nghĩa và tổng chỉ số đội hình hiện tại"),
         ("teamcheck", "`,teamcheck` (owner): chấm đội hình đang đứng"),
         ("inv", "`,inv [tìm]` (owner): kho đồ đã ghi nhận, lọc theo tên"),
