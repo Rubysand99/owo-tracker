@@ -33,6 +33,11 @@ check("DM 1 pet", txt, "🆕 **Pet mới!**\n<:gowl:1> **gowl**\nApp sẽ gõ `o
 txt = np_.dm_text([{"name": "gowl"}, {"name": "2026november_pumpkinpie"}], lambda e: "E", False)
 check("DM nhiều pet, có pet sự kiện, không xếp lệnh", txt, "🆕 **2 pet mới!**\nE **gowl**\nE **2026november_pumpkinpie** 🍂 **PET SỰ KIỆN!**")
 
+check("tin trong kênh kèm sẵn lệnh dex + tag", np_.channel_text([{"name": "gowl"}], lambda e: "E", "<@9>"),
+      "<@9> 🆕 **Pet mới!**\nE **gowl**\nGõ `owo dex gowl` để ghi nhận.")
+check("tin trong kênh nhiều pet, không tag", np_.channel_text([{"name": "a"}, {"name": "bad name"}], lambda e: "E"),
+      "🆕 **2 pet mới!**\nE **a**\nE **bad name**\nGõ `owo dex a` để ghi nhận.")
+
 # --- luồng trong bot (thay các hàm I/O bằng bản giả) ---
 async def run(app_off, dm_ok=True, queue_ok=True):
     log = {"queued": [], "dm": []}
@@ -53,8 +58,26 @@ check("xếp đúng 1 lệnh owo dex cho app", log["queued"], [("dex_pet", {"com
 uid, text, images = log["dm"][0]
 check("DM cho người dùng được theo dõi, có tên + emoji + ảnh", (uid, "**gowl**" in text, "<a:gowl:55>" in text, images),
       ("999", True, True, ["https://cdn.discordapp.com/emojis/55.gif?size=96&quality=lossless"]))
-log = asyncio.run(run(True))
-check("Hub tắt: không lệnh, không DM", (log["queued"], log["dm"]), ([], []))
+class FakeChannel:
+    def __init__(self): self.sent = []
+    async def send(self, text, allowed_mentions=None): self.sent.append(text)
+
+async def run_off(channel):
+    log = {"queued": [], "dm": []}
+    async def off(): return True
+    async def queue(action, params): log["queued"].append(action); return 1
+    async def dm(uid, text, images=None): log["dm"].append(text); return True
+    async def cfg(key, default=None): return "999" if key == "tracked_user_id" else default
+    b.is_app_off, b.queue_automacro_command, b.dm_user, b.get_config = off, queue, dm, cfg
+    await b.announce_new_pets(["gowl"], {"animals": [{"name": "gowl", "emoji_id": "55", "emoji_animated": True}]}, 1, channel=channel)
+    return log
+
+ch = FakeChannel()
+log = asyncio.run(run_off(ch))
+check("Hub tắt: đăng tin trong kênh có tag + lệnh owo dex, không xếp lệnh, không DM", (log["queued"], log["dm"], len(ch.sent),
+      ch.sent and ("<@999>" in ch.sent[0], "`owo dex gowl`" in ch.sent[0], "<a:gowl:55>" in ch.sent[0])), ([], [], 1, (True, True, True)))
+log = asyncio.run(run_off(None))
+check("Hub tắt mà không có kênh: im lặng, không lỗi", (log["queued"], log["dm"]), ([], []))
 log = asyncio.run(run(False, queue_ok=False))
 check("không xếp được lệnh vẫn DM nhưng không hứa gõ dex", ("App sẽ gõ" in log["dm"][0][1], len(log["dm"])), (False, 1))
 log = asyncio.run(run(False, dm_ok=False))

@@ -1344,13 +1344,24 @@ async def record_new_pets(found, source_id=None):
     return first_time
 
 
-async def announce_new_pets(names, found, source_id=None):
-    """Pet MOI (chua co trong zoo) xuat hien lan dau trong tin hunt -> (1) nho app go `owo dex <ten>` de bot ghi nhan loai pet
-    (rank, chi so...), (2) DM Ruby ten + emoji pet. Hub tat (,off) thi im lang hoan toan (khong lenh, khong DM) nhu moi thong bao khac.
+async def announce_new_pets(names, found, source_id=None, channel=None):
+    """Pet MOI (chua co trong zoo) xuat hien lan dau trong tin hunt:
+    - Hub BAT: nho app go `owo dex <ten>` (de bot ghi nhan loai pet: rank, chi so...) + DM Ruby ten va emoji pet.
+    - Hub TAT (,off): app khong tu go duoc -> dang 1 tin TRONG KENH vua hunt ra pet (tag Ruby) kem san `owo dex <ten>` de Ruby tu go.
     Loi o day KHONG duoc lam hong luong xu ly tin hunt."""
     try:
         entries = new_pet.pick(names, (found or {}).get("animals"))
-        if not entries or await is_app_off():
+        if not entries:
+            return
+        tid = await get_config("tracked_user_id")
+        if await is_app_off():
+            if channel is None:
+                return
+            mention = f"<@{tid}>" if tid else ""
+            text = new_pet.channel_text(entries, lambda e: _zoo_emoji(e), mention)
+            allowed = discord.AllowedMentions(everyone=False, roles=False,
+                                              users=[discord.Object(id=int(tid))] if tid else False)
+            await channel.send(text, allowed_mentions=allowed)
             return
         queued = 0
         for e in entries:
@@ -1359,7 +1370,6 @@ async def announce_new_pets(names, found, source_id=None):
                 queued += 1
         text = new_pet.dm_text(entries, lambda e: _zoo_emoji(e), queued > 0)
         images = [u for u in (new_pet.emoji_image_url(e) for e in entries) if u]
-        tid = await get_config("tracked_user_id")
         if not await dm_user(tid, text, images):
             print(f"[tracker][new_pet] Khong DM duoc pet moi: {', '.join(e['name'] for e in entries)}")
     except Exception as ex:
@@ -4368,7 +4378,7 @@ async def handle_owo_response(message: discord.Message, source_id, rt=None):
         ev_names = [a["name"] for a in event_pets.find_in_animals(found["animals"]) if a["key"] in set(event_firsts)]
         announce = list(dict.fromkeys((new_names or []) + ev_names))
         if announce:
-            await announce_new_pets(announce, found, source_id)
+            await announce_new_pets(announce, found, source_id, channel=message.channel)
         await record_raw("hunt_found", text, found, message,
                          extra={"pet_moi_lan_dau": new_names, "zoo_da_luu": new_names is not None,
                                 "pet_su_kien_lan_dau": event_firsts})

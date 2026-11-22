@@ -57,7 +57,7 @@ báo rỗng dù bạn chơi bình thường. Kiểm tra và sửa:
 - `auto_refresh.py` — quyết định thuần cho 2 việc: nhắc huntbot còn 10 phút, và chọn lệnh check để chen vào khi app đang farm.
 - `mcp_server/` — MCP server (Python, stdio) để hỏi/điều khiển bot ngay trong Claude, bọc đúng API mà app dùng. Cách cài + cấu hình: `mcp_server/README.md`.
 - `tools_api.py` — hàm thuần cho các đường API của màn "Công cụ" trong app (kiểm tra ID acc phụ / tham số `kind`, gom pet đã mở khóa theo tier, bỏ ký hiệu Discord khỏi chữ, kiểm tra body nhập tay pet / loại vũ khí / passive). **Luật nhập tay có bản sao ở app (`ManualInput` trong `BotTools.kt` của AutoMacro): sửa luật ở đây thì sửa cả bên đó.** Test: `test_tools_api.py` (không cần thư viện ngoài) và `test_tools_handlers.py` (cần `mongomock-motor`).
-- `new_pet.py` — pet MỚI (chưa có trong zoo) khi hunt: bot xếp lệnh `owo dex <tên>` (action `dex_pet`) cho app gõ + DM bạn tên và emoji pet (hàm thuần; test: `test_new_pet.py`). Hub tắt (`,off`) thì im lặng hoàn toàn. Pet sự kiện lần đầu tìm thấy cũng báo theo cách này.
+- `new_pet.py` — pet MỚI (chưa có trong zoo) khi hunt: bot xếp lệnh `owo dex <tên>` (action `dex_pet`) cho app gõ + DM bạn tên và emoji pet (hàm thuần; test: `test_new_pet.py`). Hub tắt (`,off`) thì app không tự gõ được: bot đăng 1 tin ngay trong kênh vừa hunt ra pet (tag bạn) kèm sẵn `owo dex <tên>` để bạn tự gõ. Pet sự kiện lần đầu tìm thấy cũng báo theo cách này.
 - `event_pets.py` — pet của sự kiện đang diễn ra: danh sách pet, so khớp tên emoji, dữ liệu `event_pets` cho `/hub` (test: `test_event_pets.py`).
 - `weapon_cleanup.py`, `weapon_rules.json` — luật dọn vũ khí.
 - `test_*.py` — test (dữ liệu mẫu thật nằm trong `fixtures_*.json`).

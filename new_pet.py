@@ -50,3 +50,17 @@ def dm_text(entries, markup, dex_queued):
         if cmds:
             text += f"\nApp sẽ gõ {cmds} để ghi nhận."
     return text
+
+
+def channel_text(entries, markup, mention=""):
+    """Tin đăng trong kênh khi Hub TẮT (app không tự gõ được): kèm sẵn lệnh `owo dex <tên>` để người dùng tự gõ."""
+    lines = []
+    for e in entries:
+        tag = " 🍂 **PET SỰ KIỆN!**" if event_pets.match_event_pet(e["name"]) else ""
+        lines.append(f"{markup(e)} **{e['name']}**{tag}")
+    head = "🆕 **Pet mới!**" if len(entries) == 1 else f"🆕 **{len(entries)} pet mới!**"
+    cmds = ", ".join(f"`{dex_command(e['name'])}`" for e in entries if dex_command(e["name"]))
+    text = (f"{mention} " if mention else "") + head + "\n" + "\n".join(lines)
+    if cmds:
+        text += f"\nGõ {cmds} để ghi nhận."
+    return text
