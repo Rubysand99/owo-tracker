@@ -37,6 +37,7 @@ from discord.ext import commands
 from motor.motor_asyncio import AsyncIOMotorClient
 from aiohttp import web
 import auto_refresh   # quyết định thuần: nhắc huntbot + chen lệnh check khi đang farm
+import overview        # gom mọi số liệu thống kê thành embed cho lệnh ,thongke
 import stat_info       # 6 chỉ số chiến đấu (HP/ATT/PR/WP/MAG/MR) cho lệnh ,stats
 import new_pet         # pet mới khi hunt: lệnh owo dex cho app + nội dung DM
 import event_pets      # pet của sự kiện đang diễn ra (tháng 11): nhận diện + dữ liệu cho /hub
@@ -4978,6 +4979,23 @@ async def team_cmd(ctx):
     await ctx.send("\n".join(lines))
 
 
+@bot.command(name="thongke", aliases=["overview", "sotieu"])
+@is_owner()
+async def thongke_cmd(ctx):
+    """Gửi embed gom MỌI số liệu thống kê bot đang theo dõi (tiền, daily, huntbot, quest, gem, zoo, dex, kho, vũ khí, đội hình, battle, sự kiện...)."""
+    hub = await build_hub()
+    groups = overview.build_groups(hub)
+    total, filled = overview.count_metrics(groups)
+    chunks = overview.chunk_fields(overview.embed_fields(groups))
+    for i, chunk in enumerate(chunks):
+        embed = discord.Embed(title="Thống kê tổng hợp" if i == 0 else f"Thống kê tổng hợp ({i + 1}/{len(chunks)})", color=0x2196F3)
+        for name, value in chunk:
+            embed.add_field(name=name, value=value, inline=False)
+        if i == len(chunks) - 1:
+            embed.set_footer(text=f"{filled}/{total} số liệu đã có dữ liệu · bot {bot_version_text()}")
+        await ctx.send(embed=embed)
+
+
 @bot.command(name="stats")
 @is_owner()
 async def stats_cmd(ctx):
@@ -6242,6 +6260,7 @@ HELP_GROUPS = [
         ("huntbot", "`,huntbot` (owner): trạng thái HuntBot — tiến độ, số pet bắt được, còn bao lâu nữa về"),
         ("quests", "`,quests` (owner): quest hôm nay và tiến độ từng quest"),
         ("team", "`,team` (owner): đội hình gần nhất bot đọc được"),
+        ("thongke", "`,thongke` (owner, còn gọi `,overview` / `,sotieu`): gửi embed gom MỌI số liệu thống kê đang theo dõi — tiền, daily, huntbot, quest, gem, zoo, dex, kho, vũ khí, đội hình, battle, sự kiện, checklist; mục nào chưa có dữ liệu thì ghi rõ"),
         ("stats", "`,stats` (owner): 1 embed liệt kê đủ 6 chỉ số chiến đấu (HP/ATT/PR/WP/MAG/MR) kèm ý nghĩa và tổng chỉ số đội hình hiện tại"),
         ("teamcheck", "`,teamcheck` (owner): chấm đội hình đang đứng"),
         ("inv", "`,inv [tìm]` (owner): kho đồ đã ghi nhận, lọc theo tên"),
