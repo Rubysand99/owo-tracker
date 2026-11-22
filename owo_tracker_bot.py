@@ -37,6 +37,7 @@ from discord.ext import commands
 from motor.motor_asyncio import AsyncIOMotorClient
 from aiohttp import web
 import auto_refresh   # quyết định thuần: nhắc huntbot + chen lệnh check khi đang farm
+import event_pets      # pet của sự kiện đang diễn ra (tháng 11): nhận diện + dữ liệu cho /hub
 import tools_api      # hàm thuần cho các đường API của màn "Công cụ": teamcheck / zoodiff / unlocked / acc phụ
 # Các hàm đọc tin OwO nằm ở owo_parsers.py; import lại đây để code cũ và test (b.parse_xxx) chạy như trước.
 from owo_parsers import (
@@ -182,6 +183,7 @@ COL_GEM_STATUS = "owot_gem_status"
 COL_DAILY = "owot_daily_status"
 COL_COWONCY = "owot_cowoncy"
 COL_WEAPON_SHARDS = "owot_weapon_shards"  # v29: so weapon shards (owo ws)
+COL_EVENT_PETS = "owot_event_pets"          # pet sự kiện đã tìm thấy (khóa = tên trong event_pets.EVENT_PETS)
 COL_EVENT = "owot_event_hunt"              # v29: tin san thuong su kien [x/10]
 COL_WEAPON_REVIEW = "owot_weapon_review"   # v30: quyet dinh Giu/Bo tung cay (Hub noi)
 COL_WEAPON_LIST = "owot_weapon_list"         # v29: kho vu khi tu danh sach `owo weapon` (nhieu trang)
@@ -949,9 +951,38 @@ def _looks_like_zoo(text):
     return "Zoo Points" in text or bool(re.search(r"(?<!`)<a?:\w+:\d+>[⁰¹²³⁴⁵⁶⁷⁸⁹]", text))
 
 
+async def record_event_pets(animals, source_id=None, via="hunt"):
+    """Ghi nhận pet SỰ KIỆN trong danh sách thú vừa thấy (tin hunt: via='hunt'; bảng zoo đang giữ: via='zoo', kèm số lượng; "owo zoo d": via='zoo_all').
+    Tra ve danh sach khoa pet LAN DAU tim thay. Loi o day KHONG duoc lam hong luong xu ly tin chinh."""
+    firsts = []
+    try:
+        now_iso = _utcnow().isoformat()
+        for a in event_pets.find_in_animals(animals):
+            prev = await mdb[COL_EVENT_PETS].find_one({"_id": a["key"]})
+            fields = {"found": True, "updated_by": source_id}
+            if via == "hunt":
+                fields["last_found_at"] = now_iso
+            elif via == "zoo":
+                fields["count"] = a.get("count")     # so dang giu; "owo zoo d" (zoo_all) la so da bat nen khong ghi vao day
+            if a.get("emoji_id"):
+                fields["emoji_id"] = a["emoji_id"]
+                fields["emoji_animated"] = bool(a.get("emoji_animated"))
+            upd = {"$set": fields, "$setOnInsert": {"first_found_at": now_iso, "first_via": via}}
+            if via == "hunt":
+                upd["$inc"] = {"times_found": 1}
+            await mdb[COL_EVENT_PETS].update_one({"_id": a["key"]}, upd, upsert=True)
+            if not prev or not prev.get("found"):
+                firsts.append(a["key"])
+                print(f"[tracker][event_pets] LAN DAU thay pet su kien {a['key']} (qua {via})")
+    except Exception as e:
+        print(f"[tracker][event_pets] Khong ghi duoc pet su kien: {e!r}")
+    return firsts
+
+
 async def save_zoo(z, source_id=None):
     """Zoo là 1 bản chụp toàn cảnh — ghi đè bản cũ mỗi lần quan sát mới,
     không cộng dồn (số lượng pet là tuyệt đối, không phải log sự kiện)."""
+    await record_event_pets(z.get("pets", []), source_id, via="zoo_all" if z.get("padded") else "zoo")   # kể cả "owo zoo d": đã bắt được thì là đã tìm thấy
     if z.get("padded"):
         # "owo zoo d" = số ĐÃ BẮT, không phải số đang giữ -> không được ghi đè zoo đang giữ
         print("[tracker][zoo] bang 'owo zoo d' (so da bat) — giu nguyen zoo dang giu, chi luu lich su.")
@@ -2367,6 +2398,11 @@ async def _hub_weapon_shards(now):
     return _with_age({"amount": doc.get("amount"), **resolve_emoji("weaponshard")}, doc.get("updated_at"), now)
 
 
+async def _hub_event_pets(now):
+    rows = await mdb[COL_EVENT_PETS].find({}).to_list(length=50)
+    return event_pets.hub_payload({r["_id"]: r for r in rows}, now)
+
+
 async def _hub_event(now):
     counters = await mdb[COL_EVENT].find({"type": "counter"}).sort("updated_at", -1).to_list(length=20)
     if not counters:
@@ -3442,6 +3478,7 @@ async def build_hub(now=None):
         "cowoncy": await _hub_cowoncy(now),
         "weapon_shards": await _hub_weapon_shards(now),
         "event": await _hub_event(now),
+        "event_pets": await _hub_event_pets(now),
         "event_mode": await get_event_mode(),
         "slowdown": await _hub_slowdown(now),
         "gems": await _hub_gems(now),
@@ -4302,9 +4339,11 @@ async def handle_owo_response(message: discord.Message, source_id, rt=None):
 
     found = parse_hunt_found(text)
     if found:
+        event_firsts = await record_event_pets(found["animals"], source_id, via="hunt")
         new_names = await record_new_pets(found, source_id)
         await record_raw("hunt_found", text, found, message,
-                         extra={"pet_moi_lan_dau": new_names, "zoo_da_luu": new_names is not None})
+                         extra={"pet_moi_lan_dau": new_names, "zoo_da_luu": new_names is not None,
+                                "pet_su_kien_lan_dau": event_firsts})
         recognized = True
 
     battle = parse_battle(text)

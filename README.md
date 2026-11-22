@@ -57,6 +57,7 @@ báo rỗng dù bạn chơi bình thường. Kiểm tra và sửa:
 - `auto_refresh.py` — quyết định thuần cho 2 việc: nhắc huntbot còn 10 phút, và chọn lệnh check để chen vào khi app đang farm.
 - `mcp_server/` — MCP server (Python, stdio) để hỏi/điều khiển bot ngay trong Claude, bọc đúng API mà app dùng. Cách cài + cấu hình: `mcp_server/README.md`.
 - `tools_api.py` — hàm thuần cho các đường API của màn "Công cụ" trong app (kiểm tra ID acc phụ / tham số `kind`, gom pet đã mở khóa theo tier, bỏ ký hiệu Discord khỏi chữ, kiểm tra body nhập tay pet / loại vũ khí / passive). **Luật nhập tay có bản sao ở app (`ManualInput` trong `BotTools.kt` của AutoMacro): sửa luật ở đây thì sửa cả bên đó.** Test: `test_tools_api.py` (không cần thư viện ngoài) và `test_tools_handlers.py` (cần `mongomock-motor`).
+- `event_pets.py` — pet của sự kiện đang diễn ra: danh sách pet, so khớp tên emoji, dữ liệu `event_pets` cho `/hub` (test: `test_event_pets.py`).
 - `weapon_cleanup.py`, `weapon_rules.json` — luật dọn vũ khí.
 - `test_*.py` — test (dữ liệu mẫu thật nằm trong `fixtures_*.json`).
 
@@ -180,6 +181,11 @@ Xem lệnh đang chờ / đã xử lý ngay trong Discord: `,automacro` (owner).
   phòng trong kho), `huntbot` (kèm `ready_at`/`seconds_left` — giờ xong
   tính từ lúc bot thấy tin nhắn), `quest`, `team`, `zoo`,
   `inventory`, `weapons`. Mục nào bot chưa thấy lần nào thì là `null`.
+  `event_pets` = pet của sự kiện đang diễn ra (tháng 11/2026: `2026november_pumpkinpie`, `2026november_autumnHsin`):
+  `{title, ends_epoch, active, found_count, total, pets:[{key, label, found, count, times_found, first_found_at, last_found_at, age_seconds, emoji_id}]}`.
+  Bot tự ghi nhận pet sự kiện khi thấy tên emoji của nó trong dòng `You found:` của `owo hunt` (kể cả app tự gõ) hoặc trong bảng `owo zoo` / `owo zoo d`
+  (collection `owot_event_pets`); không cần gõ lệnh riêng. Hết sự kiện mà chưa tìm được con nào thì `event_pets` là `null`.
+  **Sang sự kiện mới:** sửa `EVENT_TITLE`, `EVENT_END_EPOCH`, `EVENT_PETS` đầu file `event_pets.py` (tên pet lấy từ FAQ sự kiện).
   Mỗi mục có `updated_at` + `age_seconds` để biết dữ liệu cũ hay mới.
 - Mọi đường API đều cần header `Authorization: Bearer <AUTOMACRO_API_TOKEN>`,
   thiếu/sai token trả về lỗi 401. Sai token 10 lần trong 5 phút thì IP đó bị khoá 5 phút
