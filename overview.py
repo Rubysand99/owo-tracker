@@ -15,16 +15,24 @@ FIXED_LABELS = {
     "daily": ["Trạng thái", "Chuỗi ngày", "Thưởng gần nhất", "Nhận lại sau"],
     "huntbot": ["Đang hunt", "Tiến độ", "Pet đã bắt", "Essence", "Còn lại"],
     "quest": ["Seals", "Xong hết hôm nay", "Quest kế tiếp", "Số quest"],
-    "gems": ["Gem đang dùng", "Gem dự phòng (số viên)", "Gem dự phòng (số loại)"],
-    "zoo": ["Zoo Points", "Pet đang giữ", "Tổng đã bắt", "Loài đã mở khóa", "Loài đã hiến tế hết"],
-    "dex": ["Loài đã tra owo dex", "Trong đó đang có"],
-    "inventory": ["Số loại đồ", "Tổng số món"],
-    "weapons": ["Vũ khí đã ghi nhận"],
-    "team": ["Số pet trong đội", "Tổng HP", "Tổng ATT", "Tổng PR", "Tổng WP", "Tổng MAG", "Tổng MR"],
+    "gems": ["Gem đang dùng", "Gem dự phòng (số viên)", "Gem dự phòng (số loại)", "Gem thấp nhất (%)",
+             "Gem cao nhất (%)", "Gem dưới 20%"],
+    "zoo": ["Zoo Points", "Pet đang giữ", "Tổng đã bắt", "Loài đã mở khóa", "Loài đã hiến tế hết",
+            "Loài đang có (theo bậc)", "Con đã hiến tế (theo bậc)", "Bậc nhiều pet nhất"],
+    "dex": ["Loài đã tra owo dex", "Trong đó đang có", "Loài chưa có", "Tỉ lệ đang có", "Theo rank"],
+    "inventory": ["Số loại đồ", "Tổng số món", "Số gem trong kho", "Món nhiều nhất"],
+    "weapons": ["Vũ khí đã ghi nhận", "Vũ khí đã quét danh sách", "Đang đeo", "Đã gắn sao", "Có passive",
+                "Chất lượng TB", "Chất lượng cao nhất", "Chất lượng thấp nhất", "Theo độ hiếm", "Theo loại"],
+    "review": ["Đang duyệt", "Đã giữ", "Đã bỏ", "Còn lại", "Chưa rõ", "Chưa thấy"],
+    "team": ["Số pet trong đội", "Tổng HP", "Tổng ATT", "Tổng PR", "Tổng WP", "Tổng MAG", "Tổng MR",
+             "Level TB", "Level cao nhất", "Pet đang cầm vũ khí", "Chất lượng vũ khí TB"],
     "battle": ["Kết quả", "Số lượt", "XP", "Chuỗi thắng", "Chuỗi thắng cao nhất", "Chuỗi thua gần nhất"],
     "event": ["Pet sự kiện đã tìm", "Nhật ký sự kiện gần đây"],
     "misc": ["Pet mới chưa vào zoo", "Lần bị OwO báo quá nhanh (30 phút)", "Captcha"],
     "checklist": ["Checklist Daily", "Checklist Weekly"],
+    "knowledge": ["Loài pet đã biết", "Pet đã mở khóa (lưu vĩnh viễn)", "Loại vũ khí đã biết", "Passive đã biết",
+                  "Emoji đã đăng ký", "Lần quan sát zoo", "Ghi chú", "Lệnh đang chờ app", "Pet sự kiện đã lưu"],
+    "config": ["Hub (app)", "Tự kiểm tra", "Cảnh báo HuntBot", "Tự động HuntBot", "Chế độ Event", "Phiên bản bot"],
 }
 FIXED_COUNT = sum(len(v) for v in FIXED_LABELS.values())
 
@@ -71,8 +79,46 @@ def _group(key, title, section, lines):
     return {"key": key, "title": title, "age_seconds": age, "lines": lines}
 
 
-def build_groups(hub):
+def _ints(values):
+    return [v for v in values if isinstance(v, int) and not isinstance(v, bool)]
+
+
+def _nums(values):
+    return [v for v in values if isinstance(v, (int, float)) and not isinstance(v, bool)]
+
+
+def _top(counter_like, limit=6):
+    """{"a": 3, "b": 1} -> "a ×3 · b ×1" (giảm dần theo số lượng)."""
+    items = sorted(((k, v) for k, v in counter_like.items() if k), key=lambda kv: (-kv[1], str(kv[0])))
+    if not items:
+        return "—"
+    shown = " · ".join(f"{k} ×{num(v)}" for k, v in items[:limit])
+    return shown + (f" · +{len(items) - limit} loại khác" if len(items) > limit else "")
+
+
+def summarize_weapon_rows(rows):
+    """Tóm tắt kho vũ khí đã quét (COL_WEAPON_LIST). Hàm thuần; rows = list dict. Trả None nếu chưa quét."""
+    rows = [r for r in (rows or []) if isinstance(r, dict)]
+    if not rows:
+        return None
+    q = _nums([r.get("quality") for r in rows])
+    rar, typ = {}, {}
+    for r in rows:
+        if r.get("rarity"):
+            rar[str(r["rarity"])] = rar.get(str(r["rarity"]), 0) + 1
+        if r.get("type"):
+            typ[str(r["type"])] = typ.get(str(r["type"]), 0) + 1
+    return {"total": len(rows), "starred": sum(1 for r in rows if r.get("starred")),
+            "equipped": sum(1 for r in rows if r.get("equipped")),
+            "with_passive": sum(1 for r in rows if r.get("passives")),
+            "q_avg": round(sum(q) / len(q), 1) if q else None, "q_max": max(q) if q else None,
+            "q_min": min(q) if q else None, "by_rarity": rar, "by_type": typ}
+
+
+def build_groups(hub, extras=None):
+    """extras (tuỳ chọn, do bot gom từ DB): {"weapon_list": summarize_weapon_rows(...), "counts": {...}, "config": {...}}."""
     hub = hub or {}
+    extras = extras or {}
     out = []
 
     cw, ws = hub.get("cowoncy"), hub.get("weapon_shards")
@@ -107,15 +153,21 @@ def build_groups(hub):
     ]))
 
     gm = hub.get("gems")
-    gem_lines = []
     if gm:
-        for e in _g(gm, "equipped") or []:
+        eq = _g(gm, "equipped") or []
+        spare = _g(gm, "spare") or []
+        pcts = _nums([e.get("percent") for e in eq if isinstance(e, dict)])
+        gem_lines = [("Gem đang dùng", num(len(eq)))]
+        for e in eq:
             gem_lines.append((f"Slot {e.get('type_name') or e.get('slot')} ({e.get('tier') or '?'})",
                               f"{num(e.get('current'))}/{num(e.get('max'))} ({e.get('percent', 0)}%)"))
-        spare = _g(gm, "spare") or []
-        gem_lines.append(("Gem dự phòng (số viên)", num(sum((s.get("count") or 0) for s in spare))))
-        gem_lines.append(("Gem dự phòng (số loại)", num(len(spare))))
-        gem_lines.insert(0, ("Gem đang dùng", num(len(_g(gm, "equipped") or []))))
+        gem_lines += [
+            ("Gem dự phòng (số viên)", num(sum((s_.get("count") or 0) for s_ in spare))),
+            ("Gem dự phòng (số loại)", num(len(spare))),
+            ("Gem thấp nhất (%)", f"{min(pcts)}%" if pcts else "—"),
+            ("Gem cao nhất (%)", f"{max(pcts)}%" if pcts else "—"),
+            ("Gem dưới 20%", num(sum(1 for x in pcts if x < 20)) if pcts else "—"),
+        ]
     else:
         gem_lines = [(lbl, NO_DATA) for lbl in FIXED_LABELS["gems"]]
     out.append(_group("gems", "💎 Gem", gm, gem_lines))
@@ -128,6 +180,17 @@ def build_groups(hub):
         ("Loài đã mở khóa", num(_g(z, "unlocked_total")) if z else NO_DATA),
         ("Loài đã hiến tế hết", num(len(_g(z, "sacrificed_pets") or [])) if z else NO_DATA),
     ]
+    bt = _g(z, "by_tier") if z else None
+    bt = bt if isinstance(bt, dict) else {}
+    sp = _ints([v.get("species") for v in bt.values() if isinstance(v, dict)])
+    sac = _ints([v.get("sacrificed") for v in bt.values() if isinstance(v, dict)])
+    tot = {t: v.get("total") for t, v in bt.items() if isinstance(v, dict) and isinstance(v.get("total"), int)}
+    top_t = max(tot, key=lambda t: tot[t]) if tot else None
+    zoo_lines += [
+        ("Loài đang có (theo bậc)", (num(sum(sp)) if sp else "—") if z else NO_DATA),
+        ("Con đã hiến tế (theo bậc)", (num(sum(sac)) if sac else "—") if z else NO_DATA),
+        ("Bậc nhiều pet nhất", (f"{top_t} ({num(tot[top_t])} con)" if top_t else "—") if z else NO_DATA),
+    ]
     if z and _g(z, "by_tier"):
         tiers = " · ".join(f"{t} {num(v.get('species'))} loài/{num(v.get('total'))} con"
                            for t, v in z["by_tier"].items())
@@ -135,19 +198,52 @@ def build_groups(hub):
     out.append(_group("zoo", "🐾 Zoo", z, zoo_lines))
 
     dx = hub.get("pet_dex")
+    _dex_known, _dex_owned = _g(dx, "total_known"), _g(dx, "total_owned")
+    _dex_known = _dex_known if isinstance(_dex_known, int) else None
+    _dex_owned = _dex_owned if isinstance(_dex_owned, int) else None
+    _dex_rank = {}
+    for sp_ in (_g(dx, "species") or []):
+        if isinstance(sp_, dict) and sp_.get("rank") and sp_.get("owned"):
+            _dex_rank[str(sp_["rank"])] = _dex_rank.get(str(sp_["rank"]), 0) + 1
     out.append(_group("dex", "📖 Pet dex", dx, [
         ("Loài đã tra owo dex", num(_g(dx, "total_known")) if dx else NO_DATA),
         ("Trong đó đang có", num(_g(dx, "total_owned")) if dx else NO_DATA),
+        ("Loài chưa có", (num(_dex_known - _dex_owned) if _dex_known is not None and _dex_owned is not None else "—") if dx else NO_DATA),
+        ("Tỉ lệ đang có", (f"{round(100 * _dex_owned / _dex_known, 1)}%" if _dex_known and _dex_owned is not None else "—") if dx else NO_DATA),
+        ("Theo rank", (_top(_dex_rank, 8) if _dex_rank else "—") if dx else NO_DATA),
     ]))
 
     inv = hub.get("inventory")
+    _inv_items = [i for i in (_g(inv, "items") or []) if isinstance(i, dict) and isinstance(i.get("count"), int)]
+    _inv_gems = sum(i["count"] for i in _inv_items if i.get("is_gem"))
+    _inv_top = max(_inv_items, key=lambda i: i["count"]) if _inv_items else None
     out.append(_group("inventory", "🎒 Kho đồ", inv, [
         ("Số loại đồ", num(_g(inv, "kinds")) if inv else NO_DATA),
         ("Tổng số món", num(_g(inv, "total_items")) if inv else NO_DATA),
+        ("Số gem trong kho", (num(_inv_gems) if _inv_items else "—") if inv else NO_DATA),
+        ("Món nhiều nhất", (f"{_inv_top.get('name') or _inv_top.get('code')} ×{num(_inv_top.get('count'))}" if _inv_top else "—") if inv else NO_DATA),
     ]))
 
     w = hub.get("weapons")
-    out.append(_group("weapons", "⚔️ Vũ khí", w, [("Vũ khí đã ghi nhận", num(_g(w, "count")) if w else NO_DATA)]))
+    wl = extras.get("weapon_list")
+    def _wl(key, fmt=num):
+        return fmt(wl[key]) if wl and wl.get(key) is not None else ("—" if wl else NO_DATA)
+    out.append(_group("weapons", "⚔️ Vũ khí", w, [
+        ("Vũ khí đã ghi nhận", num(_g(w, "count")) if w else NO_DATA),
+        ("Vũ khí đã quét danh sách", _wl("total")), ("Đang đeo", _wl("equipped")), ("Đã gắn sao", _wl("starred")),
+        ("Có passive", _wl("with_passive")),
+        ("Chất lượng TB", _wl("q_avg", lambda v: f"{v}%")), ("Chất lượng cao nhất", _wl("q_max", lambda v: f"{v}%")),
+        ("Chất lượng thấp nhất", _wl("q_min", lambda v: f"{v}%")),
+        ("Theo độ hiếm", _top(wl["by_rarity"]) if wl else NO_DATA), ("Theo loại", _top(wl["by_type"]) if wl else NO_DATA),
+    ]))
+
+    rv = hub.get("weapon_review")
+    out.append(_group("review", "🗂️ Duyệt vũ khí (Giữ/Bỏ)", None, [
+        ("Đang duyệt", yes_no(_g(rv, "active")) if rv else NO_DATA),
+        ("Đã giữ", num(_g(rv, "kept")) if rv else NO_DATA), ("Đã bỏ", num(_g(rv, "dropped")) if rv else NO_DATA),
+        ("Còn lại", num(_g(rv, "remaining")) if rv else NO_DATA),
+        ("Chưa rõ", num(_g(rv, "unknown")) if rv else NO_DATA), ("Chưa thấy", num(_g(rv, "unseen")) if rv else NO_DATA),
+    ]))
 
     t = hub.get("team")
     members = _g(t, "members") or []
@@ -157,9 +253,16 @@ def build_groups(hub):
             v = (m or {}).get(k)
             if isinstance(v, int) and not isinstance(v, bool):
                 sums[k] += v
+    lv = _nums([(m or {}).get("level") for m in members])
+    wq = _nums([(m or {}).get("quality") for m in members])
+    armed = sum(1 for m in members if (m or {}).get("weaponId"))
     out.append(_group("team", "🛡️ Đội hình", t,
                       [("Số pet trong đội", num(len(members)) if t else NO_DATA)] +
-                      [(f"Tổng {k.upper()}", num(v) if t else NO_DATA) for k, v in sums.items()]))
+                      [(f"Tổng {k.upper()}", num(v) if t else NO_DATA) for k, v in sums.items()] +
+                      [("Level TB", (str(round(sum(lv) / len(lv), 1)) if lv else "—") if t else NO_DATA),
+                       ("Level cao nhất", (num(max(lv)) if lv else "—") if t else NO_DATA),
+                       ("Pet đang cầm vũ khí", num(armed) if t else NO_DATA),
+                       ("Chất lượng vũ khí TB", (f"{round(sum(wq) / len(wq), 1)}%" if wq else "—") if t else NO_DATA)]))
 
     b = hub.get("battle")
     out.append(_group("battle", "🥊 Battle gần nhất", b, [
@@ -197,6 +300,27 @@ def build_groups(hub):
         return str(p) if isinstance(p, (str, int)) and not isinstance(p, bool) else "đã ghi nhận"
     out.append({"key": "checklist", "title": "✅ Checklist Quest Log", "age_seconds": None, "lines": [
         ("Checklist Daily", _cl("daily")), ("Checklist Weekly", _cl("weekly"))]})
+
+    c = extras.get("counts") or {}
+    def _c(key):
+        return num(c[key]) if isinstance(c.get(key), int) else NO_DATA
+    out.append({"key": "knowledge", "title": "🧠 Dữ liệu bot đã học", "age_seconds": None, "lines": [
+        ("Loài pet đã biết", _c("species")), ("Pet đã mở khóa (lưu vĩnh viễn)", _c("unlocked")),
+        ("Loại vũ khí đã biết", _c("weapon_types")), ("Passive đã biết", _c("passives")),
+        ("Emoji đã đăng ký", _c("emoji")), ("Lần quan sát zoo", _c("zoo_history")), ("Ghi chú", _c("notes")),
+        ("Lệnh đang chờ app", _c("pending_commands")), ("Pet sự kiện đã lưu", _c("event_pets"))]})
+
+    cf = extras.get("config") or {}
+    def _onoff(key):
+        v = cf.get(key)
+        return NO_DATA if v is None else ("BẬT" if v else "tắt")
+    hub_on = None if cf.get("app_off") is None else (not cf.get("app_off"))
+    out.append({"key": "config", "title": "⚙️ Cài đặt bot", "age_seconds": None, "lines": [
+        ("Hub (app)", NO_DATA if hub_on is None else ("BẬT" if hub_on else "tắt (bot không giao việc)")),
+        ("Tự kiểm tra", _onoff("auto_check")), ("Cảnh báo HuntBot", _onoff("hb_alert")),
+        ("Tự động HuntBot", _onoff("hb_auto")),
+        ("Chế độ Event", yes_no(hub.get("event_mode")) if hub.get("event_mode") is not None else NO_DATA),
+        ("Phiên bản bot", str(hub.get("bot_version") or NO_DATA))]})
     return out
 
 

@@ -4979,12 +4979,40 @@ async def team_cmd(ctx):
     await ctx.send("\n".join(lines))
 
 
+async def gather_overview_extras():
+    """Số liệu phụ cho ,thongke lấy thẳng từ DB (mỗi mục lỗi thì bỏ qua, không làm hỏng cả lệnh)."""
+    extras = {"counts": {}, "config": {}}
+    async def _count(key, col, q=None):
+        try:
+            extras["counts"][key] = await mdb[col].count_documents(q or {})
+        except Exception as e:
+            print(f"[tracker] thongke: không đếm được {key}: {e!r}")
+    for key, col in (("species", COL_PET_SPECIES), ("unlocked", COL_ZOO_UNLOCKED), ("weapon_types", COL_WEAPON_TYPES),
+                     ("passives", COL_PASSIVES), ("emoji", COL_EMOJI), ("zoo_history", COL_ZOO_HISTORY),
+                     ("notes", COL_NOTES), ("event_pets", COL_EVENT_PETS)):
+        await _count(key, col)
+    await _count("pending_commands", COL_AUTOMACRO_COMMANDS, {"status": "pending"})
+    try:
+        rows = await mdb[COL_WEAPON_LIST].find({}).to_list(length=5000)
+        extras["weapon_list"] = overview.summarize_weapon_rows(rows)
+    except Exception as e:
+        print(f"[tracker] thongke: không đọc được kho vũ khí: {e!r}")
+    try:
+        extras["config"] = {"app_off": await is_app_off(),
+                            "auto_check": (await get_config("auto_check", "on")) == "on",
+                            "hb_alert": (await get_config("hb_alert", "off")) == "on",
+                            "hb_auto": (await get_config("hb_auto", "on")) == "on"}
+    except Exception as e:
+        print(f"[tracker] thongke: không đọc được cài đặt: {e!r}")
+    return extras
+
+
 @bot.command(name="thongke", aliases=["overview", "sotieu"])
 @is_owner()
 async def thongke_cmd(ctx):
     """Gửi embed gom MỌI số liệu thống kê bot đang theo dõi (tiền, daily, huntbot, quest, gem, zoo, dex, kho, vũ khí, đội hình, battle, sự kiện...)."""
     hub = await build_hub()
-    groups = overview.build_groups(hub)
+    groups = overview.build_groups(hub, await gather_overview_extras())
     total, filled = overview.count_metrics(groups)
     chunks = overview.chunk_fields(overview.embed_fields(groups))
     for i, chunk in enumerate(chunks):
@@ -6260,7 +6288,7 @@ HELP_GROUPS = [
         ("huntbot", "`,huntbot` (owner): trạng thái HuntBot — tiến độ, số pet bắt được, còn bao lâu nữa về"),
         ("quests", "`,quests` (owner): quest hôm nay và tiến độ từng quest"),
         ("team", "`,team` (owner): đội hình gần nhất bot đọc được"),
-        ("thongke", "`,thongke` (owner, còn gọi `,overview` / `,sotieu`): gửi embed gom MỌI số liệu thống kê đang theo dõi — tiền, daily, huntbot, quest, gem, zoo, dex, kho, vũ khí, đội hình, battle, sự kiện, checklist; mục nào chưa có dữ liệu thì ghi rõ"),
+        ("thongke", "`,thongke` (owner, còn gọi `,overview` / `,sotieu`): gửi embed gom MỌI số liệu thống kê đang theo dõi — tiền, daily, huntbot, quest, gem, zoo, dex, kho, vũ khí, đội hình, battle, sự kiện, checklist, duyệt vũ khí, dữ liệu bot đã học, cài đặt bot (93 số liệu cố định); mục nào chưa có dữ liệu thì ghi rõ"),
         ("stats", "`,stats` (owner): 1 embed liệt kê đủ 6 chỉ số chiến đấu (HP/ATT/PR/WP/MAG/MR) kèm ý nghĩa và tổng chỉ số đội hình hiện tại"),
         ("teamcheck", "`,teamcheck` (owner): chấm đội hình đang đứng"),
         ("inv", "`,inv [tìm]` (owner): kho đồ đã ghi nhận, lọc theo tên"),
