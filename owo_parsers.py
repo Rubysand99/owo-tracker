@@ -952,6 +952,35 @@ def parse_hunt_found(text: str):
     return {"animals": animals} if animals else None
 
 
+_SUP = "⁰¹²³⁴⁵⁶⁷⁸⁹"
+_HB_ANIMAL_RE = re.compile(rf"<(a)?:(\w+):(\d+)>([{_SUP}]+)|:(\w+):([{_SUP}]+)")
+
+
+def parse_huntbot_animals(text: str):
+    """Tin huntbot ve ("I AM BACK WITH n ANIMALS...") liet ke thu bat duoc theo tung do hiem, moi loai kem so luong
+    bang chu so mu: `<:rare:..> **|** :dog2:¹¹⁵   :cow2:¹¹⁸`. -> {"animals":[{name, count, emoji_id?, emoji_animated?}]}
+    hoac None neu khong phai tin huntbot ve. Gop trung ten (cong don)."""
+    if "I AM BACK WITH" not in (text or "").upper():
+        return None
+    animals, index = [], {}
+    for animated, cname, cid, csup, pname, psup in _HB_ANIMAL_RE.findall(text):
+        name = cname or pname
+        if name.lower() == "blank":
+            continue
+        count = decode_superscript_number(csup or psup)
+        key = name.lower()
+        if key in index:
+            animals[index[key]]["count"] += count
+            continue
+        entry = {"name": name, "count": count}
+        if cid:
+            entry["emoji_id"] = cid
+            entry["emoji_animated"] = bool(animated)
+        index[key] = len(animals)
+        animals.append(entry)
+    return {"animals": animals} if animals else None
+
+
 def _parse_utc(value):
     if not value:
         return None

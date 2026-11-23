@@ -74,7 +74,7 @@ FUNCS = {n: getattr(P, n) for n in (
     "parse_owodex", "parse_weapon_detail", "parse_team", "parse_huntbot_status", "parse_quest_items", "parse_quest_status",
     "parse_checklist", "parse_cowoncy", "parse_weapon_shards", "parse_weapon_advice", "parse_weapon_list", "parse_zoo",
     "parse_gem_name", "resolve_gem_slot", "normalize_gem_tier_pref", "decode_allowed_tiers", "parse_inventory",
-    "parse_hunt_gem_status", "parse_battle", "parse_hunt_found", "duration_to_seconds", "decode_superscript_number",
+    "parse_hunt_gem_status", "parse_battle", "parse_hunt_found", "parse_huntbot_animals", "duration_to_seconds", "decode_superscript_number",
     "emoji_to_name", "clean_owner_name", "strip_rarity", "parse_zoo_breakdown")}
 errors = {}
 def run(name, fn, s):

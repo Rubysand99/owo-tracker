@@ -186,7 +186,7 @@ Xem lệnh đang chờ / đã xử lý ngay trong Discord: `,automacro` (owner).
   `inventory`, `weapons`. Mục nào bot chưa thấy lần nào thì là `null`.
   `event_pets` = pet của sự kiện đang diễn ra (tháng 11/2026: `2026november_pumpkinpie`, `2026november_autumnHsin`):
   `{title, ends_epoch, active, found_count, total, pets:[{key, label, found, count, times_found, first_found_at, last_found_at, age_seconds, emoji_id}]}`.
-  Bot tự ghi nhận pet sự kiện khi thấy tên emoji của nó trong dòng `You found:` của `owo hunt` (kể cả app tự gõ) hoặc trong bảng `owo zoo` / `owo zoo d`
+  Bot tự ghi nhận pet sự kiện khi thấy tên emoji của nó trong dòng `You found:` của `owo hunt` (kể cả app tự gõ), trong tin huntbot về (`I AM BACK WITH ...`, test: `test_huntbot_animals.py`) hoặc trong bảng `owo zoo` / `owo zoo d`
   (collection `owot_event_pets`); không cần gõ lệnh riêng. Hết sự kiện mà chưa tìm được con nào thì `event_pets` là `null`.
   **Sang sự kiện mới:** sửa `EVENT_TITLE`, `EVENT_END_EPOCH`, `EVENT_PETS` đầu file `event_pets.py` (tên pet lấy từ FAQ sự kiện).
   Mỗi mục có `updated_at` + `age_seconds` để biết dữ liệu cũ hay mới.

@@ -67,6 +67,7 @@ from owo_parsers import (
     parse_event_hunt,
     parse_gem_name,  # noqa: F401
     parse_hunt_found,
+    parse_huntbot_animals,
     parse_hunt_gem_status,
     parse_huntbot_status,
     parse_inventory,
@@ -963,7 +964,7 @@ async def record_event_pets(animals, source_id=None, via="hunt"):
         for a in event_pets.find_in_animals(animals):
             prev = await mdb[COL_EVENT_PETS].find_one({"_id": a["key"]})
             fields = {"found": True, "updated_by": source_id}
-            if via == "hunt":
+            if via in ("hunt", "huntbot"):
                 fields["last_found_at"] = now_iso
             elif via == "zoo":
                 fields["count"] = a.get("count")     # so dang giu; "owo zoo d" (zoo_all) la so da bat nen khong ghi vao day
@@ -973,6 +974,8 @@ async def record_event_pets(animals, source_id=None, via="hunt"):
             upd = {"$set": fields, "$setOnInsert": {"first_found_at": now_iso, "first_via": via}}
             if via == "hunt":
                 upd["$inc"] = {"times_found": 1}
+            elif via == "huntbot":   # huntbot mang về nhiều con 1 lúc: cộng cả số con vào huntbot_count
+                upd["$inc"] = {"times_found": 1, "huntbot_count": int(a.get("count") or 0)}
             await mdb[COL_EVENT_PETS].update_one({"_id": a["key"]}, upd, upsert=True)
             if not prev or not prev.get("found"):
                 firsts.append(a["key"])
@@ -4312,6 +4315,12 @@ async def handle_owo_response(message: discord.Message, source_id, rt=None):
     if hunt:
         hb_state = await save_huntbot(hunt)
         await record_raw("huntbot", text, hunt, message)
+        hb_animals = parse_huntbot_animals(text)
+        if hb_animals:   # huntbot cũng có thể săn được pet sự kiện
+            hb_firsts = await record_event_pets(hb_animals["animals"], source_id, via="huntbot")
+            hb_names = [a["name"] for a in event_pets.find_in_animals(hb_animals["animals"]) if a["key"] in set(hb_firsts)]
+            if hb_names:
+                await announce_new_pets(hb_names, hb_animals, source_id, channel=message.channel)
         if hb_state == "idle":
             try:
                 await maybe_auto_hb_restart(source_id)
