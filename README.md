@@ -140,7 +140,7 @@ thấp nhất còn lại trong kho.
 
 ```bash
 export AUTOMACRO_API_TOKEN="1-chuoi-bi-mat-tu-dat-cang-dai-cang-tot"
-export AUTOMACRO_API_PORT="8080"   # tuỳ chọn, Railway tự đặt PORT nên thường không cần
+export AUTOMACRO_API_PORT="8080"   # tuỳ chọn, mặc định 8080 (biến PORT nếu có sẽ được ưu tiên)
 ```
 
 **Không đặt `AUTOMACRO_API_TOKEN` thì API này KHÔNG chạy** — mặc định
@@ -434,7 +434,7 @@ tin tưởng hoàn toàn cơ chế nhắc.
   đọc loại này (`flatten_message`) và lấy được Seals + mốc quest kế tiếp
   + **từng quest** (tên, mô tả, phần thưởng, tiến độ `1/10`). Một quest
   tính là xong khi tiến độ đạt tối đa. Các mẫu tin nhắn thật lấy bằng
-  `,debugnext` (in ra Logs của Railway).
+  `,debugnext` (in ra log của bot; trên VPS xem bằng `journalctl -u owo-tracker -f`).
 - **`owo profile`** — là **ảnh** (thẻ hồ sơ), không có chữ nào để đọc nên
   bot không lấy được dữ liệu từ đây.
 

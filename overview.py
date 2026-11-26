@@ -281,7 +281,7 @@ def build_groups(hub, extras=None):
             continue
         if p_.get("found"):
             when = ago(p_.get("age_seconds"))
-            ev_lines.append((f"✅ {p_.get('label') or p_.get('key')}", f"đã tìm thấy" + (f" · lần cuối {when}" if when else "")))
+            ev_lines.append((f"✅ {p_.get('label') or p_.get('key')}", "đã tìm thấy" + (f" · lần cuối {when}" if when else "")))
         else:
             ev_lines.append((f"⬜ {p_.get('label') or p_.get('key')}", "chưa tìm thấy"))
     end = _g(ep, "ends_epoch")
