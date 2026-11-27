@@ -72,6 +72,7 @@ class Col:
     async def update_one(s, f, u, upsert=False):
         k = f["_id"]; s.d.setdefault(k, {"_id": k}).update(u.get("$set", {}))
     async def find_one(s, f): return s.d.get(f.get("_id"))
+    async def insert_many(s, docs, ordered=True): s.d.update({d["_id"]: dict(d) for d in docs})
     async def delete_one(s, f): s.d.pop(f["_id"], None)
     def find(s, f=None):
         rows = list(s.d.values())

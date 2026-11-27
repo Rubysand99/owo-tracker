@@ -35,6 +35,7 @@ from datetime import datetime, timedelta, timezone
 import discord
 from discord.ext import commands
 from motor.motor_asyncio import AsyncIOMotorClient
+from pymongo.errors import BulkWriteError
 from aiohttp import web
 import auto_refresh   # quyết định thuần: nhắc huntbot + chen lệnh check khi đang farm
 import overview        # gom mọi số liệu thống kê thành embed cho lệnh ,thongke
@@ -223,10 +224,22 @@ def extract_emoji_tags(text):
 async def remember_emojis(text):
     """Ghi nho ID cua moi emoji tuy chinh xuat hien trong tin nhan, de dung lai
     sau nay (vd tier tag trong zoo/quest, gem trong hunt...). Khong ghi de neu
-    da co (ID 1 emoji la co dinh, khong doi)."""
+    da co (ID 1 emoji la co dinh, khong doi). Ca tin chi ton 1 lan doc + toi da 1 lan ghi."""
+    found = {}
     for name, eid, animated in extract_emoji_tags(text):
-        await mdb[COL_EMOJI].update_one(
-            {"_id": name}, {"$setOnInsert": {"id": eid, "animated": animated}}, upsert=True)
+        found.setdefault(name, {"_id": name, "id": eid, "animated": animated})
+    if not found:
+        return
+    rows = await mdb[COL_EMOJI].find({"_id": {"$in": list(found)}}).to_list(length=len(found))
+    for r in rows:
+        found.pop(r["_id"], None)
+    if not found:
+        return
+    try:
+        await mdb[COL_EMOJI].insert_many(list(found.values()), ordered=False)
+    except BulkWriteError as e:   # 2 tin xu ly cung luc cung ghi 1 emoji moi -> trung _id (11000), bo qua
+        if any(err.get("code") != 11000 for err in e.details.get("writeErrors", [])):
+            raise
 
 
 async def load_emoji_cache():
@@ -290,13 +303,37 @@ _automacro_api_started = False
 # ----------------------------------------------------------------------
 # CONFIG helpers
 # ----------------------------------------------------------------------
+# Cau hinh doc o MOI tin nhan -> giu tam trong RAM. Chi nhung khoa nay, va chung CHI duoc ghi qua set_config
+# (khoa khac co noi ghi thang vao Mongo nen khong duoc cache).
+CONFIG_CACHE_KEYS = frozenset({"tracked_user_id", "tracked_guild_id", "tracked_channel_id",
+                               "ignored_channel_ids", "owo_prefixes"})
+CONFIG_CACHE_SECONDS = 60   # sua tay trong database thi toi da chung nay giay bot moi thay
+_config_cache = {}          # khoa -> (database, gio doc, ban ghi hoac None)
+_config_writes = 0          # tang moi lan ghi, de lan doc dang do dang khong luu lai gia tri cu
+
+
 async def get_config(key, default=None):
-    doc = await mdb[COL_CONFIG].find_one({"_id": key})
+    cacheable = key in CONFIG_CACHE_KEYS
+    if cacheable:
+        hit = _config_cache.get(key)
+        if hit and hit[0] is mdb and time.monotonic() - hit[1] < CONFIG_CACHE_SECONDS:
+            return hit[2]["value"] if hit[2] else default
+    db, writes = mdb, _config_writes
+    doc = await db[COL_CONFIG].find_one({"_id": key})
+    if cacheable and writes == _config_writes:
+        _config_cache[key] = (db, time.monotonic(), doc)
     return doc["value"] if doc else default
 
 
 async def set_config(key, value):
-    await mdb[COL_CONFIG].update_one({"_id": key}, {"$set": {"value": value}}, upsert=True)
+    global _config_writes
+    _config_writes += 1
+    _config_cache.pop(key, None)
+    try:
+        await mdb[COL_CONFIG].update_one({"_id": key}, {"$set": {"value": value}}, upsert=True)
+    finally:
+        _config_writes += 1
+        _config_cache.pop(key, None)
 
 
 def parse_id_list(raw) -> list:
@@ -2099,17 +2136,35 @@ async def _auto_on_failed(wid: str):
         await _auto_advance(skip_id=wid)
 
 
+REVIEW_HUB_CACHE_SECONDS = 30   # phien duyet dang tat: so dem tren /hub duoc dung lai toi da chung nay giay
+_review_hub_cache = {"key": None, "at": 0.0, "value": None}
+
+
 async def _hub_weapon_review():
     sess = await review_get()
     if not sess:
         return None
-    decided = await review_decisions()
-    lists = await review_lists()
-    return {"active": bool(sess.get("active")), "current_id": sess.get("current"),
-            "remaining": len(await review_pending_ids(decided)),
-            "kept": sum(1 for d in decided.values() if d == "keep"),
-            "dropped": sum(1 for d in decided.values() if d == "drop"),
-            "unknown": len(lists["unknown"]), "unseen": len(lists["unseen"])}
+    active = bool(sess.get("active"))
+    key = (mdb, sess.get("current"))
+    if not active and _review_hub_cache["key"] == key \
+            and time.monotonic() - _review_hub_cache["at"] < REVIEW_HUB_CACHE_SECONDS:
+        return dict(_review_hub_cache["value"])
+    # Doc moi bang DUNG 1 lan roi tinh het cac so tu do
+    rows = await mdb[COL_WEAPON_REVIEW].find({}).to_list(length=100000)
+    decided = {r["_id"]: r.get("decision") for r in rows}
+    pending = await review_pending_ids(decided)
+    buckets = {"unknown": set(), "unseen": set(pending)}
+    for r in rows:
+        bucket = review_bucket(r)
+        if bucket in buckets:
+            buckets[bucket].add(str(r["_id"]))
+    value = {"active": active, "current_id": sess.get("current"), "remaining": len(pending),
+             "kept": sum(1 for d in decided.values() if d == "keep"),
+             "dropped": sum(1 for d in decided.values() if d == "drop"),
+             "unknown": len(buckets["unknown"]), "unseen": len(buckets["unseen"])}
+    # Chi giu tam khi phien da tat; dang duyet thi luon tinh moi
+    _review_hub_cache.update(key=None if active else key, at=time.monotonic(), value=value)
+    return dict(value)
 
 
 async def handle_post_weapon_review(request: web.Request):
@@ -3205,6 +3260,33 @@ async def auto_check_tick(now_ts, now):
     return command
 
 
+COMMAND_KEEP_DAYS = 7            # lenh da xong / huy / het han cu hon chung nay ngay thi xoa
+COMMAND_PURGE_EVERY = 3600       # giay giua 2 lan don
+COMMAND_FINISHED = ["done", "failed", "expired", "cancelled", "superseded"]
+_command_purge_at = {"ts": 0.0}
+
+
+async def ensure_indexes():
+    """Chi muc cho hang doi lenh (bi hoi lien tuc). Tao lai chi muc da co thi Mongo bo qua."""
+    try:
+        await mdb[COL_AUTOMACRO_COMMANDS].create_index([("status", 1), ("_id", 1)])
+        await mdb[COL_AUTOMACRO_COMMANDS].create_index([("status", 1), ("created_at", 1)])
+    except Exception as e:   # thieu chi muc chi lam cham, khong duoc lam bot hong
+        print(f"[tracker] Khong tao duoc chi muc hang doi lenh: {e!r}")
+
+
+async def purge_old_commands_tick(now_ts, now):
+    """Moi gio 1 lan: xoa lenh KHONG con cho nua va cu hon COMMAND_KEEP_DAYS ngay."""
+    if now_ts - _command_purge_at["ts"] < COMMAND_PURGE_EVERY:
+        return
+    cut = (now - timedelta(days=COMMAND_KEEP_DAYS)).isoformat()
+    res = await mdb[COL_AUTOMACRO_COMMANDS].delete_many(
+        {"status": {"$in": COMMAND_FINISHED}, "created_at": {"$lt": cut}})
+    _command_purge_at["ts"] = now_ts
+    if getattr(res, "deleted_count", 0):
+        print(f"[tracker] Da xoa {res.deleted_count} lenh cu trong hang doi")
+
+
 async def auto_refresh_loop():
     """Chay nen: moi 30 giay xem co can nhac huntbot / chen lenh check khong. Moi viec bat loi rieng."""
     while True:
@@ -3213,7 +3295,8 @@ async def auto_refresh_loop():
             if mdb is None:
                 continue
             now, now_ts = _utcnow(), time.time()
-            for name, coro in (("nhac huntbot", hb_reminder_tick(now)), ("auto_check", auto_check_tick(now_ts, now))):
+            for name, coro in (("nhac huntbot", hb_reminder_tick(now)), ("auto_check", auto_check_tick(now_ts, now)),
+                               ("don lenh cu", purge_old_commands_tick(now_ts, now))):
                 try:
                     await coro
                 except Exception as e:
@@ -3504,35 +3587,43 @@ async def _hub_channel():
     return out
 
 
-async def build_hub(now=None):
-    """Gom du lieu cho man hinh Hub. Muc nao bot chua tung thay thi = null."""
+async def build_hub(now=None, include_pet_dex=True):
+    """Gom du lieu cho man hinh Hub. Muc nao bot chua tung thay thi = null.
+    include_pet_dex=False: bo so tay pet (phan nang nhat) cho vong farm cua app -> pet_dex = null."""
     now = now or _utcnow()
-    await load_emoji_cache()
+    await load_emoji_cache()   # phai xong truoc: cac muc ben duoi dung resolve_emoji
+    sections = {
+        "daily": _hub_daily(now),
+        "cowoncy": _hub_cowoncy(now),
+        "weapon_shards": _hub_weapon_shards(now),
+        "event": _hub_event(now),
+        "event_pets": _hub_event_pets(now),
+        "event_mode": get_event_mode(),
+        "slowdown": _hub_slowdown(now),
+        "gems": _hub_gems(now),
+        "huntbot": _hub_huntbot(now),
+        "quest": _hub_quest(now),
+        "team": _hub_team(now),
+        "zoo": _hub_zoo(now),
+        "inventory": _hub_inventory(now),
+        "weapons": _hub_weapons(now),
+        "weapon_review": _hub_weapon_review(),
+        "battle": _hub_battle(now),
+        "new_pets": _hub_new_pets(now),
+        "channel": _hub_channel(),
+        "captcha": get_captcha_state(now),
+        "checklists": _hub_checklists(now),
+    }
+    if include_pet_dex:
+        sections["pet_dex"] = _hub_pet_dex(now)
+    # Cac muc chi doc, doc lap nhau -> hoi database song song
+    results = await asyncio.gather(*sections.values())
     return {
         "hub_version": 1,
         "bot_version": bot_version_text(),
         "server_time": now.isoformat() + "Z",
-        "daily": await _hub_daily(now),
-        "cowoncy": await _hub_cowoncy(now),
-        "weapon_shards": await _hub_weapon_shards(now),
-        "event": await _hub_event(now),
-        "event_pets": await _hub_event_pets(now),
-        "event_mode": await get_event_mode(),
-        "slowdown": await _hub_slowdown(now),
-        "gems": await _hub_gems(now),
-        "huntbot": await _hub_huntbot(now),
-        "quest": await _hub_quest(now),
-        "team": await _hub_team(now),
-        "zoo": await _hub_zoo(now),
-        "inventory": await _hub_inventory(now),
-        "weapons": await _hub_weapons(now),
-        "weapon_review": await _hub_weapon_review(),
-        "pet_dex": await _hub_pet_dex(now),
-        "battle": await _hub_battle(now),
-        "new_pets": await _hub_new_pets(now),
-        "channel": await _hub_channel(),
-        "captcha": await get_captcha_state(now),
-        "checklists": await _hub_checklists(now),
+        "pet_dex": None,
+        **dict(zip(sections, results)),
     }
 
 
@@ -3540,7 +3631,7 @@ async def handle_get_hub(request: web.Request):
     if not _check_api_token(request):
         return web.json_response({"error": "unauthorized"}, status=401)
     try:
-        data = await build_hub()
+        data = await build_hub(include_pet_dex=request.query.get("dex") != "0")
     except Exception as e:  # khong de app nhan trang loi kho hieu
         print(f"[tracker] Loi khi dung hub: {e!r}")
         return web.json_response({"error": "hub_failed"}, status=500)
@@ -3867,6 +3958,7 @@ async def on_ready():
     if mdb is None:
         print("[tracker] CẢNH BÁO: chưa có MONGODB_URI — bot sẽ lỗi khi cố lưu/đọc dữ liệu.")
         return
+    await ensure_indexes()
     tracked = await get_config("tracked_user_id")
     print(f"[tracker] Đang theo dõi user ID: {tracked or '(chưa đặt — dùng ,track)'}")
 
